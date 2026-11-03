@@ -1,0 +1,16 @@
+# render and generation outputs (binary, regenerable)
+*.mp4
+*.wav
+*.mp3
+**/out/
+**/manim_media/
+**/clips/
+**/audio/
+
+# environments and caches
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
