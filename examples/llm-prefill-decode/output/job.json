@@ -1,0 +1,185 @@
+{
+ "id": "20261103-053824-33599d",
+ "topic": "LLM 推理的两个核心阶段：Prefill（预填充）和 Decode（解码），以及为什么要把它们分离",
+ "language": "中文（普通话）",
+ "seconds": 90,
+ "ratio": "9:16",
+ "captions": true,
+ "music": "synth",
+ "voice": "Zhiyu",
+ "brief": "竖屏讲解，7 段左右，按这个顺序：\n1. 标题：LLM 推理的两个阶段 Prefill 与 Decode。\n2. 一次请求的全过程：输入提示词 → Prefill 一次性处理全部输入 token、生成 KV Cache、输出第一个 token → Decode 每步只生成 1 个 token，读取并追加 KV Cache，直到结束。\n3. Prefill 的特点：所有输入 token 并行做矩阵乘，计算密集（compute-bound），GPU 算力打满；决定首 token 延迟 TTFT。\n4. Decode 的特点：每步只算 1 个 token，却要把全部模型权重和不断变长的 KV Cache 从显存读一遍，访存密集（memory-bound），算力大量闲置；决定每个 token 的间隔 TPOT。\n5. 放在同一组 GPU 上的问题：长 Prefill 会插队阻塞正在 Decode 的请求，出词卡顿；两阶段对硬件和批大小的需求相反，很难同时调优。\n6. Prefill/Decode 分离（PD 分离）：Prefill 集群算完把 KV Cache 传给 Decode 集群；两边各自扩缩容、各用合适的并行和批大小；代价是要高速传输 KV Cache。可以提到 DistServe、Splitwise、Mooncake 这类系统采用了这个思路。\n7. 小结：Prefill 算得多、看 TTFT；Decode 读得多、看 TPOT；分离让两边各自最优。\n画面要求：用图示讲，不要大段文字；每段都有动画（token 方块流动、GPU 利用率条、显存带宽条、两条流水线、KV Cache 从一边传到另一边）。数字只用定性对比，不编具体性能数据。",
+ "has_background": false,
+ "status": "done",
+ "created": 1793684304.6338704,
+ "updated": 1793684692.8995862,
+ "steps": [
+  {
+   "key": "storyboard",
+   "label": "Opus 5.5 写分镜",
+   "status": "done",
+   "started": 1793684304.6351807,
+   "ended": 1793684328.7735145
+  },
+  {
+   "key": "narrate",
+   "label": "Polly 合成旁白",
+   "status": "done",
+   "started": 1793684328.7738721,
+   "ended": 1793684331.3423064
+  },
+  {
+   "key": "scene_code",
+   "label": "Opus 5.5 写绘制代码",
+   "status": "done",
+   "started": 1793684331.343731,
+   "ended": 1793684413.4638953
+  },
+  {
+   "key": "sfx",
+   "label": "放置音效",
+   "status": "done",
+   "started": 1793684413.4643152,
+   "ended": 1793684413.5794272
+  },
+  {
+   "key": "mix",
+   "label": "混音",
+   "status": "done",
+   "started": 1793684413.5799472,
+   "ended": 1793684415.0468569
+  },
+  {
+   "key": "captions",
+   "label": "Whisper 逐字字幕",
+   "status": "done",
+   "started": 1793684415.0474038,
+   "ended": 1793684448.7497938
+  },
+  {
+   "key": "capture",
+   "label": "逐帧渲染",
+   "status": "done",
+   "started": 1793684448.750357,
+   "ended": 1793684664.2154233
+  },
+  {
+   "key": "compose",
+   "label": "FFmpeg 合成",
+   "status": "done",
+   "started": 1793684664.2159684,
+   "ended": 1793684692.899049
+  }
+ ],
+ "error": null,
+ "video": "final.mp4",
+ "scenes": [
+  {
+   "id": "title_card",
+   "title": "LLM 推理的两个阶段：Prefill 与 Decode",
+   "narration": "大模型生成一段回答，背后其实分成两个性格完全不同的阶段：Prefill 预填充，和 Decode 解码。",
+   "visual": "竖屏标题卡。屏幕上半部分，主标题“LLM 推理的两个阶段”逐字弹出。下方并排出现两个圆角色块：左边橙色写“Prefill 预填充”，右边蓝色写“Decode 解码”。两块之间有一条细箭头从左指向右。背景上有几个半透明的 token 小方块缓慢漂浮。",
+   "sfx": [
+    {
+     "at": 12,
+     "kind": "whoosh"
+    },
+    {
+     "at": 40,
+     "kind": "pop"
+    }
+   ],
+   "frames": 279
+  },
+  {
+   "id": "request_lifecycle",
+   "title": "一次请求的全过程",
+   "narration": "提示词进来后，Prefill 一次性处理全部输入 token，生成 KV Cache，并吐出第一个 token。之后进入 Decode，每步只生成一个 token，读取并追加 KV Cache，直到结束。",
+   "visual": "竖屏，流程从上往下排。第一步：顶部一排灰色 token 方块代表提示词，整排同时滑入橙色“Prefill”框。第二步：框下方长出一个紫色长条，标注“KV Cache”，同时弹出第一个绿色输出方块，旁边标“第 1 个 token”。第三步：流程进入蓝色“Decode”循环框，画一个回环箭头。每转一圈只吐出 1 个绿色方块，紫色 KV Cache 条随之加长一小格。循环几次后出现“结束”标记。",
+   "sfx": [
+    {
+     "at": 15,
+     "kind": "whoosh"
+    },
+    {
+     "at": 45,
+     "kind": "pop"
+    }
+   ],
+   "frames": 448
+  },
+  {
+   "id": "prefill_compute_bound",
+   "title": "Prefill：计算密集",
+   "narration": "Prefill 阶段，所有输入 token 一起参与矩阵乘法，并行度很高，GPU 算力被打满，属于计算密集型。它的速度决定了首 token 延迟，也就是 TTFT。",
+   "visual": "竖屏。上方是一大块 token 矩阵，与权重矩阵相乘，网格整体同时亮起，表示并行计算。下方画两根横向进度条：“GPU 算力利用率”迅速涨到接近满格，变成橙色；“显存带宽”只到中等位置。底部出现一个计时器图标，标签为“TTFT 首 token 延迟”，从请求到达指向第一个绿色 token。",
+   "sfx": [
+    {
+     "at": 20,
+     "kind": "rise"
+    }
+   ],
+   "frames": 433
+  },
+  {
+   "id": "decode_memory_bound",
+   "title": "Decode：访存密集",
+   "narration": "Decode 每步只算一个 token，却要把全部模型权重和越来越长的 KV Cache 从显存读一遍，属于访存密集型，算力大量闲置。它决定了每个 token 之间的间隔，也就是 TPOT。",
+   "visual": "竖屏。中间只有 1 个 token 方块在计算单元里。上方的“显存”仓库里，大块“模型权重”和逐渐变长的“KV Cache”化作粒子流，源源不断涌向计算单元。下方两根条：“显存带宽”被打满，变成蓝色；“GPU 算力利用率”只亮起很短一截，其余部分是灰色。底部依次弹出绿色 token，相邻两个之间标出间隔“TPOT”。",
+   "sfx": [
+    {
+     "at": 15,
+     "kind": "hiss"
+    },
+    {
+     "at": 50,
+     "kind": "pop"
+    }
+   ],
+   "frames": 476
+  },
+  {
+   "id": "colocation_problem",
+   "title": "挤在同一组 GPU 上",
+   "narration": "如果两个阶段共用同一组 GPU，一个很长的 Prefill 插进来，正在 Decode 的请求就得等待，用户看到出词卡顿。而且两个阶段对硬件和批大小的需求正好相反，很难同时调优。",
+   "visual": "竖屏。一条共享的 GPU 时间轴上，蓝色的 Decode 小方块原本均匀排列。一个很长的橙色 Prefill 块挤进来，后面的蓝色方块被推开并堆积，旁边出现红色“卡顿”提示。下方是一个左右摇摆的天平：左盘写“Prefill：要算力”，右盘写“Decode：要带宽、要大批量”，中间的调节旋钮来回拧，始终无法平衡。",
+   "sfx": [
+    {
+     "at": 20,
+     "kind": "thud"
+    }
+   ],
+   "frames": 489
+  },
+  {
+   "id": "pd_disaggregation",
+   "title": "PD 分离",
+   "narration": "PD 分离的做法是：Prefill 集群算完后，把 KV Cache 传给 Decode 集群。两边可以各自扩缩容，各用合适的并行方式和批大小，代价是需要高速传输 KV Cache。DistServe、Splitwise、Mooncake 等系统都采用了这个思路。",
+   "visual": "竖屏，上下两条流水线。上方是橙色“Prefill 集群”，几块 GPU 并排，算力条全部满格。下方是蓝色“Decode 集群”，GPU 上排着大批量请求，带宽条全部满格。一个紫色 KV Cache 方块从上方集群沿着高速链路下滑，进入下方集群，链路上标注“高速传输”。两侧分别出现“+ / −”扩缩容按钮。底部小字依次淡入三个系统名：DistServe、Splitwise、Mooncake。",
+   "sfx": [
+    {
+     "at": 18,
+     "kind": "whoosh"
+    },
+    {
+     "at": 48,
+     "kind": "pop"
+    }
+   ],
+   "frames": 571
+  },
+  {
+   "id": "recap",
+   "title": "小结",
+   "narration": "总结一下：Prefill 算得多，看 TTFT；Decode 读得多，看 TPOT。把两者分离，就能让两边各自做到最优。",
+   "visual": "竖屏，两张对比卡上下排列。橙色卡片：“Prefill｜算得多｜TTFT”，配一根满格的算力条。蓝色卡片：“Decode｜读得多｜TPOT”，配一根满格的带宽条。两张卡片之间的分隔线亮起，旁边写“分离 → 各自最优”，最后两张卡片同时轻轻弹一下。",
+   "sfx": [
+    {
+     "at": 30,
+     "kind": "rise"
+    }
+   ],
+   "frames": 319
+  }
+ ],
+ "duration": 100.5
+}

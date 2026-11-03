@@ -58,11 +58,17 @@ def _save(job: dict) -> None:
 
 
 def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
-               captions: bool, music: str, voice: str) -> dict:
+               captions: bool, music: str, voice: str, brief: str = "",
+               scene_context: str = "", background_png: bytes = b"") -> dict:
     d = job_dir(job_id)
     d.mkdir(parents=True, exist_ok=False)
+    if scene_context:
+        (d / "scene_context.txt").write_text(scene_context)
+    if background_png:
+        (d / "background.png").write_bytes(background_png)
     job = {"id": job_id, "topic": topic, "language": language, "seconds": seconds,
            "ratio": ratio, "captions": captions, "music": music, "voice": voice,
+           "brief": brief, "has_background": bool(background_png),
            "status": "queued", "created": time.time(), "updated": time.time(),
            "steps": [{"key": k, "label": l, "status": "pending"} for k, l in STEPS],
            "error": None, "video": None, "scenes": []}
@@ -109,7 +115,8 @@ def _run(job_id: str) -> None:
 
     try:
         def do_storyboard():
-            scenes = llm.storyboard(job["topic"], job["language"], job["seconds"])
+            scenes = llm.storyboard(job["topic"], job["language"], job["seconds"],
+                                    brief=job.get("brief", ""))
             (d / "scenes.json").write_text(json.dumps(scenes, ensure_ascii=False, indent=1))
             job["scenes"] = scenes
         step("storyboard", do_storyboard)
@@ -125,7 +132,13 @@ def _run(job_id: str) -> None:
             def note(msg):
                 with log.open("a") as f:
                     f.write(msg + "\n")
-            (d / "index.html").write_text(llm.scene_html(job["scenes"], frames, w, h, log=note))
+            bg = ""
+            if (d / "background.png").exists():
+                import base64
+                bg = "data:image/png;base64," + base64.b64encode((d / "background.png").read_bytes()).decode()
+            ctx = (d / "scene_context.txt").read_text() if (d / "scene_context.txt").exists() else ""
+            (d / "index.html").write_text(llm.scene_html(job["scenes"], frames, w, h, log=note,
+                                                         context=ctx, bg_data_url=bg))
         step("scene_code", do_scene_code)
 
         if any(s.get("sfx") for s in job["scenes"]):

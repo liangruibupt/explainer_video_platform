@@ -1,4 +1,6 @@
 """HTTP API for the basic explainer-video studio (single user, local)."""
+import base64
+import binascii
 import re
 import time
 import uuid
@@ -25,6 +27,9 @@ class JobIn(BaseModel):
     captions: bool = True
     music: str = Field(default="synth", pattern=r"^(synth|none)$")
     voice: str = Field(default="Zhiyu", pattern=r"^[A-Za-z]{2,20}$")
+    brief: str = Field(default="", max_length=8000)
+    scene_context: str = Field(default="", max_length=8000)
+    background_png_b64: str = Field(default="", max_length=12_000_000)
 
 
 @app.get("/api/health")
@@ -40,8 +45,18 @@ def jobs():
 @app.post("/api/jobs", status_code=201)
 def create(body: JobIn):
     job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    bg = b""
+    if body.background_png_b64:
+        try:
+            bg = base64.b64decode(body.background_png_b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(422, "background_png_b64 is not valid base64")
+        if not bg.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise HTTPException(422, "background must be a PNG")
     return pipeline.create_job(job_id, body.topic.strip(), body.language, body.seconds,
-                               body.ratio, body.captions, body.music, body.voice)
+                               body.ratio, body.captions, body.music, body.voice,
+                               brief=body.brief.strip(), scene_context=body.scene_context.strip(),
+                               background_png=bg)
 
 
 def _id(job_id: str) -> str:

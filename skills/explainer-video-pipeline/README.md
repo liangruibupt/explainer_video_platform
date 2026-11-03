@@ -48,6 +48,7 @@
 | `scripts/capture_html.py` | Playwright 逐帧调用 `window.seek(frame)` 截图，直接写入 ffmpeg |
 | `scripts/manim_scenes.py` | 按旁白时长渲染每个 Manim 场景，补齐到精确帧数后拼接 |
 | `scripts/seedance_clips.py` | 每个场景提交一个 Seedance 任务，轮询并下载片段 |
+| `scripts/song_map.py` | 生成北宋（约 1100 年）纸本风格地图作为背景，并输出地点的像素坐标 |
 
 ## 示例
 

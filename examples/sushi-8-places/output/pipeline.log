@@ -1,0 +1,57 @@
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/narrate.py scenes.json . --tts polly --voice Zhiyu
+title_card: voice 11472ms -> 383 frames
+meizhou: voice 11208ms -> 375 frames
+bianjing: voice 12816ms -> 423 frames
+hangzhou: voice 14760ms -> 482 frames
+mizhou: voice 13080ms -> 431 frames
+xuzhou: voice 11712ms -> 390 frames
+huangzhou: voice 14256ms -> 467 frames
+huizhou: voice 12696ms -> 420 frames
+danzhou: voice 10704ms -> 360 frames
+recap_route: voice 9912ms -> 336 frames
+total 135.62s, 4067 frames
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/sfx.py scenes.json .
+sfx: 0.40s rise, 1.33s pop, 13.27s pop, 25.60s whoosh, 26.93s thud, 39.70s whoosh, 40.20s pop, 55.77s whoosh, 56.43s pop, 70.13s whoosh, 70.97s hiss, 83.13s whoosh, 83.80s pop, 98.70s whoosh, 99.70s pop, 112.70s whoosh, 113.53s pop, 124.87s whoosh, 126.20s rise
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/mix_bgm.py . --music synth
+mix 135.62s  sfx yes  overall -24.2 dB  first 2.5s -16.9 dB
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/captions.py scenes.json . --size 1920x1080
+518 chars timed across 58 lines -> captions.ass, words.json
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/capture_html.py index.html silent.mp4 --frames 4067 --size 1920x1080
+frame 0/4067
+frame 150/4067
+frame 300/4067
+frame 450/4067
+frame 600/4067
+frame 750/4067
+frame 900/4067
+frame 1050/4067
+frame 1200/4067
+frame 1350/4067
+frame 1500/4067
+frame 1650/4067
+frame 1800/4067
+frame 1950/4067
+frame 2100/4067
+frame 2250/4067
+frame 2400/4067
+frame 2550/4067
+frame 2700/4067
+frame 2850/4067
+frame 3000/4067
+frame 3150/4067
+frame 3300/4067
+frame 3450/4067
+frame 3600/4067
+frame 3750/4067
+frame 3900/4067
+frame 4050/4067
+wrote silent.mp4 4067 frames
+
+$ $EVP_TOOLS/ffmpeg -y -v error -i silent.mp4 -i narration_bgm.wav -vf ass=captions.ass -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -ac 2 -shortest -movflags +faststart final.mp4
+
+$ $EVP_TOOLS/ffmpeg -y -v error -ss 7.66 -i final.mp4 -frames:v 1 -vf scale=640:-2 poster.jpg

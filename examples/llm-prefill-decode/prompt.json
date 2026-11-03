@@ -1,0 +1,9 @@
+{
+  "topic": "LLM 推理的两个核心阶段：Prefill（预填充）和 Decode（解码），以及为什么要把它们分离",
+  "language": "中文（普通话）",
+  "seconds": 90,
+  "ratio": "9:16",
+  "captions": true,
+  "music": "synth",
+  "brief": "竖屏讲解，7 段左右，按这个顺序：\n1. 标题：LLM 推理的两个阶段 Prefill 与 Decode。\n2. 一次请求的全过程：输入提示词 → Prefill 一次性处理全部输入 token、生成 KV Cache、输出第一个 token → Decode 每步只生成 1 个 token，读取并追加 KV Cache，直到结束。\n3. Prefill 的特点：所有输入 token 并行做矩阵乘，计算密集（compute-bound），GPU 算力打满；决定首 token 延迟 TTFT。\n4. Decode 的特点：每步只算 1 个 token，却要把全部模型权重和不断变长的 KV Cache 从显存读一遍，访存密集（memory-bound），算力大量闲置；决定每个 token 的间隔 TPOT。\n5. 放在同一组 GPU 上的问题：长 Prefill 会插队阻塞正在 Decode 的请求，出词卡顿；两阶段对硬件和批大小的需求相反，很难同时调优。\n6. Prefill/Decode 分离（PD 分离）：Prefill 集群算完把 KV Cache 传给 Decode 集群；两边各自扩缩容、各用合适的并行和批大小；代价是要高速传输 KV Cache。可以提到 DistServe、Splitwise、Mooncake 这类系统采用了这个思路。\n7. 小结：Prefill 算得多、看 TTFT；Decode 读得多、看 TPOT；分离让两边各自最优。\n画面要求：用图示讲，不要大段文字；每段都有动画（token 方块流动、GPU 利用率条、显存带宽条、两条流水线、KV Cache 从一边传到另一边）。数字只用定性对比，不编具体性能数据。"
+}

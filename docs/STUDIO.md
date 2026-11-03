@@ -25,6 +25,25 @@
 
 某一段的绘制代码生成失败时，那一段换成标题卡，其余照常出片，并在日志里记一条。
 
+## 接口里的可选字段
+
+`POST /api/jobs` 除了界面上的选项，还接受三个可选字段（界面暂不提供，用脚本提交）：
+
+| 字段 | 作用 |
+|---|---|
+| `brief` | 写给分镜模型的要求和事实清单，例如段数、顺序、必须使用的事实。会覆盖默认的段数 |
+| `scene_context` | 每一段写绘制代码时都会看到的信息，例如地图上各地点的像素坐标 |
+| `background_png_b64` | 一张与画面同尺寸的 PNG（base64），画在每一帧的最底层，例如历史地图 |
+
+`scripts/run_example.py examples/<名字>` 读取该目录的 `prompt.json` 提交任务，等它完成后把分镜、绘制代码、字幕、成片和日志复制到 `examples/<名字>/output/`。目录里有 `places.json` 时，它会先用 `song_map.py` 生成北宋地图作为背景。
+
+## 示例
+
+| 示例 | 画幅 | 时长 |
+|---|---|---|
+| [LLM 推理的 Prefill 与 Decode](../examples/llm-prefill-decode/) | 竖屏 | 100.5 秒 |
+| [苏轼一生停留的 8 个地方](../examples/sushi-8-places/) | 横屏，北宋地图背景 | 135.6 秒 |
+
 ## 运行
 
 依赖和基础版 skill 相同（完整的静态 ffmpeg、Python venv、Polly 和 Bedrock 的 AWS 权限），另外需要 Node 22 和 venv 里的 `fastapi`、`uvicorn`。
