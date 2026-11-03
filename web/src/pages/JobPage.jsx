@@ -1,0 +1,89 @@
+import { useState } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { api, usePoll, isLive, fileUrl, STATUS } from '../api.js'
+
+const secs = (s) => (s.started && s.ended ? `${Math.round(s.ended - s.started)}s` : '')
+
+export default function JobPage() {
+  const { id } = useParams()
+  const nav = useNavigate()
+  const [job, error] = usePoll(() => api(`/jobs/${id}`), 2500, isLive, [id])
+  const [log, setLog] = useState(null)
+
+  if (error && !job) return <div className="page"><div className="error">{error}</div></div>
+  if (!job) return <div className="page"><p className="sub">加载中…</p></div>
+
+  const showLog = async () => {
+    const r = await fetch(fileUrl(id, 'pipeline.log'))
+    setLog(r.ok ? (await r.text()).slice(-6000) : '还没有日志')
+  }
+  const remove = async () => {
+    if (!confirm('删除这个作品和它的所有文件？此操作无法撤销。')) return
+    await api(`/jobs/${id}`, { method: 'DELETE' })
+    nav('/works')
+  }
+  const remake = async () => {
+    const j = await api('/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ topic: job.topic, seconds: job.seconds, ratio: job.ratio,
+                             captions: job.captions, music: job.music }),
+    })
+    nav(`/jobs/${j.id}`)
+  }
+
+  return (
+    <div className="page">
+      <Link to="/works" className="back">← 作品集</Link>
+      <div className="job-head">
+        <h1 className="h1-sm">{job.topic}</h1>
+        <span className={`pill ${job.status}`}>{STATUS[job.status]}</span>
+      </div>
+      <p className="sub">
+        {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {job.music === 'synth' ? '合成垫乐' : '无音乐'}
+        {job.duration ? ` · 成片 ${job.duration} 秒` : ''}
+      </p>
+
+      <div className="job-grid">
+        <div>
+          {job.status === 'done'
+            ? <video className={`player ${job.ratio === '9:16' ? 'tall' : ''}`}
+                     src={fileUrl(id, 'final.mp4')} poster={fileUrl(id, 'poster.jpg')} controls />
+            : <div className={`player waiting ${job.ratio === '9:16' ? 'tall' : ''}`}>
+                {job.status === 'failed' ? '制作失败' : '正在制作，完成后在这里播放'}
+              </div>}
+          {job.status === 'failed' && <pre className="error pre">{job.error}</pre>}
+          <div className="actions">
+            {job.status === 'done' && <a className="btn" href={fileUrl(id, 'final.mp4')} download>下载 MP4</a>}
+            {!isLive(job) && <button className="btn" onClick={remake}>用同一主题重做</button>}
+            <button className="btn" onClick={showLog}>查看日志</button>
+            {!isLive(job) && <button className="btn danger" onClick={remove}>删除</button>}
+          </div>
+          {log && <pre className="log">{log}</pre>}
+        </div>
+
+        <div className="panel">
+          <h3>制作步骤</h3>
+          <ol className="steps">
+            {job.steps.map((s) => (
+              <li key={s.key} className={s.status}>
+                <i />{s.label}<span>{s.status === 'skipped' ? '跳过' : secs(s)}</span>
+              </li>
+            ))}
+          </ol>
+          {job.scenes?.length > 0 && <>
+            <h3>分镜（{job.scenes.length} 段）</h3>
+            <ol className="scenes">
+              {job.scenes.map((s, i) => (
+                <li key={s.id}>
+                  <b>{i + 1}. {s.title || s.id}</b>
+                  {s.frames && <span className="frames">{(s.frames / 30).toFixed(1)}s</span>}
+                  <p>{s.narration}</p>
+                </li>
+              ))}
+            </ol>
+          </>}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -2,16 +2,27 @@
 
 用一句话、一段对话或一张工作流图，做出讲解视频、图像和音乐。
 
-当前包含 **基础版**：一个 agent skill，Opus 5.5 写分镜和绘制代码，代码逐帧画出画面，配上 Polly 旁白、逐字字幕、背景音乐和音效，最后用 FFmpeg 合成 MP4。
+当前包含 **基础版**：一个 agent skill，加一个本地网页工作室。写一句主题，Opus 5.5 写分镜和绘制代码，代码逐帧画出画面，配上 Polly 旁白、逐字字幕、背景音乐和音效，最后用 FFmpeg 合成 MP4。适合原理讲解、幻灯片式讲解，不做 AI 短剧。
 
 **进阶版** 还在设计阶段：自部署的生图、生视频、生音乐模型（云上 GPU，闲置缩容到 0），工作流编排，Agent 自动生成工作流，对话创作，以及根据差评自动改进 skill。设计见 [docs/DESIGN.md](docs/DESIGN.md)。
+
+## 快速开始
+
+```bash
+scripts/studio.sh start    # 打开 http://127.0.0.1:8765
+```
+
+依赖和用法见 [docs/STUDIO.md](docs/STUDIO.md)。
 
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
 | [skills/explainer-video-pipeline/](skills/explainer-video-pipeline/) | 基础版 skill：`SKILL.md`、7 个脚本、示例 |
+| [server/](server/)、[web/](web/) | 工作室：FastAPI 后端调用 skill 脚本，React 前端 |
+| [docs/STUDIO.md](docs/STUDIO.md) | 工作室的功能、制作步骤和运行方式 |
 | [docs/DESIGN.md](docs/DESIGN.md) | 进阶版设计：架构、模型选型、缩容到 0、工作流、对话创作、自我改进、阶段与验收标准 |
+| [infra/budget/](infra/budget/) | AWS 成本告警配置 |
 
 ## 基础版能做什么
 
@@ -27,10 +38,10 @@
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| 1 | 基础版 skill | 已完成 |
+| 1 | 基础版 skill + 工作室界面（工作台、作品详情、作品集、任务中心） | 已完成 |
 | 2 | 云端生成：图像、视频、音乐的 SageMaker 异步端点，缩容到 0 | 设计中 |
 | 3 | 工作流编排 + Agent 生成工作流 | 设计中 |
-| 4 | 界面：工作台、对话创作、工作流编辑器、作品集、设置 | 设计中 |
+| 4 | 进阶界面：对话创作、工作流编辑器、图像/视频/音乐生成页、设置 | 设计中 |
 | 5 | 差评驱动的 skill 自动改进（以 PR 形式提交，人工批准） | 设计中 |
 
 ## 来源

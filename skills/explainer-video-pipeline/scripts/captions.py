@@ -12,7 +12,8 @@ import argparse, json, os, re
 ap = argparse.ArgumentParser(); ap.add_argument('scenes'); ap.add_argument('out')
 ap.add_argument('--model', default='small'); ap.add_argument('--size', default='1920x1080')
 ap.add_argument('--font', default='Noto Sans CJK SC'); ap.add_argument('--fps', type=int, default=30)
-ap.add_argument('--lead', type=int, default=450); a = ap.parse_args()
+ap.add_argument('--lead', type=int, default=450)
+ap.add_argument('--max-chars', dest='max_chars', type=int, default=16); a = ap.parse_args()
 from faster_whisper import WhisperModel
 J = lambda *p: os.path.join(a.out, *p)
 W, H = map(int, a.size.split('x'))
@@ -37,17 +38,33 @@ for i, (s, n) in enumerate(zip(scenes, frames)):
         out.append({'scene': s['id'], 'text': c,
                     'start': round(start + lead + heard[j][1], 3),
                     'end': round(start + lead + heard[j][2], 3)})
+    # keep the script's punctuation on the preceding character (timing stays per char)
+    k = -1
+    for c in s['narration']:
+        if PUNCT.match(c):
+            if k >= 0 and not c.isspace():
+                out[k]['text'] += c
+        else:
+            k += 1
     words += out
-    if out:  # one caption line per scene; \k makes each character light up on its word time
-        line, t0 = '', out[0]['start']
-        for w, nxt in zip(out, out[1:] + [None]):
-            dur = ((nxt['start'] if nxt else w['end']) - w['start'])
-            line += '{\\k%d}%s' % (max(1, round(dur * 100)), w['text'])
-        events.append(f'Dialogue: 0,{ts(t0)},{ts(out[-1]["end"] + 0.4)},Cap,,0,0,0,,{line}')
+    # short lines: break at punctuation or every --max-chars; show each only while spoken
+    lines, cur = [], []
+    for w in out:
+        cur.append(w)
+        if len(cur) >= a.max_chars or w['text'][-1:] in '，。！？；：,.!?;:':
+            lines.append(cur); cur = []
+    if cur:
+        lines.append(cur)
+    for ln in lines:
+        txt = ''
+        for w, nxt in zip(ln, ln[1:] + [None]):
+            dur = (nxt['start'] if nxt else w['end']) - w['start']
+            txt += '{\\k%d}%s' % (max(1, round(dur * 100)), w['text'].rstrip('，。、；：,.;:'))
+        events.append(f'Dialogue: 0,{ts(ln[0]["start"])},{ts(ln[-1]["end"] + 0.25)},Cap,,0,0,0,,{txt}')
     start += n / a.fps
 
 json.dump(words, open(J('words.json'), 'w'), ensure_ascii=False)
-fs = round(H * 0.05)
+fs = round(H * 0.045)
 open(J('captions.ass'), 'w').write(f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
