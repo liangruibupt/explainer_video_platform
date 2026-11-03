@@ -39,7 +39,7 @@ export default function JobPage() {
         <span className={`pill ${job.status}`}>{STATUS[job.status]}</span>
       </div>
       <p className="sub">
-        {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {job.music === 'synth' ? '合成垫乐' : '无音乐'}
+        {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {({ synth: '合成垫乐', none: '无音乐', guqin: '古琴' })[job.music] || job.music}
         {job.duration ? ` · 成片 ${job.duration} 秒` : ''}
       </p>
 

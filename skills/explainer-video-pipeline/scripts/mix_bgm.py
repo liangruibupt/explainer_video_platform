@@ -9,7 +9,8 @@ tremolo and sidechaincompress. PATH loops/trims a music file you supply.
 import argparse, math, os, shutil, struct, subprocess, wave
 
 ap = argparse.ArgumentParser(); ap.add_argument('out')
-ap.add_argument('--music', default='synth'); a = ap.parse_args()
+ap.add_argument('--music', default='synth')
+ap.add_argument('--music-volume', type=float, default=0.72); a = ap.parse_args()
 FF = os.environ.get('FFMPEG') or shutil.which('ffmpeg')
 FP = os.environ.get('FFPROBE') or shutil.which('ffprobe')
 J = lambda n: os.path.join(a.out, n)
@@ -32,10 +33,20 @@ if a.music == 'synth':
 elif a.music == 'none':
     run('-f', 'lavfi', '-i', f'anullsrc=r=24000:cl=mono:d={T}', bgm)
 else:
-    run('-stream_loop', '-1', '-i', a.music, '-t', str(T), '-af',
-        f'afade=t=in:d=0.5,afade=t=out:st={max(T - 2, 0)}:d=2', '-ar', '24000', '-ac', '1', bgm)
+    # Loop the track with a 4 s crossfade at each seam, level it, then fade in/out.
+    L = float(subprocess.check_output([FP, '-v', 'error', '-show_entries', 'format=duration',
+                                       '-of', 'csv=p=0', a.music]).decode())
+    n = max(1, math.ceil((T + 4) / max(L - 4, 1)))
+    inp = sum([['-i', a.music] for _ in range(n)], [])
+    fc = ''.join(f'[{i}:a]aformat=sample_rates=24000:channel_layouts=mono[m{i}];' for i in range(n))
+    cur = 'm0'
+    for i in range(1, n):
+        fc += f'[{cur}][m{i}]acrossfade=d=4[x{i}];'; cur = f'x{i}'
+    fc += (f'[{cur}]atrim=0:{T},loudnorm=I=-24:TP=-3,'
+           f'afade=t=in:d=1.5,afade=t=out:st={max(T - 3, 0)}:d=3[b]')
+    run(*inp, '-filter_complex', fc, '-map', '[b]', '-ar', '24000', '-ac', '1', bgm)
 has_fx = os.path.exists(fx)
-fc = ('[1:a]volume=0.72[bg];[0:a]asplit=2[v][sc];'
+fc = (f'[1:a]volume={a.music_volume}[bg];[0:a]asplit=2[v][sc];'
       '[bg][sc]sidechaincompress=threshold=0.04:ratio=5:attack=30:release=450[d];')
 fc += ('[v][d][2:a]amix=inputs=3:normalize=0[o]' if has_fx else '[v][d]amix=inputs=2:normalize=0[o]')
 run('-i', voice, '-i', bgm, *(['-i', fx] if has_fx else []), '-filter_complex', fc,

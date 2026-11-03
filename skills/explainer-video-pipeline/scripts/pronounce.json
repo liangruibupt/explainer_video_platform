@@ -1,0 +1,36 @@
+{
+  "_doc": "pinyin: word -> one entry per character (null = leave as is). en: English word -> spelling Polly reads best. Words in ALL CAPS (2-5 letters) are read letter by letter unless listed in en.",
+  "pinyin": {
+    "调优": ["tiao2", null],
+    "调参": ["tiao2", null],
+    "调整": ["tiao2", null],
+    "协调": [null, "tiao2"],
+    "调度": ["diao4", null],
+    "调用": ["diao4", null],
+    "并行": [null, "xing2"],
+    "行业": ["hang2", null],
+    "重新": ["chong2", null],
+    "重复": ["chong2", null],
+    "长度": ["chang2", null],
+    "增长": [null, "zhang3"],
+    "数据": ["shu4", null],
+    "通判": [null, "pan4"],
+    "知州": ["zhi1", null],
+    "疏浚": [null, "jun4"],
+    "儋州": ["dan1", null],
+    "密州出猎": [null, null, "chu1", "lie4"],
+    "乐府": ["yue4", null],
+    "还朝": ["huan2", "chao2"],
+    "朝廷": ["chao2", null],
+    "曾经": ["ceng2", null]
+  },
+  "en": {
+    "Prefill": "pre fill",
+    "prefill": "pre fill",
+    "DistServe": "Dist Serve",
+    "Splitwise": "Split wise",
+    "Mooncake": "Moon cake",
+    "Cache": "cash",
+    "cache": "cash"
+  }
+}

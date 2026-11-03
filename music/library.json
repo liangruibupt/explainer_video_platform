@@ -1,0 +1,13 @@
+{
+  "_doc": "Background music the studio can use. Files are downloaded into ~/.cache/explainer-video/music/ by scripts/fetch_music.sh, not committed. Only public-domain / CC0 recordings belong here.",
+  "guqin": {
+    "label": "古琴（舒缓）",
+    "file": "qiufengci.flac",
+    "url": "https://archive.org/download/QiuFengCi/QiuFengCi.flac",
+    "title": "秋风词 (Qiu Feng Ci), guqin solo",
+    "source": "https://archive.org/details/QiuFengCi",
+    "license": "Public domain (dedicated by the uploader, Internet Archive 2006)",
+    "seconds": 107.9,
+    "volume": 0.9
+  }
+}

@@ -1,0 +1,49 @@
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/narrate.py scenes.json . --tts polly --voice Zhiyu
+title_card: voice 11040ms -> 370 frames
+request_lifecycle: voice 13776ms -> 452 frames
+prefill_compute_bound: voice 12888ms -> 426 frames
+decode_memory_bound: voice 15360ms -> 500 frames
+colocation_problem: voice 16728ms -> 541 frames
+pd_disaggregation: voice 22008ms -> 699 frames
+recap: voice 9528ms -> 325 frames
+total 110.43s, 3313 frames
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/sfx.py scenes.json .
+sfx: 0.40s whoosh, 1.33s pop, 12.83s whoosh, 13.83s pop, 28.07s rise, 42.10s hiss, 43.10s hiss, 58.93s thud, 77.13s whoosh, 78.13s pop, 100.10s pop, 100.93s rise
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/mix_bgm.py . --music synth
+mix 110.43s  sfx yes  overall -24.1 dB  first 2.5s -23.9 dB
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/captions.py scenes.json . --size 1080x1920
+555 chars timed across 56 lines -> captions.ass, words.json
+
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/capture_html.py index.html silent.mp4 --frames 3313 --size 1080x1920
+frame 0/3313
+frame 150/3313
+frame 300/3313
+frame 450/3313
+frame 600/3313
+frame 750/3313
+frame 900/3313
+frame 1050/3313
+frame 1200/3313
+frame 1350/3313
+frame 1500/3313
+frame 1650/3313
+frame 1800/3313
+frame 1950/3313
+frame 2100/3313
+frame 2250/3313
+frame 2400/3313
+frame 2550/3313
+frame 2700/3313
+frame 2850/3313
+frame 3000/3313
+frame 3150/3313
+frame 3300/3313
+wrote silent.mp4 3313 frames
+
+$ $EVP_TOOLS/ffmpeg -y -v error -i silent.mp4 -i narration_bgm.wav -vf ass=captions.ass -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -ac 2 -shortest -movflags +faststart final.mp4
+
+$ $EVP_TOOLS/ffmpeg -y -v error -ss 7.40 -i final.mp4 -frames:v 1 -vf scale=640:-2 poster.jpg

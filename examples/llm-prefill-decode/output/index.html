@@ -1,0 +1,833 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#141210;overflow:hidden}
+canvas{display:block}</style></head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const DUR = [370, 452, 426, 500, 541, 699, 325]; const FPS = 30; const W = 1080, H = 1920;
+const T = {bg:'#141210', ink:'#f4ede4', dim:'#9a8f85', accent:'#e0603f', accent2:'#7fb0c8',
+  font:'"Noto Sans CJK SC","PingFang SC",sans-serif'};
+const ctx = document.getElementById('c').getContext('2d');
+const BG = "";
+const bgReady = BG ? new Promise((ok) => { const im = new Image(); im.onload = () => { T.bg_img = im; ok(); };
+  im.onerror = () => ok(); im.src = BG; }) : Promise.resolve();
+const SCENES = [
+{ id: "title_card", title: "LLM 推理的两个阶段：Prefill 与 Decode", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const cl = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const ease = t => { t = cl(t); return 1 - Math.pow(1 - t, 3); };
+  const seg = (a, b) => ease((p - a) / (b - a));
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+  const font = (s, w = '') => { ctx.font = `${w} ${Math.round(s)}px ${T.font}`; };
+  const text = (s, x, y, size, col, a = 1, w = 'bold', al = 'center') => {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; font(size, w); ctx.textAlign = al; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); ctx.restore();
+  };
+  const safe = H * 0.84;
+
+  // background falling tokens
+  for (let i = 0; i < 28; i++) {
+    const s = 34 + (i * 37) % 40;
+    const x = ((i * 397) % (W - 80)) + 40;
+    const sp = 1.2 + (i % 5) * 0.5;
+    const span = safe + 200;
+    const y = ((i * 211) % span + f * sp) % span - 100;
+    ctx.save();
+    ctx.globalAlpha = 0.10 + (i % 3) * 0.04;
+    ctx.strokeStyle = i % 4 === 0 ? T.accent : i % 4 === 1 ? T.accent2 : T.dim;
+    ctx.lineWidth = 3;
+    ctx.translate(x, y); ctx.rotate(Math.sin(f * 0.01 + i) * 0.3);
+    rr(-s / 2, -s / 2, s, s, 8); ctx.stroke();
+    ctx.restore();
+  }
+
+  // title char by char
+  const title = 'LLM 推理的两个阶段';
+  const ts = H * 0.05;
+  font(ts, 'bold');
+  const chars = [...title];
+  const widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((a, b) => a + b, 0);
+  let x = W / 2 - total / 2;
+  const ty = H * 0.2;
+  chars.forEach((c, i) => {
+    const t = ease((p * n - 8 - i * 7) / 18);
+    text(c, x + widths[i] / 2, ty + (1 - t) * 40, ts, T.ink, t, 'bold');
+    x += widths[i];
+  });
+  // underline
+  const ul = seg(0.25, 0.4);
+  ctx.fillStyle = T.accent; rr(W / 2 - total / 2, ty + ts * 0.75, total * ul, 8, 4); ctx.fill();
+  text('Prefill 与 Decode', W / 2, ty + ts * 1.6, H * 0.034, T.dim, seg(0.28, 0.4), '');
+
+  // pills slide in
+  const pw = 440, ph = 140, py = H * 0.38;
+  const pill = (cx, label, sub, col, t) => {
+    ctx.save(); ctx.globalAlpha = cl(t * 1.5);
+    ctx.fillStyle = col; rr(cx - pw / 2, py - ph / 2, pw, ph, ph / 2); ctx.fill();
+    ctx.restore();
+    text(label, cx, py - 22, H * 0.034, T.bg, cl(t * 1.5));
+    text(sub, cx, py + 30, H * 0.026, T.bg, cl(t * 1.5), '');
+  };
+  const tl = seg(0.3, 0.45), tr = seg(0.35, 0.5);
+  const bob = Math.sin(f * 0.06) * 6;
+  pill(-pw + (W * 0.27 + pw) * tl, 'Prefill', '预填充', T.accent, tl);
+  pill(W + pw - (W * 0.27 + pw) * tr, 'Decode', '解码', T.accent2, tr);
+
+  // mini illustration
+  const da = seg(0.5, 0.58);
+  const bs = 72, gap = 14;
+  const rowX = W / 2 - (6 * (bs + gap) - gap) / 2;
+  // prefill row: all at once
+  const y1 = H * 0.53;
+  text('Prefill：整段输入一次并行处理', W / 2, y1 - 70, H * 0.03, T.ink, da, '');
+  const fill1 = seg(0.58, 0.64);
+  for (let i = 0; i < 6; i++) {
+    const bx = rowX + i * (bs + gap);
+    ctx.save(); ctx.globalAlpha = da;
+    ctx.strokeStyle = T.accent; ctx.lineWidth = 4; rr(bx, y1, bs, bs, 12); ctx.stroke();
+    ctx.globalAlpha = da * fill1 * 0.85; ctx.fillStyle = T.accent; rr(bx, y1, bs, bs, 12); ctx.fill();
+    ctx.restore();
+  }
+  // scan beam over prefill
+  if (fill1 > 0 && fill1 < 1) {
+    ctx.save(); ctx.globalAlpha = 0.5 * (1 - fill1); ctx.fillStyle = T.accent;
+    rr(rowX - 10, y1 - 10, 6 * (bs + gap) + 6, bs + 20, 18); ctx.fill(); ctx.restore();
+  }
+  // decode row: one by one
+  const y2 = H * 0.68;
+  const db = seg(0.62, 0.68);
+  text('Decode：一次只生成一个 token', W / 2, y2 - 70, H * 0.03, T.ink, db, '');
+  const k = cl((p - 0.66) / 0.2) * 6;
+  for (let i = 0; i < 6; i++) {
+    const bx = rowX + i * (bs + gap);
+    const t = cl(k - i);
+    ctx.save(); ctx.globalAlpha = db * 0.35;
+    ctx.strokeStyle = T.dim; ctx.lineWidth = 3; ctx.setLineDash([8, 8]); rr(bx, y2, bs, bs, 12); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = db * t;
+    ctx.fillStyle = T.accent2; rr(bx, y2 + (1 - t) * -30, bs, bs, 12); ctx.fill();
+    ctx.restore();
+  }
+  // arrow between rows
+  const ax = W / 2, aT = seg(0.6, 0.66);
+  ctx.save(); ctx.globalAlpha = aT; ctx.strokeStyle = T.dim; ctx.fillStyle = T.dim; ctx.lineWidth = 5;
+  const ay0 = y1 + bs + 18, ay1 = ay0 + (y2 - 110 - ay0) * aT;
+  ctx.beginPath(); ctx.moveTo(ax, ay0); ctx.lineTo(ax, ay1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ax - 14, ay1 - 14); ctx.lineTo(ax, ay1 + 4); ctx.lineTo(ax + 14, ay1 - 14); ctx.fill();
+  ctx.restore();
+
+  // closing question
+  const q = seg(0.85, 0.95);
+  text('为什么要把它们分开？', W / 2, H * 0.78 + (1 - q) * 30 + bob * q * 0.5, H * 0.04, T.accent, q);
+}
+ return draw; })() },
+{ id: "request_lifecycle", title: "一次请求的全过程", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const ph = (a, b) => cl((p - a) / (b - a));
+  const ez = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const back = t => { const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const GREEN = '#3bb273';
+  const fnt = (s, b) => `${b ? 'bold ' : ''}${Math.round(s)}px ${T.font}`;
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function box(x, y, w, h, col, label, a, glow) {
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a;
+    if (glow) { ctx.shadowColor = col; ctx.shadowBlur = glow; }
+    rr(x, y, w, h, 24); ctx.fillStyle = col + '22'; ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = col; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.fillStyle = col; ctx.font = fnt(H * 0.045, 1); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + w / 2, y + h / 2); ctx.restore();
+  }
+  function tok(cx, cy, s, col, label, a) {
+    if (a <= 0 || s <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; rr(cx - s / 2, cy - s / 2, s, s, 14);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = fnt(s * 0.38, 1); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx, cy + 2); ctx.restore();
+  }
+  function arrow(x1, y1, x2, y2, t, col) {
+    if (t <= 0) return;
+    const x = x1 + (x2 - x1) * t, y = y1 + (y2 - y1) * t, an = Math.atan2(y2 - y1, x2 - x1);
+    ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + Math.cos(an) * 6, y + Math.sin(an) * 6);
+    ctx.lineTo(x - Math.cos(an - 0.5) * 30, y - Math.sin(an - 0.5) * 30);
+    ctx.lineTo(x - Math.cos(an + 0.5) * 30, y - Math.sin(an + 0.5) * 30); ctx.fill(); ctx.restore();
+  }
+  // title
+  const ta = ez(ph(0, 0.06));
+  ctx.save(); ctx.globalAlpha = ta; ctx.fillStyle = T.ink; ctx.font = fnt(H * 0.06, 1);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('一次请求的全过程', W / 2, 150 - (1 - ta) * 30);
+  ctx.fillStyle = T.dim; ctx.font = fnt(H * 0.03);
+  ctx.fillText('提示词 → Prefill → Decode', W / 2, 235); ctx.restore();
+  // layout
+  const S = 90, G = 14, X0 = 80, PB = { x: 80, y: 560, w: 640, h: 200 }, DB = { x: 80, y: 1000, w: 640, h: 180 };
+  const slotX = i => X0 + S / 2 + i * (S + G);
+  // prompt tokens
+  ctx.fillStyle = T.dim; ctx.font = fnt(H * 0.03); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.globalAlpha = ph(0.05, 0.1) * (1 - ph(0.2, 0.26)); ctx.fillText('提示词 tokens', X0, 320); ctx.globalAlpha = 1;
+  const fall = ez(ph(0.2, 0.31));
+  for (let i = 0; i < 6; i++) {
+    const ap = back(ph(0.06 + i * 0.018, 0.12 + i * 0.018));
+    const cy = 420 + fall * (PB.y + PB.h / 2 - 420);
+    tok(slotX(i) + 40, cy, S * ap * (1 - 0.5 * fall), '#8a8f98', 't' + (i + 1), fall >= 1 ? 0 : 1);
+  }
+  // prefill box
+  const pulse = ph(0.3, 0.46) > 0 && p < 0.46 ? 30 + 20 * Math.sin(f * 0.4) : 0;
+  box(PB.x, PB.y, PB.w, PB.h, T.accent, 'Prefill', ez(ph(0.12, 0.2)), pulse);
+  if (p > 0.31) { ctx.fillStyle = T.dim; ctx.font = fnt(H * 0.03); ctx.textAlign = 'center';
+    ctx.globalAlpha = ph(0.31, 0.36); ctx.fillText('一次性处理全部输入', PB.x + PB.w / 2, PB.y + PB.h - 35); ctx.globalAlpha = 1; }
+  // KV cache container
+  const KX = 820, KY = 560, KW = 150, CH = 50, KA = ez(ph(0.32, 0.37));
+  if (KA > 0) {
+    ctx.save(); ctx.globalAlpha = KA;
+    ctx.fillStyle = GREEN; ctx.font = fnt(H * 0.03, 1); ctx.textAlign = 'center';
+    ctx.fillText('KV Cache', KX + KW / 2, KY - 40);
+    rr(KX, KY, KW, 14 * CH * KA, 18); ctx.lineWidth = 5; ctx.strokeStyle = GREEN; ctx.stroke();
+    ctx.restore();
+    arrow(PB.x + PB.w + 8, PB.y + PB.h / 2, KX - 10, PB.y + PB.h / 2, ez(ph(0.33, 0.38)), GREEN);
+  }
+  let cells = 0;
+  for (let i = 0; i < 6; i++) cells += ez(ph(0.36 + i * 0.012, 0.39 + i * 0.012));
+  const st = k => [0.53 + k * 0.075, 0.53 + (k + 1) * 0.075];
+  for (let k = 0; k < 5; k++) { const [a, b] = st(k); cells += ez(cl((p - (a + b) / 2) / (b - a) * 3)); }
+  for (let i = 0; i < 11; i++) {
+    const fr = cl(cells - i); if (fr <= 0) break;
+    ctx.save(); ctx.globalAlpha = 0.85; rr(KX + 12, KY + 10 + i * CH, (KW - 24) * fr, CH - 10, 8);
+    ctx.fillStyle = GREEN; ctx.fill(); ctx.restore();
+  }
+  // first token
+  ctx.fillStyle = T.dim; ctx.font = fnt(H * 0.03); ctx.textAlign = 'left';
+  ctx.globalAlpha = ph(0.48, 0.53); ctx.fillText('输出 tokens', X0, 1290); ctx.globalAlpha = 1;
+  const ft = back(ph(0.4, 0.46)), mv = ez(ph(0.48, 0.54));
+  tok(PB.x + PB.w / 2 + (slotX(0) - PB.x - PB.w / 2) * mv, 880 + (1385 - 880) * mv, S * ft, T.accent, 'o1', 1);
+  if (p > 0.4 && p < 0.48) { ctx.fillStyle = T.accent; ctx.font = fnt(H * 0.03, 1); ctx.textAlign = 'left';
+    ctx.globalAlpha = ph(0.41, 0.44); ctx.fillText('第一个 token', PB.x + PB.w / 2 + 70, 880); ctx.globalAlpha = 1; }
+  arrow(PB.x + PB.w / 2 - 120, PB.y + PB.h + 10, PB.x + PB.w / 2 - 120, DB.y - 12, ez(ph(0.44, 0.5)), T.dim);
+  // decode box + loop
+  const ended = p >= 0.91;
+  box(DB.x, DB.y, DB.w, DB.h, T.accent2, 'Decode', ez(ph(0.46, 0.52)), 0);
+  if (p > 0.52) {
+    const cx = DB.x + DB.w - 70, cy = DB.y + DB.h / 2, r = 42, rot = ended ? 0 : f * 0.18;
+    ctx.save(); ctx.globalAlpha = ended ? 0.35 : 1; ctx.strokeStyle = T.accent2; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.arc(cx, cy, r, rot, rot + Math.PI * 1.5); ctx.stroke();
+    const ea = rot + Math.PI * 1.5; ctx.fillStyle = T.accent2; ctx.beginPath();
+    ctx.arc(cx + Math.cos(ea) * r, cy + Math.sin(ea) * r, 10, 0, 7); ctx.fill(); ctx.restore();
+    ctx.fillStyle = T.dim; ctx.font = fnt(H * 0.03); ctx.textAlign = 'left';
+    ctx.fillText('每步只生成 1 个', DB.x + 30, DB.y + DB.h - 30);
+  }
+  for (let k = 0; k < 5; k++) {
+    const [a, b] = st(k), t = cl((p - a) / (b - a));
+    if (t <= 0) continue;
+    const pop = back(cl(t * 2.5)), m = ez(cl((t - 0.35) / 0.5));
+    const sx = DB.x + DB.w / 2, sy = DB.y + DB.h / 2;
+    tok(sx + (slotX(k + 1) - sx) * m, sy + (1385 - sy) * m, S * pop, T.accent2, 'o' + (k + 2), 1);
+  }
+  // end badge
+  if (ended) {
+    const e = back(ph(0.91, 0.96)), pu = 1 + 0.05 * Math.sin(f * 0.25);
+    const bx = slotX(6) + 70, by = 1385;
+    ctx.save(); ctx.translate(bx, by); ctx.scale(e * pu, e * pu);
+    rr(-75, -45, 150, 90, 45); ctx.fillStyle = T.ink; ctx.fill();
+    ctx.fillStyle = T.bg; ctx.font = fnt(H * 0.032, 1); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('结束', 0, 2); ctx.restore();
+  }
+}
+ return draw; })() },
+{ id: "prefill_compute_bound", title: "Prefill：计算密集", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const cl = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const ease = x => { x = cl(x); return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
+  const seg = (a, b) => ease((p - a) / (b - a));
+  const txt = (s, x, y, size, col, align = 'center', bold = false) => {
+    ctx.font = (bold ? 'bold ' : '') + size + 'px ' + T.font;
+    ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y);
+  };
+  const rr = (x, y, w, h, r, fill, stroke) => {
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
+  };
+  const RED = '#e5484d';
+
+  // Title
+  const tA = seg(0, 0.06);
+  ctx.globalAlpha = tA;
+  txt(T.title || 'Prefill：计算密集', W / 2, 150 - (1 - tA) * 30, 72, T.ink, 'center', true);
+  txt('所有输入 token 一起做矩阵乘法', W / 2, 240, 40, T.dim);
+  ctx.globalAlpha = 1;
+
+  // Matrix grid + tokens
+  const R = 8, C = 8, cs = 70, gx = 360, gy = 330;
+  const tokIn = seg(0.06, 0.2);
+  const q = cl((p - 0.2) / 0.16);
+  // grid frame
+  ctx.globalAlpha = seg(0.03, 0.1);
+  txt('权重矩阵', gx + C * cs / 2, gy - 40, 36, T.dim);
+  txt('Token', 190, gy - 40, 36, T.dim);
+  ctx.globalAlpha = 1;
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      const x = gx + c * cs, y = gy + r * cs;
+      const th = (c + (r % 3) * 0.4) / (C + 1);
+      const lit = cl((q - th) * 6);
+      rr(x + 4, y + 4, cs - 8, cs - 8, 8, null, T.dim);
+      if (lit > 0) {
+        const pulse = 0.75 + 0.25 * Math.sin(f * 0.18 + r * 0.7 + c * 0.5);
+        ctx.globalAlpha = lit * pulse;
+        rr(x + 4, y + 4, cs - 8, cs - 8, 8, T.accent);
+        ctx.globalAlpha = 1;
+      }
+    }
+    // token squares all arriving together
+    const tx = -120 + (160 - -120) * tokIn;
+    const ty = gy + r * cs;
+    rr(tx, ty + 6, 58, 58, 10, T.accent2 || T.accent);
+    txt('t' + (r + 1), tx + 29, ty + 35, 30, T.bg, 'center', true);
+    // streaming arrows into grid
+    if (tokIn >= 1) {
+      ctx.strokeStyle = T.accent; ctx.lineWidth = 4;
+      ctx.setLineDash([14, 12]); ctx.lineDashOffset = -f * 2;
+      ctx.beginPath(); ctx.moveTo(228, ty + 35); ctx.lineTo(gx - 10, ty + 35); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = T.accent; ctx.beginPath();
+      ctx.moveTo(gx - 4, ty + 35); ctx.lineTo(gx - 20, ty + 26); ctx.lineTo(gx - 20, ty + 44); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = seg(0.3, 0.38);
+  txt('并行度高 · 成片同时计算', W / 2, gy + R * cs + 50, 40, T.accent, 'center', true);
+  ctx.globalAlpha = 1;
+
+  // Gauges
+  const gauge = (label, y, target, col, a, b) => {
+    const k = seg(a, b);
+    ctx.globalAlpha = seg(a - 0.04, a);
+    const jit = k >= 1 ? 0.015 * Math.sin(f * 0.3 + y) : 0;
+    const v = cl(target * k + jit);
+    txt(label, 120, y, 42, T.ink, 'left', true);
+    txt(Math.round(v * 100) + '%', 960, y, 42, col, 'right', true);
+    rr(120, y + 35, 840, 54, 27, null, T.dim);
+    if (v > 0.01) rr(124, y + 39, 832 * v, 46, 23, col);
+    ctx.globalAlpha = 1;
+  };
+  const hot = seg(0.5, 0.56);
+  const compCol = hot > 0.5 ? RED : T.accent;
+  gauge('GPU 算力利用率', 1010, 0.96, compCol, 0.4, 0.52);
+  gauge('显存带宽', 1150, 0.45, T.dim, 0.46, 0.58);
+  if (hot > 0) {
+    ctx.globalAlpha = hot * (0.6 + 0.4 * Math.sin(f * 0.25));
+    txt('计算密集型 🔥', 960, 960, 36, RED, 'right', true);
+    ctx.globalAlpha = 1;
+  }
+
+  // Timeline
+  const ta = seg(0.62, 0.68);
+  ctx.globalAlpha = ta;
+  const ly = 1440, x0 = 140, x1 = 700;
+  ctx.strokeStyle = T.dim; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(x0, ly); ctx.lineTo(950, ly); ctx.stroke();
+  ctx.fillStyle = T.dim; ctx.beginPath();
+  ctx.moveTo(965, ly); ctx.lineTo(945, ly - 12); ctx.lineTo(945, ly + 12); ctx.fill();
+  ctx.fillStyle = T.ink; ctx.beginPath(); ctx.arc(x0, ly, 14, 0, 7); ctx.fill();
+  txt('请求到达', x0, ly + 55, 38, T.ink);
+  const run = seg(0.68, 0.82);
+  const dx = x0 + (x1 - x0) * run;
+  ctx.fillStyle = T.accent; ctx.beginPath(); ctx.arc(dx, ly, 14 + 3 * Math.sin(f * 0.3), 0, 7); ctx.fill();
+  ctx.globalAlpha = ta * seg(0.8, 0.84);
+  rr(x1 - 30, ly - 30, 60, 60, 10, T.accent);
+  txt('第一个 token', x1, ly + 55, 38, T.accent, 'center', true);
+  // bracket
+  const br = seg(0.84, 0.92);
+  ctx.globalAlpha = br;
+  const by = ly - 70;
+  ctx.strokeStyle = T.accent; ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(x0, by + 25); ctx.lineTo(x0, by);
+  ctx.lineTo(x0 + (x1 - x0) * br, by);
+  if (br >= 1) ctx.lineTo(x1, by + 25);
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo((x0 + x1) / 2, by); ctx.lineTo((x0 + x1) / 2, by - 18); ctx.stroke();
+  const bob = 4 * Math.sin(f * 0.15);
+  txt('TTFT 首 token 延迟', (x0 + x1) / 2, by - 55 + bob, 46, T.accent, 'center', true);
+  ctx.globalAlpha = 1;
+}
+ return draw; })() },
+{ id: "decode_memory_bound", title: "Decode：访存密集", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n, cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const ez = v => { v = cl(v, 0, 1); return v * v * (3 - 2 * v); };
+  const RED = '#e5484d';
+  const F = (s, w) => (w || '') + ' ' + s + 'px ' + T.font;
+  function rr(x, y, w, h, r, fill, stroke, lw) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 3; ctx.stroke(); }
+  }
+  function tx(s, x, y, size, col, al, w) {
+    ctx.font = F(size, w); ctx.fillStyle = col; ctx.textAlign = al || 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+  }
+  const P = 55, s = f / P, k = Math.floor(s), t = s - k;
+  // title
+  ctx.globalAlpha = ez(p / 0.05);
+  tx('Decode：访存密集', W / 2, 120, 108, T.ink, 'center', 'bold');
+  ctx.globalAlpha = 1;
+  // memory block
+  const a1 = ez((p - 0.02) / 0.08);
+  ctx.globalAlpha = a1;
+  rr(80, 220, 920, 350, 28, null, T.dim, 4);
+  tx('显存 HBM', 110, 262, 58, T.ink, 'left', 'bold');
+  rr(110, 320, 500, 210, 18, T.accent + '33', T.accent, 3);
+  tx('模型权重', 360, 425, 60, T.ink, 'center', 'bold');
+  const kvW = 60 + Math.min(k, 9) * 28 + ez(t / 0.3) * 28 * (k < 9 ? 1 : 0);
+  rr(630, 320, kvW, 210, 18, T.accent2 + '44', T.accent2, 3);
+  ctx.strokeStyle = T.accent2; ctx.lineWidth = 2;
+  for (let x = 658; x < 630 + kvW - 4; x += 28) { ctx.beginPath(); ctx.moveTo(x, 330); ctx.lineTo(x, 520); ctx.stroke(); }
+  tx('KV Cache', 640, 560 - 0, 46, T.accent2, 'left', 'bold');
+  tx('→ 越来越长', 640 + 0, 300, 40, T.dim, 'left');
+  ctx.globalAlpha = 1;
+  // flow arrow
+  const a2 = ez((p - 0.1) / 0.08);
+  ctx.globalAlpha = a2;
+  const cx = 540, y0 = 585, y1 = 715, bw = 150;
+  ctx.beginPath(); ctx.moveTo(cx - bw, y0); ctx.lineTo(cx + bw, y0); ctx.lineTo(cx + bw, y1 - 50);
+  ctx.lineTo(cx + bw + 50, y1 - 50); ctx.lineTo(cx, y1); ctx.lineTo(cx - bw - 50, y1 - 50); ctx.lineTo(cx - bw, y1 - 50); ctx.closePath();
+  const flowOn = t < 0.75;
+  ctx.fillStyle = flowOn ? RED + 'cc' : T.dim + '66'; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 14;
+  for (let i = -2; i < 6; i++) { const yy = y0 + ((i * 40 + f * 4) % 240) - 40; ctx.beginPath(); ctx.moveTo(cx - 260, yy); ctx.lineTo(cx + 260, yy + 30); ctx.stroke(); }
+  ctx.restore();
+  tx('每步读完全部', 915, 625, 40, T.ink, 'right');
+  tx('权重 + KV', 915, 675, 40, T.ink, 'right');
+  ctx.globalAlpha = 1;
+  // GPU block
+  const a3 = ez((p - 0.16) / 0.08);
+  ctx.globalAlpha = a3;
+  rr(130, 730, 820, 250, 24, null, T.ink, 4);
+  tx('GPU 计算单元', 160, 772, 50, T.ink, 'left', 'bold');
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 14; c++) {
+    const x = 165 + c * 54, y = 810 + r * 54;
+    if (r === 1 && c === 6) continue;
+    rr(x, y, 42, 42, 6, null, T.dim + '88', 2);
+  }
+  const pr = t > 0.6 ? 1 + 0.12 * Math.sin((t - 0.6) * 25) : 1, sz = 42 * pr;
+  rr(165 + 6 * 54 + 21 - sz / 2, 864 + 21 - sz / 2, sz, sz, 6, T.accent, null);
+  tx('只有 1 个 token', 935, 772, 40, T.accent, 'right', 'bold');
+  ctx.globalAlpha = 1;
+  // gauges
+  function gauge(y, label, val, col, ghost, a) {
+    ctx.globalAlpha = a; tx(label, 90, y, 58, T.ink, 'left', 'bold');
+    const bx = 90, by = y + 40, bW = 900, bh = 56;
+    ctx.setLineDash([14, 10]); rr(bx, by, bW, bh, 12, null, T.dim, 3); ctx.setLineDash([]);
+    if (val > 0.005) rr(bx, by, bW * val, bh, 12, col, null);
+    ctx.strokeStyle = T.dim; ctx.lineWidth = 4; const gx = bx + bW * ghost;
+    ctx.beginPath(); ctx.moveTo(gx, by - 10); ctx.lineTo(gx, by + bh + 10); ctx.stroke();
+    tx(Math.round(val * 100) + '%', 990, y, 58, col, 'right', 'bold');
+    ctx.globalAlpha = 1;
+  }
+  const g = ez((p - 0.38) / 0.18), ga = ez((p - 0.34) / 0.06);
+  const bwv = g * (0.97 + 0.03 * Math.sin(f * 0.3)), full = g > 0.9;
+  gauge(1040, '显存带宽', Math.min(1, bwv + (full ? 0.03 : 0)), full ? RED : T.accent, 0.45, ga);
+  const cu = ez((p - 0.46) / 0.12) * (0.08 + 0.02 * Math.sin(f * 0.2));
+  gauge(1205, 'GPU 算力利用率', cu, T.accent, 0.92, ga);
+  if (ga > 0) { ctx.globalAlpha = ga; tx('竖线 = 上一段 Prefill', 990, 1335, 36, T.dim, 'right'); ctx.globalAlpha = 1; }
+  // timeline
+  const a4 = ez((p - 0.2) / 0.08);
+  ctx.globalAlpha = a4;
+  const ay = 1460;
+  ctx.strokeStyle = T.ink; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(70, ay); ctx.lineTo(990, ay); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(990, ay); ctx.lineTo(965, ay - 14); ctx.lineTo(965, ay + 14); ctx.closePath(); ctx.fillStyle = T.ink; ctx.fill();
+  tx('时间', 990, ay + 45, 40, T.dim, 'right');
+  const off = Math.max(0, s - 5.2), sp = 160;
+  ctx.save(); ctx.beginPath(); ctx.rect(70, ay - 120, 900, 130); ctx.clip();
+  for (let i = 0; i <= k; i++) {
+    const x = 140 + (i - off) * sp, ap = i === k ? ez((t - 0.6) / 0.3) : 1;
+    if (i === k && t < 0.6) continue;
+    ctx.globalAlpha = a4 * ap;
+    rr(x - 38, ay - 100 + (1 - ap) * 30, 76, 76, 10, T.accent, null);
+    tx('t' + (i + 1), x, ay - 62 + (1 - ap) * 30, 40, '#fff', 'center', 'bold');
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+  // TPOT bracket between last two complete tokens
+  const a5 = ez((p - 0.62) / 0.08), last = t < 0.9 ? k - 1 : k;
+  if (a5 > 0 && last >= 1) {
+    ctx.globalAlpha = a5;
+    const xa = 140 + (last - 1 - off) * sp, xb = 140 + (last - off) * sp, by = ay + 30;
+    ctx.strokeStyle = RED; ctx.lineWidth = 5; ctx.beginPath();
+    ctx.moveTo(xa, by - 12); ctx.lineTo(xa, by); ctx.lineTo(xb, by); ctx.lineTo(xb, by - 12); ctx.stroke();
+    tx('TPOT 每 token 间隔', cl((xa + xb) / 2, 290, 790), by + 60, 58, RED, 'center', 'bold');
+    ctx.globalAlpha = 1;
+  }
+}
+ return draw; })() },
+{ id: "colocation_problem", title: "挤在同一组 GPU 上的问题", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n, cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const ease = v => { v = cl(v, 0, 1); return v * v * (3 - 2 * v); };
+  const font = (s, w) => ctx.font = (w || '') + ' ' + s + 'px ' + T.font;
+  const rr = (x, y, w, h, r, fill, stroke) => {
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 4; ctx.stroke(); }
+  };
+  const txt = (s, x, y, size, col, al, w) => { font(size, w); ctx.fillStyle = col; ctx.textAlign = al || 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); };
+  // title
+  txt('挤在同一组 GPU 上的问题', W / 2, 140, 64, T.ink, 'center', 'bold');
+  // lane geometry
+  const X0 = 60, GX = 800, LY = 420, LH = 90, BW = 50, V = 5, W0 = 300;
+  const fa = Math.floor(0.14 * n), fl = Math.floor(0.24 * n), fb = Math.floor(0.5 * n);
+  const oLeft = t => t < fl ? GX - W0 : GX - W0 * (1 - cl((t - fl) / (fb - fl), 0, 1));
+  // simulate
+  let bl = [], tok = 0, last = 0;
+  for (let t = 0; t <= f; t++) {
+    if (t % 18 === 0 && (!bl.length || bl[bl.length - 1].x > X0 + BW + 8)) bl.push({ x: X0 });
+    const act = t >= fa && t < fb, oL = oLeft(t);
+    const nb = [];
+    for (let i = 0; i < bl.length; i++) {
+      const b = bl[i];
+      let nx = b.x + V;
+      if (nb.length) nx = Math.min(nx, nb[nb.length - 1].x - BW - 6);
+      if (act && b.x + BW <= oL + 1) nx = Math.min(nx, oL - 6 - BW);
+      nx = Math.max(nx, b.x);
+      if (nx + BW >= GX) { tok++; last = t; } else nb.push({ x: nx });
+    }
+    bl = nb;
+  }
+  // lane
+  rr(X0 - 20, LY - 20, GX - X0 + 20, LH + 40, 16, null, T.dim);
+  txt('单车道：同一组 GPU', X0, LY - 50, 34, T.dim, 'left');
+  rr(GX, LY - 30, 220, LH + 60, 18, T.ink);
+  txt('GPU', GX + 110, LY + LH / 2, 44, T.bg, 'center', 'bold');
+  for (const b of bl) rr(b.x, LY + 10, BW, LH - 20, 8, T.accent2);
+  txt('Decode 步', X0 + 90, LY + LH + 55, 32, T.accent2, 'left');
+  // orange prefill
+  if (f >= fa - 20 && f < fb + 5) {
+    const dy = -260 * (1 - ease((f - fa) / (fl - fa)));
+    const oL = oLeft(f), ow = GX - oL;
+    ctx.globalAlpha = cl((f - fa + 20) / 20, 0, 1);
+    if (ow > 2) rr(oL, LY + 4 + dy, ow, LH - 8, 10, T.accent);
+    txt('长 Prefill', Math.max(oL + ow / 2, GX - 150), LY + LH / 2 + dy, 36, T.bg, 'center', 'bold');
+    if (dy < -5) { // arrow
+      ctx.strokeStyle = T.accent; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(GX - W0 / 2, LY + dy + LH); ctx.lineTo(GX - W0 / 2, LY - 10); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // queue pile-up label
+  if (f > fl && f < fb + 30) {
+    const a = 0.5 + 0.5 * Math.sin(f * 0.3);
+    ctx.globalAlpha = a; txt('排队堆积 ⟵', X0 + 200, LY + LH + 55, 34, T.accent, 'left', 'bold'); ctx.globalAlpha = 1;
+  }
+  // output stream
+  const OY = 640;
+  rr(X0 - 20, OY, W - 2 * (X0 - 20), 150, 18, null, T.dim);
+  txt('用户看到的输出', X0, OY - 30, 32, T.dim, 'left');
+  const S = '模型正在逐字输出回答每个解码步生成一个新的词元文字源源不断地流向屏幕用户读得很顺畅';
+  const shown = S.slice(0, tok % S.length).slice(-15);
+  font(44); ctx.fillStyle = T.ink; ctx.textAlign = 'left';
+  ctx.fillText(shown, X0 + 10, OY + 78);
+  const cw = ctx.measureText(shown).width;
+  if (f % 20 < 12) { ctx.fillStyle = T.accent2; ctx.fillRect(X0 + 16 + cw, OY + 50, 6, 56); }
+  const stall = f - last > 22 && f > fa && f < fb + 20;
+  if (stall && f % 16 < 10) {
+    rr(W - 290, OY + 35, 230, 80, 40, T.accent);
+    txt('⏸ 卡顿', W - 175, OY + 76, 40, T.bg, 'center', 'bold');
+  }
+  // balance
+  const pb = ease((p - 0.52) / 0.08);
+  if (pb > 0) {
+    ctx.globalAlpha = pb;
+    const cx = W / 2, cy = 1020, BL = 360;
+    const ang = 0.16 * Math.sin(f * 0.09) * pb;
+    ctx.fillStyle = T.dim; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - 60, cy + 300); ctx.lineTo(cx + 60, cy + 300); ctx.fill();
+    ctx.strokeStyle = T.ink; ctx.lineWidth = 8;
+    const ex = Math.cos(ang) * BL, ey = Math.sin(ang) * BL;
+    ctx.beginPath(); ctx.moveTo(cx - ex, cy - ey); ctx.lineTo(cx + ex, cy + ey); ctx.stroke();
+    const pan = (px, py, col, l1, l2) => {
+      ctx.strokeStyle = T.dim; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - 110, py + 120); ctx.moveTo(px, py); ctx.lineTo(px + 110, py + 120); ctx.stroke();
+      rr(px - 150, py + 120, 300, 130, 20, col);
+      txt(l1, px, py + 160, 38, T.bg, 'center', 'bold');
+      txt(l2, px, py + 210, 36, T.bg, 'center');
+    };
+    pan(cx - ex, cy - ey, T.accent, 'Prefill', '要算力');
+    pan(cx + ex, cy + ey, T.accent2, 'Decode', '要带宽');
+    rr(cx - 14, cy - 14, 28, 28, 14, T.ink);
+    // knob
+    const ky = 1440, kr = 70, ka = -Math.PI / 2 + 1.0 * Math.sin(f * 0.13) * Math.sin(f * 0.031 + 1);
+    ctx.beginPath(); ctx.arc(cx, ky, kr, 0, Math.PI * 2); ctx.fillStyle = T.ink; ctx.fill();
+    ctx.strokeStyle = T.accent; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(cx, ky); ctx.lineTo(cx + Math.cos(ka) * (kr - 10), ky + Math.sin(ka) * (kr - 10)); ctx.stroke();
+    ctx.strokeStyle = T.dim; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(cx, ky, kr + 18, -Math.PI * 0.85, -Math.PI * 0.15); ctx.stroke();
+    txt('批大小 / 并行策略', cx - kr - 40, ky - 10, 34, T.ink, 'right', 'bold');
+    txt('需求相反', cx + kr + 40, ky - 20, 34, T.accent, 'left', 'bold');
+    txt('难以同时调好', cx + kr + 40, ky + 25, 32, T.dim, 'left');
+    ctx.globalAlpha = 1;
+  }
+}
+ return draw; })() },
+{ id: "pd_disaggregation", title: "PD 分离：各干各的", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const seg = (a, b) => cl((p - a) / (b - a));
+  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const back = t => { const c = 1.7; return t <= 0 ? 0 : 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const GREEN = '#3ecf6e';
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function txt(s, x, y, size, color, align = 'center', weight = '600') {
+    ctx.font = `${weight} ${size}px ${T.font}`; ctx.fillStyle = color;
+    ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+  }
+  function gpu(x, y, col, s, a) {
+    if (s <= 0 || a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.scale(s, s);
+    rr(-50, -45, 100, 90, 14); ctx.fillStyle = col + '33'; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = col; ctx.stroke();
+    for (let i = -2; i <= 2; i++) { ctx.fillStyle = col; ctx.fillRect(i * 18 - 4, -56, 8, 10); ctx.fillRect(i * 18 - 4, 46, 8, 10); }
+    txt('GPU', 0, 0, 30, T.ink, 'center', '700');
+    ctx.restore();
+  }
+  function cluster(y, h, col, name, appear, count, press, pressSign) {
+    const a = ease(appear); if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(0, (1 - a) * 60);
+    rr(70, y, 940, h, 28); ctx.fillStyle = col + '14'; ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = col; ctx.stroke();
+    txt(name, 110, y + 55, 52, col, 'left', '800');
+    // scale buttons
+    ['+', '−'].forEach((s, i) => {
+      const by = y + 150 + i * 110, on = press > 0 && press < 1 && ((s === '+') === (pressSign > 0));
+      const sc = on ? 1 - 0.15 * Math.sin(press * Math.PI) : 1;
+      ctx.save(); ctx.translate(930, by); ctx.scale(sc, sc);
+      ctx.beginPath(); ctx.arc(0, 0, 42, 0, 7); ctx.fillStyle = on ? col : T.bg; ctx.fill();
+      ctx.lineWidth = 4; ctx.strokeStyle = col; ctx.stroke();
+      txt(s, 0, 2, 56, on ? T.bg : col, 'center', '800'); ctx.restore();
+    });
+    ctx.restore();
+    return a;
+  }
+  // title
+  const ta = ease(seg(0, 0.06));
+  ctx.globalAlpha = ta; txt('PD 分离：各干各的', W / 2, 130 - (1 - ta) * 30, 76, T.ink, 'center', '800'); ctx.globalAlpha = 1;
+  ctx.fillStyle = T.accent; ctx.fillRect(W / 2 - 120 * ta, 190, 240 * ta, 6);
+
+  const PC = T.accent, DC = T.accent2;
+  const pyT = 260, pyH = 380, dyT = 960, dyH = 400;
+  // scale-press timing
+  const pPress = seg(0.56, 0.62), dPress = seg(0.63, 0.69);
+  const pAdd = back(seg(0.6, 0.66)), dRem = ease(seg(0.67, 0.73));
+  const pa = cluster(pyT, pyH, PC, 'Prefill 集群', seg(0.04, 0.14), 0, pPress, 1);
+  const da = cluster(dyT, dyH, DC, 'Decode 集群', seg(0.1, 0.2), 0, dPress, -1);
+  // GPUs
+  const gx = i => 160 + i * 130;
+  for (let i = 0; i < 5; i++) {
+    const s = i < 3 ? back(seg(0.06 + i * 0.02, 0.12 + i * 0.02)) : (i === 3 ? pAdd : back(seg(0.62, 0.68)));
+    gpu(gx(i), pyT + 175, PC, s, pa || 0);
+  }
+  for (let i = 0; i < 5; i++) {
+    const s = back(seg(0.12 + i * 0.02, 0.18 + i * 0.02));
+    gpu(gx(i), dyT + 175, DC, i >= 3 ? s * (1 - dRem * 0.3) : s, (da || 0) * (i >= 3 ? 1 - dRem : 1));
+  }
+  // prefill progress bar
+  if (p > 0.18) {
+    const prog = p < 0.5 ? seg(0.2, 0.35) : ((p - 0.5) * 6) % 1;
+    rr(110, pyT + 290, 740, 50, 25); ctx.fillStyle = PC + '22'; ctx.fill();
+    rr(110, pyT + 290, Math.max(50, 740 * prog), 50, 25); ctx.fillStyle = PC; ctx.fill();
+    txt(prog >= 0.999 ? '批次完成 ✓' : '计算 prompt…', 480, pyT + 315, 30, T.bg, 'center', '700');
+  }
+  // link
+  const la = ease(seg(0.3, 0.36));
+  if (la > 0) {
+    const y0 = pyT + pyH, y1 = dyT, glow = 0.6 + 0.4 * Math.sin(f * 0.25);
+    ctx.save(); ctx.globalAlpha = la;
+    ctx.shadowColor = GREEN; ctx.shadowBlur = 30 * glow;
+    ctx.strokeStyle = GREEN + '88'; ctx.lineWidth = 26; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(400, y0); ctx.lineTo(400, y0 + (y1 - y0) * la); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 6;
+    ctx.setLineDash([20, 26]); ctx.lineDashOffset = -f * 4;
+    ctx.beginPath(); ctx.moveTo(400, y0); ctx.lineTo(400, y0 + (y1 - y0) * la); ctx.stroke();
+    ctx.restore();
+    txt('高速网络', 440, y0 + 60, 32, GREEN, 'left', '700');
+  }
+  // KV cache block
+  function kv(y, s, a) {
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(400, y); ctx.scale(s, s);
+    ctx.shadowColor = GREEN; ctx.shadowBlur = 25;
+    rr(-110, -40, 220, 80, 16); ctx.fillStyle = GREEN; ctx.fill(); ctx.shadowBlur = 0;
+    txt('KV Cache', 0, 2, 36, '#0b1a10', 'center', '800'); ctx.restore();
+  }
+  const k = seg(0.35, 0.5);
+  if (k > 0 && k < 1) kv(pyT + pyH - 20 + (dyT - pyT - pyH + 60) * ease(k), 1, 1);
+  if (p > 0.5) { const q = ((p - 0.5) * 6) % 1; kv(pyT + pyH + 20 + (dyT - pyT - pyH - 40) * q, 0.6, Math.sin(q * Math.PI)); }
+  // decode tokens
+  if (p > 0.48) {
+    const t = (p - 0.48) * n, per = 14, sp = 7;
+    ctx.save(); ctx.beginPath(); ctx.rect(90, dyT + 270, 900, 110); ctx.clip();
+    for (let j = 0; j <= t / per; j++) {
+      const x = 120 + (t - j * per) * sp;
+      if (x > 1000) continue;
+      const s = cl((t - j * per) / 6);
+      ctx.save(); ctx.translate(x + 50, dyT + 325); ctx.scale(s, s);
+      rr(-50, -32, 100, 64, 14); ctx.fillStyle = DC; ctx.fill();
+      txt('tok' + (j + 1), 0, 2, 28, T.bg, 'center', '700'); ctx.restore();
+    }
+    ctx.restore();
+    txt('逐个生成 token →', 110, dyT + 245, 30, T.dim, 'left', '600');
+  }
+  // scaling note
+  const sa = ease(seg(0.58, 0.64));
+  if (sa > 0) { ctx.globalAlpha = sa; txt('各自扩缩容 · 各选并行与批大小', W / 2, 225, 34, T.dim); ctx.globalAlpha = 1; }
+  // cost label
+  const ca = ease(seg(0.7, 0.76));
+  if (ca > 0) {
+    ctx.save(); ctx.globalAlpha = ca; ctx.translate((1 - ca) * 40, 0);
+    rr(560, 700, 430, 170, 20); ctx.fillStyle = T.bg; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = T.accent; ctx.setLineDash([12, 10]); ctx.lineDashOffset = f; ctx.stroke(); ctx.setLineDash([]);
+    txt('代价：', 590, 750, 40, T.accent, 'left', '800');
+    txt('高速传输 KV Cache', 590, 815, 40, T.ink, 'left', '700');
+    ctx.restore();
+  }
+  // system tags
+  const ha = ease(seg(0.8, 0.84));
+  if (ha > 0) { ctx.globalAlpha = ha; txt('采用此思路的系统', W / 2, 1430, 36, T.dim); ctx.globalAlpha = 1; }
+  ['DistServe', 'Splitwise', 'Mooncake'].forEach((s, i) => {
+    const sc = back(seg(0.83 + i * 0.045, 0.88 + i * 0.045));
+    if (sc <= 0) return;
+    const bob = Math.sin(f * 0.12 + i) * 4;
+    ctx.save(); ctx.translate(W / 2 + (i - 1) * 330, 1520 + bob); ctx.scale(sc, sc);
+    rr(-150, -42, 300, 84, 42); ctx.fillStyle = T.accent; ctx.fill();
+    txt(s, 0, 2, 38, T.bg, 'center', '800'); ctx.restore();
+  });
+}
+ return draw; })() },
+{ id: "recap", title: "小结", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const cl = (x) => Math.max(0, Math.min(1, x));
+  const seg = (a, b) => cl((p - a) / (b - a));
+  const eo = (t) => 1 - Math.pow(1 - t, 3);
+  const back = (t) => { const c = 1.70158; return t <= 0 ? 0 : 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const font = (s, w) => { ctx.font = (w || '') + ' ' + Math.round(s) + 'px ' + T.font; };
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+  const GREEN = '#3fb950';
+
+  // Title
+  const ta = eo(seg(0, 0.06));
+  ctx.globalAlpha = ta;
+  ctx.fillStyle = T.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  font(H * 0.06, 'bold');
+  ctx.fillText('小结', W / 2, 190 - (1 - ta) * 30);
+  ctx.fillStyle = T.accent; ctx.fillRect(W / 2 - 60 * ta, 250, 120 * ta, 8);
+  ctx.globalAlpha = 1;
+
+  function card(cy, col, name, kind, metric, gLabel, popT, fillT) {
+    const s = back(popT);
+    if (s <= 0) return;
+    const w = 900, h = 380;
+    ctx.save();
+    ctx.translate(W / 2, cy); ctx.scale(s, s); ctx.globalAlpha = cl(popT * 2);
+    rr(-w / 2, -h / 2, w, h, 36);
+    ctx.fillStyle = col; ctx.globalAlpha *= 0.12; ctx.fill();
+    ctx.globalAlpha = cl(popT * 2);
+    ctx.lineWidth = 6; ctx.strokeStyle = col; ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = col; font(H * 0.05, 'bold'); ctx.fillText(name, -w / 2 + 50, -h / 2 + 80);
+    ctx.fillStyle = T.ink; font(H * 0.036, 'bold'); ctx.fillText(kind, -w / 2 + 50, -h / 2 + 170);
+    // metric pill
+    font(H * 0.034, 'bold');
+    const mw = ctx.measureText(metric).width + 50;
+    rr(-w / 2 + 50, -h / 2 + 220, mw, 76, 38); ctx.fillStyle = col; ctx.fill();
+    ctx.fillStyle = T.bg; ctx.fillText(metric, -w / 2 + 75, -h / 2 + 259);
+    ctx.fillStyle = T.dim; font(H * 0.03); ctx.fillText('看', -w / 2 + 70 + mw, -h / 2 + 259);
+    // gauge
+    const gx = 130, gy = -h / 2 + 70, segs = 8, sh = 30, gap = 8;
+    ctx.textAlign = 'center'; ctx.fillStyle = T.dim; font(H * 0.03);
+    ctx.fillText(gLabel, gx + 100, h / 2 - 40);
+    const lit = eo(fillT) * segs;
+    for (let i = 0; i < segs; i++) {
+      const y = gy + (segs - 1 - i) * (sh + gap);
+      rr(gx, y, 200, sh, 8);
+      ctx.fillStyle = T.dim; ctx.globalAlpha = 0.25; ctx.fill(); ctx.globalAlpha = 1;
+      const k = cl(lit - i);
+      if (k > 0) {
+        const pulse = fillT >= 1 ? 0.75 + 0.25 * Math.sin(f * 0.25 - i * 0.8) : 1;
+        ctx.globalAlpha = k * pulse; rr(gx, y, 200, sh, 8); ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+      }
+    }
+    if (fillT >= 1) { ctx.fillStyle = col; font(H * 0.03, 'bold'); ctx.fillText('满格', gx + 100, gy - 30); }
+    ctx.restore();
+  }
+
+  card(530, T.accent, 'Prefill', '计算密集', 'TTFT', '算力', seg(0.04, 0.14), seg(0.12, 0.34));
+  card(1150, T.accent2, 'Decode', '访存密集', 'TPOT', '带宽', seg(0.34, 0.44), seg(0.42, 0.62));
+
+  // arrow + KV cache between cards
+  const at = seg(0.6, 0.72);
+  if (at > 0) {
+    const y0 = 725, y1 = 955, len = (y1 - y0) * eo(at);
+    ctx.strokeStyle = T.ink; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(250, y0); ctx.lineTo(250, y0 + len); ctx.stroke();
+    if (at >= 1) { ctx.beginPath(); ctx.moveTo(230, y1 - 25); ctx.lineTo(250, y1); ctx.lineTo(270, y1 - 25); ctx.stroke(); }
+    const ks = back(seg(0.64, 0.74));
+    ctx.save(); ctx.translate(W / 2 + 60, 840); ctx.scale(ks, ks);
+    const glow = 0.5 + 0.5 * Math.sin(f * 0.15);
+    ctx.shadowColor = GREEN; ctx.shadowBlur = 20 + 25 * glow;
+    rr(-200, -60, 400, 120, 22); ctx.fillStyle = GREEN; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    font(H * 0.036, 'bold'); ctx.fillText('KV Cache', 0, 0);
+    ctx.restore();
+    // moving dot along arrow
+    const dt = (f * 0.02) % 1;
+    if (at >= 1) { ctx.fillStyle = GREEN; ctx.beginPath(); ctx.arc(250, y0 + (y1 - y0 - 30) * dt, 12, 0, 7); ctx.fill(); }
+  }
+
+  // final line with check
+  const ft = seg(0.74, 0.84);
+  if (ft > 0) {
+    const y = 1470;
+    ctx.globalAlpha = eo(ft);
+    ctx.fillStyle = T.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    font(H * 0.055, 'bold');
+    ctx.fillText('分离 → 各自最优', W / 2 + 50, y + (1 - eo(ft)) * 40);
+    ctx.globalAlpha = 1;
+    const ct = seg(0.84, 0.94), cx = W / 2 - 330;
+    const r = 55 * (1 + 0.05 * Math.sin(f * 0.2) * (ct >= 1 ? 1 : 0));
+    ctx.strokeStyle = GREEN; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(cx, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * eo(ft)); ctx.stroke();
+    if (ct > 0) {
+      const pts = [[cx - 26, y + 2], [cx - 6, y + 24], [cx + 28, y - 22]];
+      const t = eo(ct) * 2;
+      ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      const a = Math.min(1, t);
+      ctx.lineTo(pts[0][0] + (pts[1][0] - pts[0][0]) * a, pts[0][1] + (pts[1][1] - pts[0][1]) * a);
+      if (t > 1) { const b = t - 1; ctx.lineTo(pts[1][0] + (pts[2][0] - pts[1][0]) * b, pts[1][1] + (pts[2][1] - pts[1][1]) * b); }
+      ctx.stroke();
+    }
+  }
+}
+ return draw; })() }
+];
+function paintBg() {
+  ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+  if (T.bg_img) ctx.drawImage(T.bg_img, 0, 0, W, H);
+}
+function fallback(ctx, f, n, W, H, T, title) {
+  ctx.fillStyle = T.bg_img ? '#3a2a1c' : T.ink; ctx.font = `600 ${Math.round(H*0.06)}px ${T.font}`;
+  ctx.textAlign = 'center'; ctx.globalAlpha = Math.min(1, f / 15);
+  ctx.fillText(title, W/2, H*0.42); ctx.globalAlpha = 1; ctx.textAlign = 'left';
+}
+window.seek = async (frame) => {
+  await bgReady;
+  let start = 0, i = 0;
+  while (i < DUR.length - 1 && frame >= start + DUR[i]) { start += DUR[i]; i++; }
+  const f = Math.min(frame - start, DUR[i] - 1), n = DUR[i];
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  paintBg();
+  ctx.save();
+  try { SCENES[i].draw(ctx, f, n, W, H, T); }
+  catch (e) { ctx.restore(); ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+              paintBg(); fallback(ctx, f, n, W, H, T, SCENES[i].title); }
+  ctx.restore();
+};
+</script></body></html>
