@@ -1,0 +1,20 @@
+{
+  "_doc": "Image endpoint config. deploy.py fetches each candidate's GPU memory and on-demand price for the region, keeps those with enough memory for its mode, and orders the pool cheapest first.",
+  "region": "us-east-1",
+  "endpoint": "evp-image",
+  "candidates": [
+    {"instance": "ml.g6e.2xlarge", "mem_mode": "full"},
+    {"instance": "ml.g7e.2xlarge", "mem_mode": "full"},
+    {"instance": "ml.g7.2xlarge", "mem_mode": "lowvram"}
+  ],
+  "gpu_gb_needed": {"full": 44, "lowvram": 30},
+  "inference_ami": "al2023-ami-sagemaker-inference-gpu-4-1",
+  "volume_gb": 100,
+  "provision_timeout_s": 900,
+  "download_timeout_s": 1800,
+  "startup_timeout_s": 1800,
+  "max_instances": 1,
+  "scale_in_idle_s": 900,
+  "max_concurrent_per_instance": 1,
+  "tags": {"project": "explainer-video", "module": "image"}
+}
