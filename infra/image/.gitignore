@@ -3,3 +3,5 @@
 _passrole.json
 *.log
 __pycache__/
+*.started
+*.ended
