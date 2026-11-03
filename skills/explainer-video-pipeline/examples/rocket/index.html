@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#05070b}canvas{display:block}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Frames per scene: paste the array from durations.json (written by narrate.py).
+// Keep it inline: pages opened as file:// cannot fetch() local files.
+const DUR = [165, 143];
+const ctx = document.getElementById('c').getContext('2d');
+const W = 1280, H = 720;
+const ease = t => t < 0 ? 0 : t > 1 ? 1 : 1 - Math.pow(1 - t, 3);
+
+function launch(f, n) {
+  const t = f / n, lift = ease((f - 30) / (n - 30));
+  const y = 560 - 420 * lift;
+  ctx.fillStyle = '#1b2230'; ctx.fillRect(0, 600, W, 120);
+  // exhaust plume: deterministic flicker from the frame number, not Math.random
+  const on = f >= 15;
+  if (on) {
+    const len = 80 + 60 * Math.abs(Math.sin(f * 0.7));
+    const g = ctx.createLinearGradient(0, y + 40, 0, y + 40 + len);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, '#bfe3ff'); g.addColorStop(1, 'rgba(191,227,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(624, y + 40); ctx.lineTo(656, y + 40); ctx.lineTo(640, y + 40 + len); ctx.fill();
+  }
+  ctx.fillStyle = '#e8ecf3';
+  ctx.beginPath(); ctx.moveTo(640, y - 70); ctx.lineTo(662, y - 30); ctx.lineTo(662, y + 40);
+  ctx.lineTo(618, y + 40); ctx.lineTo(618, y - 30); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e82127'; ctx.fillRect(618, y + 10, 44, 6);
+  // force arrow appears with the lift
+  ctx.globalAlpha = lift; ctx.strokeStyle = '#e9c46a'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(720, y + 20); ctx.lineTo(720, y - 60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(706, y - 50); ctx.lineTo(720, y - 74); ctx.lineTo(734, y - 50); ctx.fill();
+  ctx.globalAlpha = 1;
+  label('反作用力 ↑', 760, y - 20, '#e9c46a', lift);
+}
+
+function orbit(f, n) {
+  ctx.fillStyle = '#20406a'; ctx.beginPath(); ctx.arc(640, 360, 120, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = '#4b5262'; ctx.setLineDash([6, 8]); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(640, 360, 240, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+  const a = -Math.PI / 2 + 2 * Math.PI * (f / n);
+  ctx.fillStyle = '#e8ecf3'; ctx.beginPath(); ctx.arc(640 + 240 * Math.cos(a), 360 + 240 * Math.sin(a), 12, 0, 2 * Math.PI); ctx.fill();
+  label('轨道', 600, 640, '#8c93a6', ease(f / 20));
+}
+
+function label(txt, x, y, color, alpha) {
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = '600 30px "Noto Sans SC","PingFang SC",sans-serif'; ctx.fillText(txt, x, y);
+  ctx.globalAlpha = 1;
+}
+
+// The capture contract: draw exactly this frame, computed from the frame number only.
+window.seek = async (frame) => {
+  ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, W, H);
+  let start = 0;
+  const scenes = [launch, orbit];
+  for (let i = 0; i < DUR.length; i++) {
+    if (frame < start + DUR[i] || i === DUR.length - 1) { scenes[i](frame - start, DUR[i]); break; }
+    start += DUR[i];
+  }
+};
+</script></body></html>
