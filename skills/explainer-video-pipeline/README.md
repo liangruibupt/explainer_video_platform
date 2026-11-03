@@ -20,9 +20,9 @@
 | 分镜模型 | `claude-opus-5.5` |
 | 画面作者 | `claude-opus-5.5`（写绘制代码） |
 | 渲染器 | `remotion`（可选 `html`、`manim`） |
-| 配音 | AWS Polly neural，`Zhiyu`，普通话 |
+| 配音 | AWS Polly neural，`Zhiyu`，普通话；按 `scripts/pronounce.json` 转 SSML，纠正多音字，英文词和缩写单独标注 |
 | 字幕 | Whisper `small`，逐字高亮 |
-| 背景音乐 | ffmpeg 合成的无版权垫乐 |
+| 背景音乐 | ffmpeg 合成的无版权垫乐，或用 `--music PATH` 指定一段录音（循环并交叉淡化） |
 | 音效 | 开（在 `scenes.json` 里按帧写） |
 | 尺寸 | 1920×1080，30 fps |
 

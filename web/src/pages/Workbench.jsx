@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { api, usePoll, isLive } from '../api.js'
 import WorkCard from '../components/WorkCard.jsx'
@@ -19,6 +19,8 @@ export default function Workbench() {
   const [ratio, setRatio] = useState('16:9')
   const [captions, setCaptions] = useState(true)
   const [music, setMusic] = useState('synth')
+  const [musicChoices, setMusicChoices] = useState({ synth: '合成垫乐', none: '无音乐' })
+  useEffect(() => { api('/music').then(setMusicChoices).catch(() => {}) }, [])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [jobs] = usePoll(() => api('/jobs'), 4000, (js) => js.some(isLive), [])
@@ -60,8 +62,9 @@ export default function Workbench() {
           </label>
           <label className="opt">音乐
             <select value={music} onChange={(e) => setMusic(e.target.value)}>
-              <option value="synth">合成垫乐</option>
-              <option value="none">无</option>
+              {Object.entries(musicChoices).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
             </select>
           </label>
           <label className="toggle">

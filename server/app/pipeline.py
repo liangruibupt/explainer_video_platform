@@ -17,6 +17,23 @@ TOOLS = Path(os.environ.get("EVP_TOOLS", Path.home() / ".cache" / "explainer-vid
 PY = os.environ.get("EVP_PYTHON", str(TOOLS / "venv" / "bin" / "python"))
 FFMPEG = os.environ.get("FFMPEG", str(TOOLS / "ffmpeg"))
 FFPROBE = os.environ.get("FFPROBE", str(TOOLS / "ffprobe"))
+MUSIC_LIB = json.loads((ROOT / "music" / "library.json").read_text())
+
+
+def music_choices() -> dict:
+    """synth/none plus every library track whose file is downloaded."""
+    out = {"synth": "合成垫乐", "none": "无音乐"}
+    for k, v in MUSIC_LIB.items():
+        if not k.startswith("_") and (TOOLS / "music" / v["file"]).is_file():
+            out[k] = v["label"]
+    return out
+
+
+def _music_arg(key: str) -> list:
+    if key in ("synth", "none"):
+        return ["--music", key]
+    v = MUSIC_LIB[key]
+    return ["--music", str(TOOLS / "music" / v["file"]), "--music-volume", str(v.get("volume", 0.72))]
 
 STEPS = [
     ("storyboard", "Opus 5.5 写分镜"),
@@ -145,7 +162,7 @@ def _run(job_id: str) -> None:
             step("sfx", lambda: _sh([PY, SCRIPTS / "sfx.py", "scenes.json", "."], d, log))
         else:
             skip("sfx")
-        step("mix", lambda: _sh([PY, SCRIPTS / "mix_bgm.py", ".", "--music", job["music"]], d, log))
+        step("mix", lambda: _sh([PY, SCRIPTS / "mix_bgm.py", ".", *_music_arg(job["music"])], d, log))
         if job["captions"]:
             step("captions", lambda: _sh([PY, SCRIPTS / "captions.py", "scenes.json", ".",
                                           "--size", f"{w}x{h}"], d, log))

@@ -37,6 +37,10 @@
 
 historical-basemaps 的边界是近似值，所以地图上用虚线画疆域。`song_map.py` 只在运行时读取这些数据，仓库里不包含原始数据文件，只包含渲染出来的 `song_map.png`。
 
+## 背景音乐
+
+古琴曲《秋风词》独奏，来自 [Internet Archive: Qiu feng ci](https://archive.org/details/QiuFengCi)（2006 年上传者以公有领域发布）。原曲 108 秒，按视频长度循环，接缝处交叉淡化 4 秒，人声出现时自动压低。
+
 ## 各步骤耗时
 
 | 写分镜 | 旁白 | 写绘制代码 | 字幕 | 逐帧渲染 | 合成 |

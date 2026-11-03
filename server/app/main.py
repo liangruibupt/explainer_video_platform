@@ -25,7 +25,7 @@ class JobIn(BaseModel):
     seconds: int = Field(default=60, ge=20, le=180)
     ratio: str = Field(default="16:9", pattern=r"^(16:9|9:16)$")
     captions: bool = True
-    music: str = Field(default="synth", pattern=r"^(synth|none)$")
+    music: str = Field(default="synth", pattern=r"^[a-z0-9_-]{1,32}$")
     voice: str = Field(default="Zhiyu", pattern=r"^[A-Za-z]{2,20}$")
     brief: str = Field(default="", max_length=8000)
     scene_context: str = Field(default="", max_length=8000)
@@ -35,6 +35,11 @@ class JobIn(BaseModel):
 @app.get("/api/health")
 def health():
     return {"ok": True, "model": "claude-opus-5.5", "time": time.time()}
+
+
+@app.get("/api/music")
+def music():
+    return pipeline.music_choices()
 
 
 @app.get("/api/jobs")
@@ -53,6 +58,8 @@ def create(body: JobIn):
             raise HTTPException(422, "background_png_b64 is not valid base64")
         if not bg.startswith(b"\x89PNG\r\n\x1a\n"):
             raise HTTPException(422, "background must be a PNG")
+    if body.music not in pipeline.music_choices():
+        raise HTTPException(422, f"unknown or not downloaded music: {body.music}")
     return pipeline.create_job(job_id, body.topic.strip(), body.language, body.seconds,
                                body.ratio, body.captions, body.music, body.voice,
                                brief=body.brief.strip(), scene_context=body.scene_context.strip(),

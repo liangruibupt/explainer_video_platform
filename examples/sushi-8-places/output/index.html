@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><style>html,body{margin:0;background:#141210;overflow:hidden}
 canvas{display:block}</style></head><body><canvas id="c" width="1920" height="1080"></canvas>
 <script>
-const DUR = [383, 375, 423, 482, 431, 390, 467, 420, 360, 336]; const FPS = 30; const W = 1920, H = 1080;
+const DUR = [400, 372, 397, 513, 375, 350, 429, 400, 334, 370]; const FPS = 30; const W = 1920, H = 1080;
 const T = {bg:'#141210', ink:'#f4ede4', dim:'#9a8f85', accent:'#e0603f', accent2:'#7fb0c8',
   font:'"Noto Sans CJK SC","PingFang SC",sans-serif'};
 const ctx = document.getElementById('c').getContext('2d');
@@ -11,1022 +11,1108 @@ const bgReady = BG ? new Promise((ok) => { const im = new Image(); im.onload = (
   im.onerror = () => ok(); im.src = BG; }) : Promise.resolve();
 const SCENES = [
 { id: "title_card", title: "苏轼（1037–1101）：一生走过的 8 个地方", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n;
-  const cl = (v) => Math.max(0, Math.min(1, v));
-  const seg = (a, b) => cl((p - a) / (b - a));
-  const ease = (t) => 1 - Math.pow(1 - t, 3);
-  const ink = '#3a2a1c';
-  const brush = (s) => `${s}px "KaiTi","STKaiti","Kaiti SC",${T.font}`;
-  const places = [[541.3,411.8],[1049.3,152.7],[1329.5,400.9],[1293.2,87.8],[1186.0,182.2],[1074.5,390.0],[1052.7,790.4],[819.0,986.2],[1320.8,315.8]];
+  var p = f / n;
+  var ink = '#3a2a1c';
+  var acc = T.accent || '#b8322a';
+  var kai = '"STKaiti","KaiTi","Kaiti SC","楷体",' + T.font;
+  function cl(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function seg(a, b) { return cl((f - a) / (b - a)); }
+  function ease(t) { return t * t * (3 - 2 * t); }
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  var places = [[541.3,411.8],[1049.3,152.7],[1329.5,400.9],[1293.2,87.8],[1186.0,182.2],[1074.5,390.0],[1052.7,790.4],[819.0,986.2],[1320.8,315.8]];
 
-  // dim the map slightly (semi-transparent, background stays visible)
-  ctx.fillStyle = `rgba(40,28,16,${0.22 * ease(seg(0, 0.12))})`;
+  // 1. darken the map slightly (semi-transparent)
+  ctx.save();
+  ctx.fillStyle = 'rgba(40,28,18,' + (0.22 * ease(seg(0, 50))) + ')';
   ctx.fillRect(0, 0, W, H);
+  // slow moving light sweep keeps every frame alive
+  var sx = -400 + (W + 800) * p;
+  var g = ctx.createLinearGradient(sx - 300, 0, sx + 300, 0);
+  g.addColorStop(0, 'rgba(255,245,220,0)');
+  g.addColorStop(0.5, 'rgba(255,245,220,0.07)');
+  g.addColorStop(1, 'rgba(255,245,220,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H * 0.84);
+  ctx.restore();
 
-  // silent grey dots, staggered appearance, gentle breathing
-  places.forEach(([x, y], i) => {
-    const a = ease(seg(0.03 + i * 0.025, 0.12 + i * 0.025));
-    if (a <= 0) return;
-    const br = 0.5 + 0.5 * Math.sin(f * 0.08 + i * 0.9);
-    ctx.globalAlpha = a * (0.25 + 0.2 * br);
-    ctx.strokeStyle = '#8a8478';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x, y, 12 + 8 * br, 0, Math.PI * 2); ctx.stroke();
+  // 2. place dots: flash in staggered, then fade away
+  for (var i = 0; i < places.length; i++) {
+    var a0 = 140 + i * 10;
+    var inA = ease(seg(a0, a0 + 20));
+    var outA = 1 - ease(seg(290, 330));
+    var a = inA * outA;
+    if (a <= 0) continue;
+    var x = places[i][0], y = places[i][1];
+    var pulse = seg(a0, a0 + 45);
+    ctx.save();
+    ctx.globalAlpha = a * (1 - pulse) * 0.7;
+    ctx.strokeStyle = '#9a9086';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 10 + 30 * pulse, 0, 7); ctx.stroke();
     ctx.globalAlpha = a * 0.9;
-    ctx.fillStyle = '#9a958c';
-    ctx.beginPath(); ctx.arc(x, y, 8 * a, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#b0a79c';
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
     ctx.lineWidth = 2; ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
-
-  // paper panel
-  const pa = ease(seg(0.1, 0.28));
-  const px = 560, pw = 800, ph = 300;
-  const py = 450 + (1 - pa) * 30 + Math.sin(f * 0.03) * 2;
-  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
-  if (pa > 0) {
-    ctx.globalAlpha = pa;
-    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 30;
-    ctx.fillStyle = 'rgba(246,236,214,0.88)';
-    rr(px, py, pw, ph, 18); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(120,90,60,0.5)'; ctx.lineWidth = 2;
-    rr(px + 12, py + 12, pw - 24, ph - 24, 12); ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
-  // title revealed left-to-right like a brush stroke
-  const ta = seg(0.22, 0.45);
-  if (ta > 0) {
-    const title = '苏轼（1037–1101）';
-    let s = 92; ctx.font = brush(s);
-    const tw = ctx.measureText(title).width;
-    if (tw > pw - 80) { s = s * (pw - 80) / tw; ctx.font = brush(s); }
-    const w = ctx.measureText(title).width;
+  // 3. title panel
+  var cx = W / 2, cy = H * 0.42;
+  var pa = ease(seg(20, 70));
+  ctx.save();
+  ctx.globalAlpha = pa;
+  ctx.fillStyle = 'rgba(250,243,228,0.82)';
+  rr(cx - 560, cy - 190, 1120, 360, 28); ctx.fill();
+  ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2;
+  rr(cx - 540, cy - 170, 1080, 320, 20); ctx.stroke();
+  ctx.restore();
+
+  // title
+  var ta = ease(seg(40, 120));
+  var sc = 1.08 - 0.08 * ta + 0.015 * p;
+  ctx.save();
+  ctx.globalAlpha = ta;
+  ctx.translate(cx, cy - 50);
+  ctx.scale(sc, sc);
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold ' + Math.round(H * 0.12) + 'px ' + kai;
+  ctx.fillText('苏轼（1037–1101）', 0, 0);
+  ctx.restore();
+
+  // brush underline
+  var ul = ease(seg(100, 160));
+  if (ul > 0) {
     ctx.save();
-    ctx.beginPath(); ctx.rect(W / 2 - w / 2 - 10, py, (w + 20) * ease(ta), ph); ctx.clip();
-    ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(title, W / 2, py + 105);
+    ctx.strokeStyle = acc; ctx.lineCap = 'round';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(cx - 380, cy + 30);
+    ctx.quadraticCurveTo(cx, cy + 22 + 6 * Math.sin(f * 0.05), cx - 380 + 760 * ul, cy + 30);
+    ctx.stroke();
     ctx.restore();
-    // brush underline
-    const ua = ease(seg(0.38, 0.55));
-    ctx.strokeStyle = T.accent; ctx.lineCap = 'round';
-    ctx.lineWidth = 6; ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.moveTo(W / 2 - 220, py + 168);
-    ctx.quadraticCurveTo(W / 2, py + 160, W / 2 - 220 + 440 * ua, py + 166);
-    ctx.stroke(); ctx.globalAlpha = 1;
   }
 
   // subtitle
-  const sa = ease(seg(0.42, 0.58));
-  if (sa > 0) {
-    ctx.globalAlpha = sa;
-    ctx.font = brush(56); ctx.fillStyle = ink;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const sp = 6 * (1 - sa);
-    ctx.fillText('一生走过的 8 个地方', W / 2, py + 228 + sp);
-    ctx.globalAlpha = 1;
-  }
+  var sa = ease(seg(110, 180));
+  ctx.save();
+  ctx.globalAlpha = sa;
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = Math.round(H * 0.06) + 'px ' + kai;
+  ctx.fillText('一生走过的 8 个地方', cx, cy + 100 + 20 * (1 - sa));
+  ctx.restore();
 
-  // red seal "东坡" stamped at panel bottom-right
-  const st = seg(0.6, 0.68);
+  // 4. seal "东坡" bottom right (above caption zone)
+  var st = seg(250, 285);
   if (st > 0) {
-    const sc = 1 + 0.6 * (1 - ease(st));
-    const sx = px + pw - 70, sy = py + ph - 55, sz = 104;
+    var s = st < 1 ? 1.8 - 0.8 * ease(st) : 1;
+    var wob = 0.02 * Math.sin(f * 0.04);
     ctx.save();
-    ctx.translate(sx, sy); ctx.rotate(-0.06); ctx.scale(sc, sc);
-    ctx.globalAlpha = Math.min(1, st * 2) * 0.92;
-    ctx.fillStyle = '#b8322a';
-    rr(-sz / 2, -sz / 2, sz, sz, 8); ctx.fill();
-    ctx.strokeStyle = 'rgba(250,235,215,0.9)'; ctx.lineWidth = 3;
-    rr(-sz / 2 + 7, -sz / 2 + 7, sz - 14, sz - 14, 5); ctx.stroke();
-    ctx.fillStyle = '#f8ecd8'; ctx.font = brush(40);
+    ctx.translate(1660, 760);
+    ctx.rotate(-0.08 + wob);
+    ctx.scale(s, s);
+    ctx.globalAlpha = 0.9 * ease(st);
+    ctx.fillStyle = acc;
+    rr(-75, -75, 150, 150, 14); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,225,0.9)'; ctx.lineWidth = 4;
+    rr(-62, -62, 124, 124, 8); ctx.stroke();
+    ctx.fillStyle = '#fff4e6';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('东', 0, -20); ctx.fillText('坡', 0, 22);
+    ctx.font = 'bold 54px ' + kai;
+    ctx.fillText('东', 0, -26);
+    ctx.fillText('坡', 0, 30);
     ctx.restore();
-    // ink ripple after stamping
-    const rp = seg(0.66, 0.8);
-    if (rp > 0 && rp < 1) {
-      ctx.strokeStyle = `rgba(184,50,42,${0.5 * (1 - rp)})`; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(sx, sy, 60 + 80 * rp, 0, Math.PI * 2); ctx.stroke();
+    // impact ring
+    if (st >= 1 && f < 320) {
+      var r = seg(285, 320);
+      ctx.save();
+      ctx.globalAlpha = 0.5 * (1 - r);
+      ctx.strokeStyle = acc; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(1660, 760, 100 + 60 * r, 0, 7); ctx.stroke();
+      ctx.restore();
     }
   }
 
-  // lifespan bar 1037 → 1101 below the panel (keeps motion through end)
-  const la = seg(0.72, 0.98);
+  // 5. late motion: small year markers drifting along underline ends
+  var la = ease(seg(320, 360));
   if (la > 0) {
-    const y = py - 34, x0 = px + 120, x1 = px + pw - 120;
-    ctx.globalAlpha = Math.min(1, la * 4);
-    ctx.fillStyle = 'rgba(246,236,214,0.8)';
-    rr(x0 - 110, y - 26, x1 - x0 + 220, 52, 26); ctx.fill();
-    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
-    const xe = x0 + (x1 - x0) * ease(la);
-    ctx.strokeStyle = T.accent; ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(xe, y); ctx.stroke();
-    ctx.fillStyle = T.accent;
-    ctx.beginPath(); ctx.arc(xe, y, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = ink; ctx.font = `bold 34px ${T.font}`; ctx.textBaseline = 'middle';
-    ctx.textAlign = 'right'; ctx.fillText('1037', x0 - 16, y);
-    ctx.textAlign = 'left'; ctx.fillText('1101', x1 + 16, y);
-    ctx.globalAlpha = 1;
+    ctx.save();
+    ctx.globalAlpha = la * 0.8;
+    ctx.fillStyle = acc;
+    var d = 380 * ((f - 320) / 80);
+    ctx.beginPath(); ctx.arc(cx - d, cy + 30, 6, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + d, cy + 30, 6, 0, 7); ctx.fill();
+    ctx.restore();
   }
 }
  return draw; })() },
-{ id: "meizhou", title: "① 眉州（今四川眉山）· 1037", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  var p = f / n;
-  var ink = '#3a2a1c';
-  var red = T.accent || '#b8322a';
-  function cl(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
-  function ease(x) { x = cl(x); return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
-  function seg(a, b) { return cl((p - a) / (b - a)); }
+{ id: "place_1_meizhou", title: "① 眉州（今四川眉山）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  var p = f / n, ink = '#3a2a1c', red = T.accent || '#b8322a', font = T.font;
+  var mx = 541.3, my = 411.8;
+  function cl(v) { return Math.max(0, Math.min(1, v)); }
+  function ease(v) { v = cl(v); return 1 - Math.pow(1 - v, 3); }
+  function seg(a, b) { return ease((p - a) / (b - a)); }
   function rr(x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
     ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
     ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
-  function txt(s, x, y, size, col, al, bold) {
-    ctx.font = (bold ? 'bold ' : '') + size + 'px ' + T.font;
-    ctx.fillStyle = col; ctx.textAlign = al || 'left'; ctx.textBaseline = 'middle';
+  function txt(s, x, y, size, col, align, weight) {
+    ctx.font = (weight || '') + ' ' + size + 'px ' + font;
+    ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(s, x, y);
   }
-  // camera push toward Meizhou
-  var mx = 541.3, my = 411.8;
-  var z = ease(seg(0, 0.28));
-  var s = 1 + 0.2 * z + 0.06 * p;
-  var cx = mx + (640 - mx) * z, cy = my + (450 - my) * z;
+  // camera push toward southwest (zoom anchored at Meizhou)
+  var s = 1 + 0.18 * seg(0, 0.3) + 0.04 * p;
   if (T.bg_img) {
     ctx.save();
-    ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-mx, -my);
-    ctx.drawImage(T.bg_img, 0, 0, W, H);
+    ctx.drawImage(T.bg_img, mx - mx * s, my - my * s, W * s, H * s);
     ctx.restore();
   }
-  // ink bloom
-  var b = ease(seg(0.25, 0.45));
-  if (b > 0) {
-    var R = (40 + 90 * b) * s + 6 * Math.sin(f * 0.08);
-    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-    g.addColorStop(0, 'rgba(40,28,18,' + 0.32 * b + ')');
-    g.addColorStop(0.6, 'rgba(40,28,18,' + 0.14 * b + ')');
-    g.addColorStop(1, 'rgba(40,28,18,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
-    // expanding ripple
-    var rp = (f % 90) / 90;
-    ctx.strokeStyle = 'rgba(58,42,28,' + 0.35 * (1 - rp) * b + ')';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(cx, cy, (50 + 110 * rp) * s, 0, Math.PI * 2); ctx.stroke();
-  }
-  // seal stamp
-  var st = seg(0.18, 0.3);
-  if (st > 0) {
-    var sc = st < 1 ? 2.2 - 1.2 * ease(st) : 1 + 0.02 * Math.sin(f * 0.1);
-    var sz = 78;
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.06); ctx.scale(sc, sc);
-    ctx.globalAlpha = Math.min(1, st * 1.5);
-    ctx.fillStyle = red; rr(-sz / 2, -sz / 2, sz, sz, 10); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,225,0.85)'; ctx.lineWidth = 3;
-    rr(-sz / 2 + 7, -sz / 2 + 7, sz - 14, sz - 14, 6); ctx.stroke();
-    txt('眉', 0, 3, 48, '#fff4e6', 'center', true);
-    ctx.restore(); ctx.globalAlpha = 1;
-  }
-  // label beside the seal
-  var la = ease(seg(0.3, 0.42));
-  if (la > 0) {
-    ctx.globalAlpha = la;
-    var lx = cx - 30 - 20 * (1 - la), ly = cy + 95;
-    ctx.fillStyle = 'rgba(250,243,228,0.82)'; rr(lx - 20, ly - 36, 420, 140, 16); ctx.fill();
-    txt('眉州（今四川眉山）', lx, ly, 42, ink, 'left', true);
-    txt('1037', lx, ly + 62, 50, red, 'left', true);
-    ctx.fillStyle = red; ctx.fillRect(lx + 125, ly + 60, 120 * la, 4);
-    ctx.globalAlpha = 1;
-  }
   // title
-  var ta = ease(seg(0, 0.12));
-  ctx.globalAlpha = ta;
-  ctx.fillStyle = 'rgba(250,243,228,0.85)'; rr(60, 40 - 20 * (1 - ta), 820, 110, 18); ctx.fill();
-  txt('① 眉州（今四川眉山）· 1037', 95, 95 - 20 * (1 - ta), 62, ink, 'left', true);
-  ctx.fillStyle = red; ctx.fillRect(95, 135 - 20 * (1 - ta), 140, 6);
-  ctx.globalAlpha = 1;
+  var ta = seg(0, 0.12);
+  ctx.save(); ctx.globalAlpha = ta;
+  ctx.fillStyle = 'rgba(245,236,218,0.82)'; rr(60, 50 - (1 - ta) * 20, 620, 100, 18); ctx.fill();
+  txt('① 眉州（今四川眉山）', 90, 100 - (1 - ta) * 20, 62, ink, 'left', 'bold');
+  ctx.restore();
+  // ink wash bloom
+  var wa = seg(0.15, 0.45);
+  if (wa > 0) {
+    var R = 40 + 170 * wa + 8 * Math.sin(f * 0.06);
+    var g = ctx.createRadialGradient(mx, my, 10, mx, my, R);
+    g.addColorStop(0, 'rgba(40,30,20,' + 0.28 * wa + ')');
+    g.addColorStop(0.6, 'rgba(40,30,20,' + 0.12 * wa + ')');
+    g.addColorStop(1, 'rgba(40,30,20,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, R, 0, 7); ctx.fill();
+    // ripple rings
+    for (var k = 0; k < 2; k++) {
+      var q = ((f * 0.008 + k * 0.5) % 1);
+      ctx.strokeStyle = 'rgba(58,42,28,' + 0.35 * (1 - q) * wa + ')';
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(mx, my, 30 + q * 150, 0, 7); ctx.stroke();
+    }
+  }
+  // seal stamp drop
+  var sa = cl((p - 0.12) / 0.1);
+  if (sa > 0) {
+    var sc = 1 + 1.5 * (1 - ease(sa)), sz = 64;
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(-0.06); ctx.scale(sc, sc);
+    ctx.globalAlpha = sa;
+    ctx.fillStyle = red; rr(-sz / 2, -sz / 2, sz, sz, 8); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,225,0.85)'; ctx.lineWidth = 3; rr(-sz / 2 + 6, -sz / 2 + 6, sz - 12, sz - 12, 5); ctx.stroke();
+    txt('眉', 0, 2, 40, '#fff4e6', 'center', 'bold');
+    ctx.restore();
+  }
+  // label beside marker
+  var la = seg(0.25, 0.4);
+  if (la > 0) {
+    ctx.save(); ctx.globalAlpha = la;
+    var lx = mx + 60 + (1 - la) * 30, ly = my - 60;
+    ctx.fillStyle = 'rgba(245,236,218,0.85)'; rr(lx, ly - 10, 400, 140, 14); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(mx + 36, my); ctx.lineTo(lx, ly + 60); ctx.stroke();
+    txt('眉州（今四川眉山）', lx + 20, ly + 30, 40, ink, 'left', 'bold');
+    txt('1037 出生', lx + 20, ly + 88, 38, red, 'left', 'bold');
+    ctx.restore();
+  }
   // right panel
-  var pa = ease(seg(0.4, 0.52));
+  var pa = seg(0.35, 0.5);
   if (pa > 0) {
-    var px = W + 20 - (W + 20 - 1080) * pa, py = 300, pw = 780, ph = 400;
-    ctx.fillStyle = 'rgba(250,243,228,0.86)'; rr(px, py, pw, ph, 22); ctx.fill();
-    ctx.strokeStyle = 'rgba(58,42,28,0.25)'; ctx.lineWidth = 2; rr(px, py, pw, ph, 22); ctx.stroke();
-    txt('起点 · 故乡', px + 50, py + 65, 50, red, 'left', true);
-    ctx.fillStyle = 'rgba(58,42,28,0.35)'; ctx.fillRect(px + 50, py + 105, (pw - 100) * pa, 2);
-    var items = [['1037 年', '在此出生、读书', 0.52], ['1057 年', '与弟弟苏辙同榜进士', 0.7]];
-    for (var i = 0; i < items.length; i++) {
-      var a = ease(seg(items[i][2], items[i][2] + 0.1));
-      if (a <= 0) continue;
-      ctx.globalAlpha = a;
-      var iy = py + 180 + i * 120, ix = px + 50 + 30 * (1 - a);
-      ctx.fillStyle = red; ctx.beginPath(); ctx.arc(ix + 10, iy, 10 + 2 * Math.sin(f * 0.12 + i), 0, Math.PI * 2); ctx.fill();
-      txt(items[i][0], ix + 40, iy, 46, red, 'left', true);
-      txt(items[i][1], ix + 230, iy, 44, ink, 'left', false);
-      ctx.globalAlpha = 1;
+    var px = 1180 + (1 - pa) * 500, py = 230, pw = 680, ph = 520;
+    ctx.save(); ctx.globalAlpha = pa;
+    ctx.fillStyle = 'rgba(247,239,222,0.88)'; rr(px, py, pw, ph, 22); ctx.fill();
+    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; rr(px, py, pw, ph, 22); ctx.stroke();
+    txt('第一站 · 眉州', px + 44, py + 70, 52, ink, 'left', 'bold');
+    ctx.fillStyle = red; ctx.fillRect(px + 44, py + 112, 180 * pa, 5);
+    var items = [['1037 年', '在此出生'], ['少年时', '在此读书成长'], ['1057 年', '与弟弟苏辙同榜进士']];
+    for (var i = 0; i < 3; i++) {
+      var ia = seg(0.45 + i * 0.14, 0.57 + i * 0.14);
+      if (ia <= 0) continue;
+      var iy = py + 190 + i * 110;
+      ctx.save(); ctx.globalAlpha = pa * ia; ctx.translate((1 - ia) * 40, 0);
+      ctx.fillStyle = red; ctx.beginPath(); ctx.arc(px + 60, iy, 9, 0, 7); ctx.fill();
+      txt(items[i][0], px + 88, iy, 40, red, 'left', 'bold');
+      ctx.font = 'bold 40px ' + font;
+      txt(items[i][1], px + 100 + ctx.measureText(items[i][0]).width, iy, 40, ink, 'left');
+      ctx.restore();
     }
-    // small moving brush underline at the end
-    var u = seg(0.85, 1);
-    if (u > 0) {
-      ctx.strokeStyle = red; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(px + 280, py + 330);
-      ctx.lineTo(px + 280 + 420 * ease(u), py + 330 + 4 * Math.sin(u * 6)); ctx.stroke();
+    // brush underline sweeping under last item
+    var ua = seg(0.88, 0.98);
+    if (ua > 0) {
+      ctx.strokeStyle = red; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(px + 88, py + 438); ctx.lineTo(px + 88 + 520 * ua, py + 438 + 4 * Math.sin(ua * 6)); ctx.stroke();
     }
+    ctx.restore();
   }
 }
  return draw; })() },
-{ id: "bianjing", title: "② 汴京（今河南开封）· 1057 起", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', RED = T.accent || '#b8322a', F = T.font;
-  const cl = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
-  const seg = (a, b) => cl((p - a) / (b - a));
+{ id: "place_2_bianjing", title: "② 汴京（今河南开封）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const INK = '#3a2a1c', RED = '#b3302a', DARK = '#8b1a1a';
+  const F = T.font || 'sans-serif';
+  const cl = (x, a, b) => Math.max(a, Math.min(b, x));
+  const seg = (a, b) => cl((p - a) / (b - a), 0, 1);
   const ease = t => 1 - Math.pow(1 - t, 3);
-  const A = { x: 541.3, y: 411.8 }, B = { x: 1049.3, y: 152.7 }, C = { x: 760, y: 190 };
-  const qp = t => ({ x: (1 - t) * (1 - t) * A.x + 2 * t * (1 - t) * C.x + t * t * B.x,
-                     y: (1 - t) * (1 - t) * A.y + 2 * t * (1 - t) * C.y + t * t * B.y });
+  const A = { x: 541.3, y: 411.8 }, B = { x: 1049.3, y: 152.7 };
+  const C = { x: 760, y: 200 };
   function rr(x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
     ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
   function panel(x, y, w, h, a) {
-    ctx.save(); ctx.globalAlpha = a; rr(x, y, w, h, 16);
-    ctx.fillStyle = 'rgba(248,240,222,0.85)'; ctx.fill();
+    ctx.save(); ctx.globalAlpha = a; rr(x, y, w, h, 18);
+    ctx.fillStyle = 'rgba(250,242,225,0.82)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+  }
+  function txt(s, x, y, size, col, a, bold) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    ctx.font = (bold ? 'bold ' : '') + size + 'px ' + F; ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y); const w = ctx.measureText(s).width; ctx.restore(); return w;
+  }
+  const bez = t => ({
+    x: (1 - t) * (1 - t) * A.x + 2 * (1 - t) * t * C.x + t * t * B.x,
+    y: (1 - t) * (1 - t) * A.y + 2 * (1 - t) * t * C.y + t * t * B.y
+  });
+
+  // Title
+  const ta = ease(seg(0, 0.08));
+  panel(50, 40, 640, 110, ta);
+  txt('② 汴京（今河南开封）', 80 - (1 - ta) * 30, 95, 62, INK, ta, true);
+
+  // Meizhou previous station marker
+  ctx.save(); ctx.globalAlpha = 0.85;
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(A.x, A.y, 10, 0, 7); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(A.x, A.y, 18, 0, 7); ctx.stroke();
+  ctx.restore();
+  panel(A.x - 60, A.y + 28, 120, 54, 0.9);
+  txt('眉州', A.x - 36, A.y + 55, 36, INK, 1, true);
+
+  // Brush route thick -> thin
+  const rt = ease(seg(0.03, 0.36));
+  const N = 120;
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = INK;
+  for (let i = 0; i < N * rt; i++) {
+    const t0 = i / N, t1 = Math.min((i + 1) / N, rt);
+    const a = bez(t0), b = bez(t1);
+    ctx.globalAlpha = 0.85 - 0.25 * t0;
+    ctx.lineWidth = 16 - 13 * t0 + Math.sin(i * 0.7) * 1.2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  ctx.restore();
+  if (rt > 0 && rt < 1) {
+    const h = bez(rt);
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(h.x, h.y, 6, 0, 7); ctx.fill();
+  }
+
+  // Seal stamp
+  const st = seg(0.34, 0.44);
+  if (st > 0) {
+    const sc = 1 + 0.8 * Math.pow(1 - st, 2);
+    // pulse ring always moving after stamp
+    const ph = (f % 60) / 60;
+    ctx.save(); ctx.globalAlpha = st * (1 - ph) * 0.6; ctx.strokeStyle = RED; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(B.x, B.y, 34 + ph * 40, 0, 7); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(B.x, B.y); ctx.rotate(-0.12); ctx.scale(sc, sc);
+    ctx.globalAlpha = Math.min(1, st * 1.5) * 0.92;
+    rr(-28, -28, 56, 56, 8); ctx.fillStyle = RED; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-22, -22, 44, 44, 5); ctx.stroke();
+    ctx.fillStyle = '#fff4ea'; ctx.font = 'bold 34px ' + F; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('汴', 0, 2); ctx.restore();
+  }
+
+  // Place labels
+  const la = ease(seg(0.42, 0.52));
+  if (la > 0) {
+    const lx = B.x + 50 + (1 - la) * 20;
+    panel(lx, B.y - 62, 420, 132, la);
+    txt('汴京（今河南开封）', lx + 20, B.y - 26, 38, INK, la, true);
+    txt('1057 起多次在朝', lx + 20, B.y + 32, 34, RED, la, false);
+  }
+
+  // Paper info panel
+  const pa = ease(seg(0.48, 0.56));
+  if (pa > 0) {
+    const px = 60, py = 520, pw = 620, ph = 330;
+    panel(px - (1 - pa) * 40, py, pw, ph, pa);
+    const items = [
+      [['北宋都城', INK]],
+      [['入朝为官，多次在朝', INK]],
+      [['1079 年因', INK], ['乌台诗案', DARK], ['下狱', INK]]
+    ];
+    const starts = [0.54, 0.64, 0.76];
+    items.forEach((parts, i) => {
+      const a = ease(seg(starts[i], starts[i] + 0.07));
+      if (a <= 0) return;
+      let x = px + 40 + (1 - a) * 30; const y = py + 70 + i * 95;
+      txt('·', x, y, 44, RED, a, true); x += 36;
+      parts.forEach(([s, c]) => {
+        const hi = c === DARK;
+        if (hi) {
+          const ha = seg(0.84, 0.92);
+          const pulse = 1 + 0.04 * Math.sin(f * 0.15) * ha;
+          ctx.save(); ctx.font = 'bold 40px ' + F;
+          const w = ctx.measureText(s).width; ctx.restore();
+          ctx.save(); ctx.globalAlpha = a * 0.7; ctx.fillStyle = 'rgba(139,26,26,0.15)';
+          ctx.fillRect(x - 4, y - 26, (w + 8) * ha, 52);
+          ctx.fillStyle = DARK; ctx.fillRect(x, y + 26, w * ha, 4); ctx.restore();
+          ctx.save(); ctx.translate(x + w / 2, y); ctx.scale(pulse, pulse);
+          txt(s, -w / 2, 0, 40, c, a, true); ctx.restore();
+          x += w + 4;
+        } else x += txt(s, x, y, 40, c, a, false) + 4;
+      });
+    });
+  }
+}
+ return draw; })() },
+{ id: "place_3_hangzhou", title: "③ 杭州（今浙江杭州）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  var p = f / n, INK = '#3a2a1c', AC = T.accent || '#b23a2a';
+  var t = f / 30;
+  function cl(x) { return Math.max(0, Math.min(1, x)); }
+  function seg(a, b) { return cl((p - a) / (b - a)); }
+  function ease(x) { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function panel(x, y, w, h, a) {
+    ctx.save(); ctx.globalAlpha = a; rr(x, y, w, h, 18);
+    ctx.fillStyle = 'rgba(250,243,228,0.86)'; ctx.fill();
     ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
   }
   function text(s, x, y, size, col, a, weight, align) {
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.font = (weight || '') + ' ' + size + 'px ' + F;
-    ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); ctx.restore();
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.textAlign = align || 'left';
+    ctx.textBaseline = 'middle'; ctx.font = (weight || '') + ' ' + size + 'px ' + T.font;
+    ctx.fillText(s, x, y); ctx.restore();
   }
-  function seal(x, y, s, a, ch, col) {
-    ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.rotate(-0.08); ctx.scale(s, s);
-    rr(-30, -30, 60, 60, 8); ctx.fillStyle = col; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-24, -24, 48, 48, 5); ctx.stroke();
-    ctx.fillStyle = '#fff6ec'; ctx.font = 'bold 34px ' + F; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(ch, 0, 2); ctx.restore();
+  function dot(x, y, r, col, a) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.restore();
   }
-
-  // Title
-  const tA = ease(seg(0, 0.07));
-  panel(40, 30 - (1 - tA) * 20, 640, 96, tA);
-  text('② 汴京（今河南开封）· 1057 起', 66, 78 - (1 - tA) * 20, 46, INK, tA, 'bold');
-  ctx.save(); ctx.globalAlpha = tA; ctx.fillStyle = RED; ctx.fillRect(66, 108 - (1 - tA) * 20, 120 * tA, 5); ctx.restore();
-
-  // Meizhou (previous station)
-  seal(A.x, A.y, 0.8, 0.75, '眉', 'rgba(150,60,50,0.9)');
-  panel(A.x - 70, A.y + 34, 140, 50, 0.9);
-  text('眉州', A.x, A.y + 59, 34, INK, 0.9, 'bold', 'center');
-
-  // Ink route
-  const lt = ease(seg(0.05, 0.35));
-  if (lt > 0) {
-    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = INK;
-    const N = 80;
-    for (let i = 0; i < N * lt; i++) {
-      const t0 = i / N, t1 = Math.min(lt, (i + 1) / N), a = qp(t0), b = qp(t1);
-      ctx.lineWidth = 4 + 5 * Math.sin(Math.PI * t0) + 1.2 * Math.sin(i * 1.7);
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  function curve(A, B, C, k, w, col, a, dash) {
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath(); var N = 80, pt;
+    for (var i = 0; i <= N * k; i++) {
+      var s = i / N; pt = q(A, B, C, s);
+      if (i === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]);
     }
-    const h = qp(lt); ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(h.x, h.y, 8, 0, 7); ctx.fill();
-    ctx.restore();
+    ctx.stroke(); ctx.restore();
   }
-  // travelling ink dot after line completes
-  if (p > 0.36) {
-    const t = ((f * 0.006) % 1), d = qp(t);
-    ctx.save(); ctx.globalAlpha = 0.5 * Math.sin(Math.PI * t); ctx.fillStyle = RED;
-    ctx.beginPath(); ctx.arc(d.x, d.y, 7, 0, 7); ctx.fill(); ctx.restore();
+  function q(A, B, C, s) {
+    var u = 1 - s;
+    return [u * u * A[0] + 2 * u * s * B[0] + s * s * C[0], u * u * A[1] + 2 * u * s * B[1] + s * s * C[1]];
+  }
+  var MZ = [541.3, 411.8], BJ = [1049.3, 152.7], HZ = [1329.5, 400.9];
+
+  // previous route (faint)
+  curve(MZ, [760, 220], BJ, 1, 4, INK, 0.35, [10, 10]);
+  dot(MZ[0], MZ[1], 9, INK, 0.5); dot(BJ[0], BJ[1], 10, INK, 0.7);
+  text('眉州', MZ[0] - 18, MZ[1], 32, INK, 0.55, '', 'right');
+  text('汴京', BJ[0] - 18, BJ[1] - 4, 34, INK, 0.75, '', 'right');
+
+  // title
+  var ta = ease(seg(0, 0.06));
+  panel(60, 40 - (1 - ta) * 20, 600, 100, ta);
+  text('③ 杭州（今浙江杭州）', 90, 90 - (1 - ta) * 20, 62, INK, ta, 'bold');
+
+  // ink route Bianjing -> Hangzhou
+  var CP = [1300, 200], k = ease(seg(0.05, 0.3));
+  if (k > 0) {
+    curve(BJ, CP, HZ, k, 7, INK, 0.9);
+    if (k < 1) { var tip = q(BJ, CP, HZ, k); dot(tip[0], tip[1], 9 + 2 * Math.sin(t * 12), INK, 0.9); }
   }
 
-  // Seal stamp at Bianjing
-  const sp = seg(0.35, 0.43);
-  if (sp > 0) {
-    const s = sp < 0.7 ? 2.4 - 1.5 * (sp / 0.7) : 0.9 + 0.1 * Math.sin((sp - 0.7) / 0.3 * Math.PI);
-    if (sp >= 0.7) {
-      const pr = ((f - n * 0.42) % 60) / 60;
-      ctx.save(); ctx.globalAlpha = 0.5 * (1 - pr); ctx.strokeStyle = RED; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(B.x, B.y, 40 + pr * 60, 0, 7); ctx.stroke(); ctx.restore();
+  // seal stamp
+  var sa = seg(0.3, 0.36);
+  if (sa > 0) {
+    var pulse = (t * 0.8) % 1;
+    ctx.save(); ctx.globalAlpha = 0.5 * (1 - pulse); ctx.strokeStyle = AC; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(HZ[0], HZ[1], 30 + pulse * 50, 0, 7); ctx.stroke(); ctx.restore();
+    var sc = sa < 1 ? 2.2 - 1.2 * ease(sa) : 1;
+    ctx.save(); ctx.translate(HZ[0], HZ[1]); ctx.rotate(-0.12); ctx.scale(sc, sc);
+    ctx.globalAlpha = Math.min(1, sa * 2) * 0.92;
+    rr(-28, -28, 56, 56, 8); ctx.fillStyle = AC; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-22, -22, 44, 44, 5); ctx.stroke();
+    ctx.fillStyle = '#fff6ee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold 34px ' + T.font; ctx.fillText('杭', 0, 2); ctx.restore();
+  }
+
+  // label + years
+  var la = ease(seg(0.34, 0.4)), y1 = ease(seg(0.4, 0.46)), y2 = ease(seg(0.52, 0.58)), sm = ease(seg(0.58, 0.63));
+  if (la > 0) {
+    panel(1390, 300, 480, 270, la);
+    text('杭州（今浙江杭州）', 1415 + (1 - la) * 30, 345, 44, INK, la, 'bold');
+    ctx.save(); ctx.globalAlpha = la; ctx.strokeStyle = AC; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(1415, 378); ctx.lineTo(1415 + 430 * la, 378); ctx.stroke(); ctx.restore();
+    text('1071–1074 通判', 1415 + (1 - y1) * 30, 425, 40, INK, y1, '');
+    text('1089–1091 知州', 1415 + (1 - y2) * 30, 490, 40, INK, y2, '');
+    if (sm > 0) {
+      var bob = Math.sin(t * 3) * 3;
+      ctx.save(); ctx.globalAlpha = sm; rr(1700, 470 + bob, 150, 42, 21); ctx.fillStyle = AC; ctx.fill(); ctx.restore();
+      text('二度来杭', 1775, 492 + bob, 30, '#fff6ee', sm, 'bold', 'center');
     }
-    seal(B.x, B.y, s, cl(sp * 2), '汴', RED);
+    text('两度任职', 1415, 540, 30, AC, y2 * 0.8, '');
   }
 
-  // Labels
-  const la = ease(seg(0.42, 0.52)), lb = ease(seg(0.47, 0.57)), lc = ease(seg(0.52, 0.6));
-  const lx = B.x + 60;
-  panel(lx - 10 + (1 - la) * 30, 100, 420, 150, Math.max(la, lb) * 0.95);
-  text('汴京（今河南开封）', lx + 8 + (1 - la) * 30, 136, 38, INK, la, 'bold');
-  text('1057 起，多次在朝', lx + 8 + (1 - lb) * 30, 190, 32, RED, lb, 'bold');
-  if (lc > 0) {
-    ctx.save(); ctx.globalAlpha = lc; const tx = B.x - 200, ty = 210 + (1 - lc) * 15;
-    rr(tx - 80, ty - 24, 160, 48, 24); ctx.fillStyle = 'rgba(58,42,28,0.85)'; ctx.fill(); ctx.restore();
-    text('北宋都城', tx, ty, 30, '#f8efe0', lc, 'bold', 'center');
-  }
-
-  // Key points panel
-  const pa = ease(seg(0.58, 0.66)), b2 = ease(seg(0.72, 0.8));
-  let sx = 0, sy = 0;
-  const sh = seg(0.72, 0.82);
-  if (sh > 0 && sh < 1) { const d = (1 - sh) * 9; sx = Math.sin(f * 2.3) * d; sy = Math.cos(f * 3.1) * d * 0.6; }
+  // achievements panel
+  var pa = ease(seg(0.63, 0.68));
   if (pa > 0) {
-    const px = 1300 + sx, py = 560 + (1 - pa) * 30 + sy;
-    panel(px, py, 580, 250, pa);
-    text('要点', px + 30, py + 44, 36, RED, pa, 'bold');
-    ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = RED; ctx.fillRect(px + 30, py + 70, 70 * pa, 4); ctx.restore();
-    text('• 北宋都城，入朝为官', px + 30 + (1 - pa) * 20, py + 120, 36, INK, pa);
-    text('• 1079 年因乌台诗案下狱', px + 30 + (1 - b2) * 20, py + 185, 36, INK, b2, 'bold');
-    if (b2 > 0) {
-      const ux = px + 70, uw = 360 * ease(seg(0.8, 0.9));
-      ctx.save(); ctx.strokeStyle = RED; ctx.lineWidth = 4; ctx.globalAlpha = 0.8;
-      ctx.beginPath(); ctx.moveTo(ux, py + 212); ctx.lineTo(ux + uw, py + 212 + Math.sin(f * 0.1) * 1.5); ctx.stroke(); ctx.restore();
+    panel(1390, 600, 480, 280, pa);
+    var items = ['疏浚西湖', '修筑苏堤', '《饮湖上初晴后雨》'], st = [0.66, 0.75, 0.84];
+    for (var i = 0; i < 3; i++) {
+      var a = ease(seg(st[i], st[i] + 0.06));
+      dot(1425, 660 + i * 80, 9, AC, a);
+      text(items[i], 1450 + (1 - a) * 40, 660 + i * 80, 40, INK, a, i === 2 ? 'bold' : '');
     }
+  }
+
+  // Su causeway hint: gently waving ink stroke near Hangzhou, always moving
+  var wa = seg(0.75, 0.82);
+  if (wa > 0) {
+    ctx.save(); ctx.globalAlpha = 0.7 * wa; ctx.strokeStyle = INK; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (var x = 0; x <= 120 * wa; x += 4) {
+      var yy = HZ[1] + 60 + Math.sin(x / 14 + t * 3) * 5;
+      if (x === 0) ctx.moveTo(HZ[0] - 60 + x, yy); else ctx.lineTo(HZ[0] - 60 + x, yy);
+    }
+    ctx.stroke(); ctx.restore();
+    text('西湖', HZ[0], HZ[1] + 95, 30, INK, wa * 0.8, '', 'center');
   }
 }
  return draw; })() },
-{ id: "hangzhou", title: "③ 杭州（今浙江杭州）· 1071–1074 / 1089–1091", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', RED = T.accent || '#b8322a', FONT = T.font || 'serif';
+{ id: "place_4_mizhou", title: "④ 密州（今山东诸城）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const ink = '#3a2a1c';
+  const red = T.accent || '#b8322a';
+  const font = T.font || 'sans-serif';
   const cl = (x, a, b) => Math.max(0, Math.min(1, (x - a) / (b - a)));
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   const P = {
-    mei: [541.3, 411.8],
-    bian: [1049.3, 152.7],
-    hang: [1329.5, 400.9]
+    meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7],
+    hangzhou: [1329.5, 400.9], mizhou: [1293.2, 87.8]
   };
   function rr(x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
   function panel(x, y, w, h, a) {
-    ctx.save(); ctx.globalAlpha = a * 0.82; ctx.fillStyle = '#f6ecd6'; rr(x, y, w, h, 18); ctx.fill();
-    ctx.globalAlpha = a * 0.5; ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.globalAlpha = a * 0.85; rr(x, y, w, h, 18);
+    ctx.fillStyle = '#f6ecd6'; ctx.fill();
+    ctx.globalAlpha = a * 0.6; ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
   }
-  function text(s, x, y, size, col, a, bold) {
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col; ctx.font = (bold ? 'bold ' : '') + size + 'px ' + FONT;
-    ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); ctx.restore();
+  function text(s, x, y, size, col, a, weight) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    ctx.font = (weight || '') + ' ' + size + 'px ' + font; ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y); ctx.restore();
   }
-  function curve(a, b, bend, t, width, alpha) {
-    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1];
-    const cx = mx - dy * bend, cy = my + dx * bend;
-    ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = INK; ctx.lineCap = 'round';
-    let px = a[0], py = a[1]; const N = 60;
-    for (let i = 1; i <= N * t; i++) {
-      const u = i / N, x = (1 - u) * (1 - u) * a[0] + 2 * u * (1 - u) * cx + u * u * b[0],
-        y = (1 - u) * (1 - u) * a[1] + 2 * u * (1 - u) * cy + u * u * b[1];
-      ctx.lineWidth = width * (0.6 + 0.6 * Math.sin(u * Math.PI));
-      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(x, y); ctx.stroke(); px = x; py = y;
+  function quad(a, c, b, t) {
+    const u = 1 - t;
+    return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]];
+  }
+  function brush(a, c, b, prog, w, col, alpha) {
+    ctx.save(); ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.globalAlpha = alpha;
+    const N = 60, m = Math.floor(N * prog);
+    for (let i = 0; i < m; i++) {
+      const q1 = quad(a, c, b, i / N), q2 = quad(a, c, b, (i + 1) / N);
+      ctx.lineWidth = w * (0.7 + 0.5 * Math.sin(i / N * Math.PI));
+      ctx.beginPath(); ctx.moveTo(q1[0], q1[1]); ctx.lineTo(q2[0], q2[1]); ctx.stroke();
     }
-    if (t > 0 && t < 1) { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(px, py, width * 0.9, 0, 7); ctx.fill(); }
     ctx.restore();
+    return quad(a, c, b, Math.min(1, m / N));
   }
-  function dot(pt, a) {
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(pt[0], pt[1], 9, 0, 7); ctx.fill(); ctx.restore();
-  }
-  function seal(x, y, s, ch, hollow, a, rot) {
-    if (a <= 0) return;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = a; ctx.scale(s, s);
-    rr(-30, -30, 60, 60, 8);
-    if (hollow) { ctx.strokeStyle = RED; ctx.lineWidth = 4; ctx.stroke(); }
-    else { ctx.fillStyle = RED; ctx.fill(); }
-    ctx.fillStyle = hollow ? RED : '#fbf3e4'; ctx.font = 'bold 38px ' + FONT;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, 0, 2); ctx.restore();
+  function dot(pt, r, col, a) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, 7); ctx.fill(); ctx.restore();
   }
 
-  // Title
-  const ta = ease(cl(p, 0, 0.07));
-  panel(50, 26, 1420, 96, ta);
-  text('③ 杭州（今浙江杭州）· 1071–1074 / 1089–1091', 80, 76 - (1 - ta) * 12, 60, INK, ta, true);
+  // past route (faint)
+  brush(P.meizhou, [800, 230], P.bianjing, 1, 5, ink, 0.25);
+  brush(P.bianjing, [1250, 220], P.hangzhou, 1, 5, ink, 0.25);
+  ['meizhou', 'bianjing', 'hangzhou'].forEach(k => dot(P[k], 9, ink, 0.4));
+  text('杭州', P.hangzhou[0] + 18, P.hangzhou[1] + 30, 34, ink, 0.6);
 
-  // Earlier journey (faint) and markers
-  curve(P.mei, P.bian, 0.12, 1, 5, 0.35);
-  dot(P.mei, 0.4); dot(P.bian, 0.8);
-  text('汴京', P.bian[0] - 110, P.bian[1] + 6, 36, INK, 0.85 * ta, true);
-
-  // Ink route Bianjing -> Hangzhou
-  const rt = ease(cl(p, 0.06, 0.3));
-  curve(P.bian, P.hang, -0.18, rt, 9, 0.9);
-
-  // Seal stamp
-  const sp = cl(p, 0.3, 0.37), H0 = P.hang;
-  const pulse = cl(p, 0.37, 1);
-  if (pulse > 0) {
-    const ph = (f % 60) / 60;
-    ctx.save(); ctx.globalAlpha = 0.45 * (1 - ph); ctx.strokeStyle = RED; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(H0[0], H0[1], 40 + ph * 50, 0, 7); ctx.stroke(); ctx.restore();
-  }
-  seal(H0[0], H0[1], sp < 1 ? 2.2 - 1.2 * ease(sp) : 1, '杭', false, sp > 0 ? Math.min(1, sp * 2) : 0, -0.08);
-
-  // Label with years
-  const la = ease(cl(p, 0.36, 0.45)), y1 = ease(cl(p, 0.42, 0.5)), y2 = ease(cl(p, 0.52, 0.6));
-  const LX = 1395, LY = 318;
-  panel(LX, LY, 500, 250, la);
-  text('杭州（今浙江杭州）', LX + 28 + (1 - la) * 20, LY + 52, 44, INK, la, true);
-  text('1071–1074 通判', LX + 28 + (1 - y1) * 30, LY + 122, 38, INK, y1);
-  text('1089–1091 知州', LX + 28 + (1 - y2) * 30, LY + 192, 38, INK, y2);
-  const hs = cl(p, 0.58, 0.64);
-  seal(LX + 340, LY + 192, hs < 1 ? 1.6 - 0.9 * ease(hs) : 0.7, '再', true, hs > 0 ? Math.min(1, hs * 2) : 0, 0.1);
-  text('第二次到任', LX + 380, LY + 232, 30, RED, ease(cl(p, 0.62, 0.68)));
-  // connector bar between two terms
-  if (y2 > 0) {
-    ctx.save(); ctx.globalAlpha = y2 * 0.6; ctx.strokeStyle = RED; ctx.lineWidth = 3; ctx.setLineDash([6, 8]);
-    ctx.lineDashOffset = -f * 0.8;
-    ctx.beginPath(); ctx.moveTo(LX + 14, LY + 122); ctx.lineTo(LX + 14, LY + 192 * (0.64 + 0.36 * y2)); ctx.stroke(); ctx.restore();
-  }
-
-  // Points panel
-  const pa = ease(cl(p, 0.66, 0.72));
-  const PX = 1395, PY = 600;
-  panel(PX, PY, 500, 290, pa);
-  const items = ['疏浚西湖', '修筑苏堤', '《饮湖上初晴后雨》'];
-  items.forEach((s, i) => {
-    const a = ease(cl(p, 0.7 + i * 0.08, 0.77 + i * 0.08)), y = PY + 62 + i * 82;
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(PX + 40, y, 9, 0, 7); ctx.fill(); ctx.restore();
-    text(s, PX + 66 + (1 - a) * 25, y, 40, INK, a, i === 2);
-  });
-  // gentle underline sweep on last item at the end
-  const us = cl(p, 0.94, 1);
-  if (us > 0) {
-    ctx.save(); ctx.strokeStyle = RED; ctx.lineWidth = 4; ctx.globalAlpha = 0.8;
-    ctx.beginPath(); ctx.moveTo(PX + 66, PY + 252); ctx.lineTo(PX + 66 + 380 * ease(us), PY + 252); ctx.stroke(); ctx.restore();
-  }
-}
- return draw; })() },
-{ id: "mizhou", title: "④ 密州（今山东诸城）· 1074–1076", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', AC = T.accent || '#b23a2a';
-  const cl = (v, a, b) => Math.max(a, Math.min(b, v));
-  const seg = (a, b) => cl((p - a) / (b - a), 0, 1);
-  const ease = t => 1 - Math.pow(1 - t, 3);
-  const font = (s, w) => (w || '') + ' ' + s + 'px ' + T.font;
-  function panel(x, y, w, h, a) {
-    ctx.save(); ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(250,243,228,0.86)';
-    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.fill(); ctx.stroke();
-    ctx.restore();
-  }
-  const HZ = { x: 1329.5, y: 400.9 }, MZ = { x: 1293.2, y: 87.8 }, C = { x: 1460, y: 250 };
-  const q = (t) => ({
-    x: (1 - t) * (1 - t) * HZ.x + 2 * t * (1 - t) * C.x + t * t * MZ.x,
-    y: (1 - t) * (1 - t) * HZ.y + 2 * t * (1 - t) * C.y + t * t * MZ.y
-  });
   // title
-  const ta = ease(seg(0, 0.08));
-  panel(50, 36, 1130, 104, ta);
-  ctx.save(); ctx.globalAlpha = ta; ctx.fillStyle = INK; ctx.font = font(62, 'bold');
-  ctx.textBaseline = 'middle'; ctx.fillText('④ 密州（今山东诸城）· 1074–1076', 80 - (1 - ta) * 30, 90);
-  ctx.restore();
-  // faint earlier stops
-  [[541.3, 411.8], [1049.3, 152.7], [1329.5, 400.9]].forEach(s => {
-    ctx.fillStyle = 'rgba(58,42,28,0.55)';
-    ctx.beginPath(); ctx.arc(s[0], s[1], 9, 0, 7); ctx.fill();
-  });
-  // ink route
-  const lt = ease(seg(0.04, 0.3)), N = 80;
-  ctx.strokeStyle = INK; ctx.lineCap = 'round';
-  for (let i = 0; i < N * lt; i++) {
-    const a = q(i / N), b = q(Math.min((i + 1) / N, lt));
-    ctx.lineWidth = 4 + 5 * Math.sin(i / N * Math.PI) + 1.5 * Math.sin(i * 0.9);
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  if (lt > 0 && lt < 1) {
-    const h = q(lt); ctx.fillStyle = INK;
-    ctx.beginPath(); ctx.arc(h.x, h.y, 9, 0, 7); ctx.fill();
-  }
-  // pulse ring (continuous motion)
-  if (p > 0.3) {
-    const r = (f % 45) / 45;
-    ctx.strokeStyle = AC; ctx.globalAlpha = (1 - r) * 0.7; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(MZ.x, MZ.y, 30 + r * 50, 0, 7); ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-  // seal stamp
-  const st = seg(0.3, 0.38);
-  if (st > 0) {
-    const s = 1 + 0.8 * Math.pow(1 - st, 2), sz = 56;
-    ctx.save(); ctx.translate(MZ.x, MZ.y); ctx.rotate(-0.08); ctx.scale(s, s);
-    ctx.globalAlpha = cl(st * 1.5, 0, 0.92);
-    ctx.fillStyle = AC; ctx.beginPath(); ctx.roundRect(-sz / 2, -sz / 2, sz, sz, 6); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 2.5;
-    ctx.strokeRect(-sz / 2 + 5, -sz / 2 + 5, sz - 10, sz - 10);
-    ctx.fillStyle = '#fff4ea'; ctx.font = font(36, 'bold');
+  const ta = ease(cl(p, 0, 0.1));
+  panel(60, 40, 560, 110, ta);
+  text('④ 密州（今山东诸城）', 90 - (1 - ta) * 30, 95, 62, ink, ta, 'bold');
+
+  // ink route hangzhou -> mizhou
+  const lp = ease(cl(p, 0.08, 0.4));
+  const ctrl = [1430, 250];
+  const tip = brush(P.hangzhou, ctrl, P.mizhou, lp, 9, ink, 0.9);
+  if (lp > 0 && lp < 1) dot(tip, 8 + 3 * Math.sin(f * 0.5), ink, 0.9);
+
+  // seal at mizhou
+  const sp = cl(p, 0.38, 0.5);
+  if (sp > 0) {
+    const s = sp < 1 ? 1.6 - 0.6 * ease(sp) : 1;
+    const ring = (f % 60) / 60;
+    ctx.save(); ctx.globalAlpha = 0.5 * (1 - ring) * cl(p, 0.5, 0.55);
+    ctx.strokeStyle = red; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(P.mizhou[0], P.mizhou[1], 30 + ring * 40, 0, 7); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(P.mizhou[0], P.mizhou[1]); ctx.rotate(-0.12); ctx.scale(s, s);
+    ctx.globalAlpha = Math.min(1, sp * 2) * 0.92;
+    rr(-28, -28, 56, 56, 6); ctx.fillStyle = red; ctx.fill();
+    ctx.strokeStyle = '#f6ecd6'; ctx.lineWidth = 2.5; rr(-22, -22, 44, 44, 4); ctx.stroke();
+    ctx.fillStyle = '#f6ecd6'; ctx.font = 'bold 34px ' + font;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('密', 0, 2);
     ctx.restore();
   }
-  // place label
-  const la = ease(seg(0.36, 0.46));
-  panel(1350, 40, 460, 140, la);
-  ctx.save(); ctx.globalAlpha = la; ctx.textBaseline = 'middle';
-  ctx.fillStyle = INK; ctx.font = font(46, 'bold');
-  ctx.fillText('密州（今山东诸城）', 1372 + (1 - la) * 30, 86);
-  ctx.fillStyle = AC; ctx.font = font(40, 'bold');
-  ctx.fillText('1074–1076', 1372 + (1 - la) * 30, 145);
-  ctx.restore();
-  // bullet panel
-  const pa = ease(seg(0.44, 0.52));
-  panel(80, 560 + (1 - pa) * 40, 900, 300, pa);
-  function brush(txt, x, y, a, b) {
-    const t = seg(a, b) * txt.length, sz = 54;
-    ctx.font = font(sz, 'bold'); ctx.textBaseline = 'middle';
-    let cx = x;
-    for (let i = 0; i < txt.length; i++) {
-      const w = ctx.measureText(txt[i]).width, k = cl(t - i, 0, 1);
-      if (k > 0) {
-        ctx.save(); ctx.globalAlpha = k;
-        ctx.translate(cx + w / 2, y); const sc = 1.35 - 0.35 * ease(k); ctx.scale(sc, sc);
-        ctx.fillStyle = (txt[i] === '《' || txt[i] === '》') ? AC : INK;
-        ctx.textAlign = 'center'; ctx.fillText(txt[i], 0, 0);
-        ctx.restore();
-      }
-      cx += w;
-    }
-    return t;
-  }
-  const items = [['《江城子·密州出猎》', 0.52, 0.7, 660], ['《水调歌头·明月几时有》', 0.72, 0.92, 780]];
-  items.forEach((it, i) => {
-    const y = 650 + i * 130, d = seg(it[1] - 0.03, it[1]);
-    if (d <= 0) return;
-    ctx.globalAlpha = d * pa; ctx.fillStyle = AC;
-    ctx.beginPath(); ctx.arc(130, y, 11, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
-    brush(it[0], 160, y, it[1], it[2]);
-    const u = ease(seg(it[2], it[2] + 0.06));
-    if (u > 0) {
-      ctx.strokeStyle = AC; ctx.globalAlpha = 0.6; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(160, y + 40); ctx.lineTo(160 + (it[3] - 160 + 160) * u, y + 40); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+
+  // label near mizhou
+  const la = ease(cl(p, 0.46, 0.58));
+  panel(1345, 30, 440, 130, la);
+  text('密州（今山东诸城）', 1370 + (1 - la) * 30, 72, 44, ink, la, 'bold');
+  text('1074–1076', 1370 + (1 - la) * 30, 125, 38, red, la, 'bold');
+
+  // poem panel
+  const pa = ease(cl(p, 0.56, 0.64));
+  const px = 1330, py = 480, pw = 560, ph = 300;
+  panel(px, py - (1 - pa) * 20, pw, ph, pa);
+  const items = ['· 《江城子·密州出猎》', '· 《水调歌头·明月几时有》'];
+  items.forEach((s, i) => {
+    const t0 = 0.62 + i * 0.13, tp = cl(p, t0, t0 + 0.12);
+    const k = Math.ceil(s.length * tp);
+    if (k > 0) text(s.slice(0, k), px + 30, py + 150 + i * 80, 42, ink, 1, i === 1 ? 'bold' : '');
   });
-  // moon glint near second poem after written
-  if (p > 0.92) {
-    const g = 0.5 + 0.5 * Math.sin(f * 0.15);
-    ctx.fillStyle = AC; ctx.globalAlpha = 0.25 + 0.4 * g;
-    ctx.beginPath(); ctx.arc(915, 780, 18 + 4 * g, 0, 7); ctx.fill();
-    ctx.globalAlpha = 1;
+  text('代表作', px + 30, py + 60, 36, red, pa, 'bold');
+
+  // moon
+  const ma = cl(p, 0.78, 0.92);
+  if (ma > 0) {
+    const mx = px + pw - 80, my = py + 70 + 4 * Math.sin(f * 0.06), r = 36;
+    ctx.save(); ctx.globalAlpha = ma * (0.65 + 0.15 * Math.sin(f * 0.1));
+    ctx.fillStyle = '#d9b867';
+    ctx.beginPath(); ctx.arc(mx, my, r, Math.PI * 0.35, Math.PI * 1.65, false);
+    ctx.arc(mx + 16, my - 4, r * 0.82, Math.PI * 1.5, Math.PI * 0.5, true);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.globalAlpha = ma * 0.5;
+    ctx.beginPath(); ctx.arc(mx, my, r, 0, 7); ctx.stroke();
+    ctx.restore();
   }
 }
  return draw; })() },
-{ id: "xuzhou", title: "⑤ 徐州（今江苏徐州）· 1077–1079", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', RED = T.accent || '#b0302a';
-  const F = (s, w) => (w || '') + ' ' + Math.round(s) + 'px ' + T.font;
-  const cl = v => Math.max(0, Math.min(1, v));
-  const seg = (a, b) => cl((p - a) / (b - a));
-  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
-  const P = { meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7], hangzhou: [1329.5, 400.9], mizhou: [1293.2, 87.8], xuzhou: [1186.0, 182.2] };
-  const curve = (a, b, t, bend) => {
-    const mx = (a[0] + b[0]) / 2 - (b[1] - a[1]) * bend, my = (a[1] + b[1]) / 2 + (b[0] - a[0]) * bend;
-    const u = 1 - t; return [u * u * a[0] + 2 * u * t * mx + t * t * b[0], u * u * a[1] + 2 * u * t * my + t * t * b[1]];
+{ id: "place_5_xuzhou", title: "⑤ 徐州（今江苏徐州）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n;
+  const ink = '#3a2a1c', red = T.accent || '#b23a2a', font = T.font;
+  const P = {
+    meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7], hangzhou: [1329.5, 400.9],
+    mizhou: [1293.2, 87.8], xuzhou: [1186.0, 182.2]
   };
-  const route = (a, b, prog, w, col, bend) => {
-    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
-    ctx.beginPath(); const N = 60;
-    for (let i = 0; i <= N * prog; i++) { const q = curve(a, b, i / N, bend); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
-    ctx.stroke(); return curve(a, b, prog, bend);
-  };
-  // previous journey, faint
-  ctx.save(); ctx.setLineDash([10, 10]);
+  const cl = (v) => Math.max(0, Math.min(1, v));
+  const ease = (t) => { t = cl(t); return t * t * (3 - 2 * t); };
+  const seg = (a, b) => ease((p - a) / (b - a));
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function panel(x, y, w, h, a) {
+    ctx.save(); ctx.globalAlpha = a;
+    rr(x, y, w, h, 18); ctx.fillStyle = 'rgba(246,236,214,0.88)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+  function text(s, x, y, size, col, a, align, bold) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    ctx.font = (bold ? 'bold ' : '') + size + 'px ' + font;
+    ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y); ctx.restore();
+  }
+  // earlier route, faint
   const prev = ['meizhou', 'bianjing', 'hangzhou', 'mizhou'];
-  for (let i = 0; i < 3; i++) route(P[prev[i]], P[prev[i + 1]], 1, 3, 'rgba(58,42,28,0.35)', 0.15);
+  ctx.save(); ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 4;
+  ctx.setLineDash([12, 10]); ctx.lineCap = 'round';
+  ctx.beginPath();
+  prev.forEach((k, i) => i ? ctx.lineTo(...P[k]) : ctx.moveTo(...P[k]));
+  ctx.stroke(); ctx.restore();
+  prev.forEach(k => {
+    ctx.beginPath(); ctx.arc(P[k][0], P[k][1], 8, 0, 7);
+    ctx.fillStyle = 'rgba(58,42,28,0.45)'; ctx.fill();
+  });
+  // ink stroke mizhou -> xuzhou
+  const [ax, ay] = P.mizhou, [bx, by] = P.xuzhou;
+  const t = seg(0.02, 0.28);
+  const cx = ax + (bx - ax) * t, cy = ay + (by - ay) * t;
+  ctx.save(); ctx.strokeStyle = ink; ctx.lineCap = 'round';
+  ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(cx, cy); ctx.stroke();
+  ctx.lineWidth = 2; ctx.globalAlpha = 0.4; ctx.beginPath();
+  ctx.moveTo(ax + 4, ay + 4); ctx.lineTo(cx + 4, cy + 4); ctx.stroke();
+  if (t > 0 && t < 1) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 7); ctx.fillStyle = ink; ctx.fill(); }
   ctx.restore();
-  prev.forEach(k => { ctx.fillStyle = 'rgba(58,42,28,0.5)'; ctx.beginPath(); ctx.arc(P[k][0], P[k][1], 7, 0, 7); ctx.fill(); });
-  // title
-  const ta = seg(0, 0.08);
-  ctx.globalAlpha = ta; ctx.fillStyle = 'rgba(250,243,228,0.82)'; rr(50, 30, 900, 100, 18); ctx.fill();
-  ctx.fillStyle = INK; ctx.font = F(H * 0.058, 'bold'); ctx.textBaseline = 'middle';
-  ctx.fillText('⑤ 徐州（今江苏徐州）· 1077–1079', 80 - (1 - ta) * 30, 80); ctx.globalAlpha = 1;
-  // ink line mizhou -> xuzhou
-  const lp = ease(seg(0.04, 0.3));
-  if (lp > 0) {
-    route(P.mizhou, P.xuzhou, lp, 9, 'rgba(58,42,28,0.25)', 0.25);
-    const tip = route(P.mizhou, P.xuzhou, lp, 5, INK, 0.25);
-    if (lp < 1) { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(tip[0], tip[1], 8, 0, 7); ctx.fill(); }
+  // flood ripples
+  const rA = seg(0.28, 0.4);
+  if (rA > 0) {
+    for (let i = 0; i < 4; i++) {
+      const ph = ((f / 70) + i / 4) % 1;
+      ctx.save(); ctx.globalAlpha = rA * (1 - ph) * 0.8;
+      ctx.strokeStyle = '#6fa8d6'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(bx, by, 40 + ph * 110, 20 + ph * 55, 0, 0, 7); ctx.stroke();
+      ctx.restore();
+    }
+    // wavy lines
+    ctx.save(); ctx.globalAlpha = rA * 0.7; ctx.strokeStyle = '#6fa8d6'; ctx.lineWidth = 3;
+    for (let j = 0; j < 3; j++) {
+      const yy = by + 70 + j * 18, sh = f * 1.5 + j * 20;
+      ctx.beginPath();
+      for (let x = -90; x <= 90; x += 6) {
+        const y = yy + Math.sin((x + sh) / 14) * 5;
+        x === -90 ? ctx.moveTo(bx + x, y) : ctx.lineTo(bx + x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   // seal stamp
-  const sp = seg(0.3, 0.38), [xx, xy] = P.xuzhou;
-  if (sp > 0) {
-    const ring = (f % 60) / 60;
-    ctx.strokeStyle = RED; ctx.globalAlpha = (1 - ring) * 0.5 * seg(0.38, 0.42); ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(xx, xy, 30 + ring * 40, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
-    const s = 1 + (1 - ease(sp)) * 0.8, sz = 52;
-    ctx.save(); ctx.translate(xx, xy); ctx.rotate(-0.08); ctx.scale(s, s); ctx.globalAlpha = sp;
-    ctx.fillStyle = RED; rr(-sz / 2, -sz / 2, sz, sz, 6); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,225,0.9)'; ctx.lineWidth = 2.5; rr(-sz / 2 + 5, -sz / 2 + 5, sz - 10, sz - 10, 4); ctx.stroke();
-    ctx.fillStyle = '#fff4e6'; ctx.font = F(34, 'bold'); ctx.textAlign = 'center'; ctx.fillText('徐', 0, 2);
-    ctx.restore(); ctx.textAlign = 'left';
+  const s = seg(0.25, 0.33);
+  if (s > 0) {
+    const sc = 1 + (1 - s) * 1.4;
+    ctx.save(); ctx.translate(bx, by); ctx.scale(sc, sc); ctx.rotate(-0.08);
+    ctx.globalAlpha = s;
+    rr(-26, -26, 52, 52, 7); ctx.fillStyle = red; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.9)'; ctx.lineWidth = 2.5; rr(-21, -21, 42, 42, 5); ctx.stroke();
+    ctx.restore();
+    text('徐', bx, by + 2, 32, '#fff6ee', s, 'center', true);
   }
   // place label
-  const la = seg(0.37, 0.47);
+  const la = seg(0.32, 0.42);
   if (la > 0) {
-    ctx.globalAlpha = la; const lx = xx + 45, ly = xy + 30 + (1 - la) * 20;
-    ctx.fillStyle = 'rgba(250,243,228,0.85)'; rr(lx, ly, 330, 110, 14); ctx.fill();
-    ctx.fillStyle = INK; ctx.font = F(H * 0.036, 'bold'); ctx.fillText('徐州（今江苏徐州）', lx + 18, ly + 35);
-    ctx.fillStyle = RED; ctx.font = F(H * 0.034, 'bold'); ctx.fillText('1077–1079', lx + 18, ly + 80);
-    ctx.globalAlpha = 1;
+    const lx = bx - 400, ly = by + 120 + (1 - la) * 20;
+    panel(lx, ly, 330, 120, la);
+    ctx.save(); ctx.globalAlpha = la * 0.5; ctx.strokeStyle = ink; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx + 330, ly + 30); ctx.lineTo(bx - 30, by + 20); ctx.stroke(); ctx.restore();
+    text('徐州（今江苏徐州）', lx + 165, ly + 42, 36, ink, la, 'center', true);
+    text('1077–1079', lx + 165, ly + 88, 34, red, la, 'center', true);
   }
-  // panel
-  const pa = seg(0.44, 0.52);
+  // title
+  const ta = seg(0, 0.08);
+  panel(60, 50 - (1 - ta) * 20, 520, 100, ta);
+  text('⑤ 徐州（今江苏徐州）', 90, 100 - (1 - ta) * 20, 62, ink, ta, 'left', true);
+  // bullet panel
+  const pa = seg(0.4, 0.48);
   if (pa > 0) {
-    const px = 1460, py = 520, pw = 420, ph = 360;
-    ctx.globalAlpha = pa; ctx.fillStyle = 'rgba(244,232,206,0.9)'; rr(px + (1 - pa) * 40, py, pw, ph, 20); ctx.fill();
-    ctx.strokeStyle = 'rgba(58,42,28,0.4)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = RED; ctx.font = F(H * 0.04, 'bold'); ctx.fillText('徐州要事', px + 30, py + 45);
-    ctx.globalAlpha = 1;
+    const px = 1400 + (1 - pa) * 40, py = 470;
+    panel(px, py, 480, 380, pa);
+    text('在徐州', px + 36, py + 56, 44, red, pa, 'left', true);
+    ctx.save(); ctx.globalAlpha = pa * 0.4; ctx.fillStyle = ink; ctx.fillRect(px + 36, py + 92, 408, 2); ctx.restore();
     const items = ['率军民抗洪', '修黄楼', '上书论利国监', '冶铁业'];
-    const tms = [0.52, 0.66, 0.8, 0.8];
-    items.forEach((t, i) => {
-      const a = seg(tms[i], tms[i] + 0.07); if (a <= 0) return;
-      ctx.globalAlpha = a; const y = py + 110 + i * 62 - (i === 3 ? 14 : 0), x = px + 30 + (1 - a) * 30;
-      if (i < 3) { ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(x + 8, y, 8, 0, 7); ctx.fill(); }
-      ctx.fillStyle = INK; ctx.font = F(H * 0.038); ctx.fillText(t, x + 30, y);
-      ctx.globalAlpha = 1;
-    });
-    // water ripples beside panel during first bullet
-    const wa = seg(0.52, 0.58) * (1 - seg(0.7, 0.8));
-    if (wa > 0) {
-      ctx.strokeStyle = '#3d6f8f'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-      for (let k = 0; k < 3; k++) {
-        ctx.globalAlpha = wa * (1 - k * 0.2); ctx.beginPath();
-        const by = py + 70 + k * 30;
-        for (let x = 0; x <= 140; x += 4) {
-          const yy = by + Math.sin(x / 18 + f * 0.15 + k) * 8;
-          x ? ctx.lineTo(px - 170 + x, yy) : ctx.moveTo(px - 170 + x, yy);
-        }
-        ctx.stroke();
+    const starts = [0.48, 0.6, 0.72, 0.72];
+    items.forEach((it, i) => {
+      const a = seg(starts[i] + (i === 3 ? 0.04 : 0), starts[i] + 0.08 + (i === 3 ? 0.04 : 0));
+      if (a <= 0) return;
+      const y = py + 140 + i * 62, x = px + 36 + (1 - a) * 30;
+      const cur = (i === 0 && p < 0.6) || (i === 1 && p >= 0.6 && p < 0.72) || (i >= 2 && p >= 0.72);
+      if (i !== 3) text('·', x, y, 44, red, a, 'left', true);
+      text(it, x + (i === 3 ? 34 : 34), y, 40, cur ? ink : 'rgba(58,42,28,0.8)', a, 'left', cur);
+      if (cur && p > 0.5) {
+        const w = 60 + 40 * Math.sin(f / 10);
+        ctx.save(); ctx.globalAlpha = a * 0.5; ctx.fillStyle = red;
+        ctx.fillRect(x + 34, y + 26, w, 4); ctx.restore();
       }
-      ctx.globalAlpha = 1;
-    }
-  }
-  // gentle breathing glow at the end to keep motion
-  if (p > 0.42) {
-    ctx.fillStyle = RED; ctx.globalAlpha = 0.15 + 0.1 * Math.sin(f * 0.12);
-    ctx.beginPath(); ctx.arc(xx, xy, 42, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    });
   }
 }
  return draw; })() },
-{ id: "huangzhou", title: "⑥ 黄州（今湖北黄冈）· 1080–1084", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', RED = '#b8322a', AC = T.accent || RED;
-  const F = s => `${s}px ${T.font}`;
-  const cl = (x, a, b) => Math.max(a, Math.min(b, x));
-  const seg = (a, b) => cl((p - a) / (b - a), 0, 1);
-  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+{ id: "place_6_huangzhou", title: "⑥ 黄州（今湖北黄冈）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n, ink = '#3a2a1c', red = T.accent || '#b03a2e';
+  const font = (s, b) => (b ? 'bold ' : '') + s + 'px ' + T.font;
+  const cl = v => Math.max(0, Math.min(1, v));
+  const ease = t => { t = cl(t); return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
   const P = {
     meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7], hangzhou: [1329.5, 400.9],
     mizhou: [1293.2, 87.8], xuzhou: [1186.0, 182.2], huangzhou: [1074.5, 390.0]
   };
-  function rr(x, y, w, h, r) {
-    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-  }
-  function panel(x, y, w, h, a) {
-    ctx.save(); ctx.globalAlpha = a; rr(x, y, w, h, 18);
-    ctx.fillStyle = 'rgba(250,242,225,0.86)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-  }
-  function curvePts(a, b, k) {
-    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = b[0] - a[0], dy = b[1] - a[1];
-    return [a, [mx - dy * k, my + dx * k], b];
-  }
-  function qpt(c, t) {
-    const u = 1 - t;
-    return [u * u * c[0][0] + 2 * u * t * c[1][0] + t * t * c[2][0], u * u * c[0][1] + 2 * u * t * c[1][1] + t * t * c[2][1]];
-  }
-  function route(a, b, t, col, w, dash) {
-    const c = curvePts(a, b, 0.15);
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
-    ctx.setLineDash(dash || []); ctx.beginPath();
-    const N = 60;
-    for (let i = 0; i <= N * t; i++) { const q = qpt(c, i / N); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
-    ctx.stroke(); ctx.restore();
-    return qpt(c, t);
-  }
-  function dot(q, r, col) { ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, 7); ctx.fillStyle = col; ctx.fill(); }
-
-  // earlier journey, faint
-  const prev = ['meizhou', 'bianjing', 'hangzhou', 'mizhou', 'xuzhou'];
-  for (let i = 0; i < prev.length - 1; i++) route(P[prev[i]], P[prev[i + 1]], 1, 'rgba(58,42,28,0.28)', 4);
-  prev.forEach(k => dot(P[k], 9, 'rgba(58,42,28,0.45)'));
-  dot(P.xuzhou, 11 + 2 * Math.sin(f * 0.15) * (1 - seg(0.3, 0.4)), INK);
-
-  // title
-  const ta = ease(seg(0, 0.08));
-  panel(50, 36, 1000, 104, ta);
-  ctx.save(); ctx.globalAlpha = ta; ctx.fillStyle = INK; ctx.font = F(64); ctx.textBaseline = 'middle';
-  ctx.fillText('⑥ 黄州（今湖北黄冈）· 1080–1084', 50 + 30 - (1 - ta) * 30, 90); ctx.restore();
-
-  // exile route: lighter ink, dashed
-  const rt = ease(seg(0.06, 0.32));
-  if (rt > 0) {
-    const tip = route(P.xuzhou, P.huangzhou, rt, 'rgba(58,42,28,0.55)', 6, [18, 12]);
-    if (rt < 1) { dot(tip, 10, INK); dot(tip, 18, 'rgba(58,42,28,0.15)'); }
-  }
-
-  // stamp
-  const hz = P.huangzhou, st = seg(0.32, 0.4);
-  if (st > 0) {
-    const sc = 1 + 1.4 * Math.pow(1 - ease(st), 2);
-    const pulse = st >= 1 ? (f * 0.02) % 1 : 0;
-    if (st >= 1) {
-      ctx.beginPath(); ctx.arc(hz[0], hz[1], 40 + pulse * 50, 0, 7);
-      ctx.strokeStyle = `rgba(184,50,42,${0.5 * (1 - pulse)})`; ctx.lineWidth = 4; ctx.stroke();
-    }
-    ctx.save(); ctx.translate(hz[0], hz[1]); ctx.rotate(-0.08); ctx.scale(sc, sc);
-    ctx.globalAlpha = Math.min(1, st * 2) * 0.92;
-    rr(-34, -34, 68, 68, 8); ctx.fillStyle = RED; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-27, -27, 54, 54, 5); ctx.stroke();
-    ctx.fillStyle = '#fff4ea'; ctx.font = F(26); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('黄', 0, -11); ctx.fillText('州', 0, 15); ctx.restore();
-  }
-
-  // place labels (left of marker)
-  const la = ease(seg(0.38, 0.46));
-  if (la > 0) {
-    const x0 = 700, y0 = 300, dx = (1 - la) * 40;
-    panel(x0 + dx, y0, 320, 220, la);
-    ctx.save(); ctx.globalAlpha = la; ctx.fillStyle = INK; ctx.textBaseline = 'top';
-    ctx.font = F(56); ctx.fillText('黄州', x0 + 24 + dx, y0 + 18);
-    ctx.font = F(34); ctx.fillText('（今湖北黄冈）', x0 + 24 + dx, y0 + 90);
-    ctx.fillStyle = AC; ctx.fillText('1080–1084', x0 + 24 + dx, y0 + 145);
-    // tag
-    const tx = x0 + 180 + dx, ty = y0 + 26;
-    rr(tx, ty, 100, 48, 24); ctx.fillStyle = RED; ctx.fill();
-    ctx.fillStyle = '#fff4ea'; ctx.font = F(32); ctx.textAlign = 'center'; ctx.fillText('贬谪', tx + 50, ty + 8);
-    ctx.restore();
-  }
-
-  // paper panel bullets
-  const pa = ease(seg(0.44, 0.5));
-  if (pa > 0) {
-    const x0 = 80, y0 = 500, w = 560;
-    panel(x0, y0 + (1 - pa) * 30, w, 380, pa);
-    const items = [
-      [0.48, ['开垦东坡，', '自号东坡居士']],
-      [0.62, ['前后《赤壁赋》、', '《念奴娇·赤壁怀古》']],
-      [0.8, ['《寒食帖》']]
-    ];
-    let y = y0 + 34;
-    items.forEach(([t0, lines]) => {
-      const a = ease(seg(t0, t0 + 0.07));
-      ctx.save(); ctx.globalAlpha = a; ctx.textBaseline = 'top';
-      const ox = (1 - a) * -30;
-      dot([x0 + 40 + ox, y + 22], 9 + (a < 1 ? 0 : 1.5 * Math.sin(f * 0.12 + t0 * 20)), AC);
-      ctx.fillStyle = INK; ctx.font = F(40);
-      lines.forEach((s, i) => ctx.fillText(s, x0 + 70 + ox, y + i * 52));
-      ctx.restore();
-      y += lines.length * 52 + 30;
-    });
-    // underline sweep under the active item
-    const u = seg(0.86, 1);
-    ctx.strokeStyle = AC; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x0 + 70, y - 22); ctx.lineTo(x0 + 70 + 190 * ease(u), y - 22);
-    if (u > 0) ctx.stroke();
-  }
-}
- return draw; })() },
-{ id: "huizhou", title: "⑦ 惠州（今广东惠州）· 1094–1097", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, ink = '#3a2a1c', red = T.accent || '#b8322a', F = T.font;
-  const cl = (v, a, b) => Math.max(a, Math.min(b, v));
-  const seg = (a, b) => cl((p - a) / (b - a), 0, 1);
-  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
-  const P = {
-    meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7], hangzhou: [1329.5, 400.9], mizhou: [1293.2, 87.8],
-    xuzhou: [1186.0, 182.2], huangzhou: [1074.5, 390.0], huizhou: [1052.7, 790.4]
-  };
-  const A = P.huangzhou, B = P.huizhou, C = [1175, 590];
-  const q = t => [(1 - t) * (1 - t) * A[0] + 2 * (1 - t) * t * C[0] + t * t * B[0], (1 - t) * (1 - t) * A[1] + 2 * (1 - t) * t * C[1] + t * t * B[1]];
-  const lt = ease(seg(0.03, 0.42));
-  // camera pans south following the brush tip
-  const ty = 140 * ease(seg(0.05, 0.45));
-  ctx.save();
-  if (T.bg_img && ty > 0.5) ctx.drawImage(T.bg_img, 0, -ty, W, H);
-  ctx.translate(0, -ty);
-  // earlier route, faint
-  const prev = ['meizhou', 'bianjing', 'hangzhou', 'mizhou', 'xuzhou', 'huangzhou'];
-  ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 4; ctx.setLineDash([10, 10]);
-  ctx.beginPath(); prev.forEach((k, i) => i ? ctx.lineTo(...P[k]) : ctx.moveTo(...P[k])); ctx.stroke();
-  ctx.setLineDash([]);
-  prev.forEach(k => { ctx.fillStyle = 'rgba(58,42,28,0.55)'; ctx.beginPath(); ctx.arc(P[k][0], P[k][1], 8, 0, 7); ctx.fill(); });
-  ctx.font = `bold 34px ${F}`; ctx.fillStyle = 'rgba(58,42,28,0.7)'; ctx.textAlign = 'right';
-  ctx.fillText('黄州', A[0] - 18, A[1] + 12);
-  // ink route huangzhou -> huizhou
-  if (lt > 0) {
-    const N = 80, m = Math.max(1, Math.round(N * lt));
-    ctx.strokeStyle = ink; ctx.lineCap = 'round';
+  const panel = (x, y, w, h, a) => { ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = 'rgba(246,236,214,0.86)'; rr(x, y, w, h, 18); ctx.fill(); ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); };
+  const quad = (a, b, c, t) => [(1 - t) * (1 - t) * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) * (1 - t) * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]];
+  const ctrl = (a, b) => [(a[0] + b[0]) / 2 + (b[1] - a[1]) * 0.15, (a[1] + b[1]) / 2 - (b[0] - a[0]) * 0.15];
+  const route = (a, b, t, col, w0) => {
+    const c = ctrl(a, b), N = 60, m = Math.floor(N * t);
+    ctx.strokeStyle = col; ctx.lineCap = 'round';
     for (let i = 0; i < m; i++) {
-      const a = q(i / N), b = q(Math.min((i + 1) / N, lt));
-      ctx.lineWidth = 7 + 3 * Math.sin(i * 0.5);
-      ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+      const q0 = quad(a, b, c, i / N), q1 = quad(a, b, c, (i + 1) / N);
+      ctx.lineWidth = w0 * (0.75 + 0.35 * Math.sin(i * 0.7) * Math.sin(i * 0.23 + 1));
+      ctx.beginPath(); ctx.moveTo(q0[0], q0[1]); ctx.lineTo(q1[0], q1[1]); ctx.stroke();
     }
-    const tip = q(lt);
-    if (lt < 1) { ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(tip[0], tip[1], 11, 0, 7); ctx.fill(); }
-    else { // travelling glint along the finished route
-      const g = q((p * 3) % 1); ctx.fillStyle = 'rgba(184,50,42,0.6)';
-      ctx.beginPath(); ctx.arc(g[0], g[1], 9, 0, 7); ctx.fill();
-    }
-  }
-  // seal stamp
-  const st = seg(0.42, 0.5);
-  if (st > 0) {
-    const s = 1 + 1.6 * (1 - ease(st)), pulse = 1 + 0.04 * Math.sin(f * 0.15);
-    ctx.save(); ctx.translate(B[0], B[1]); ctx.rotate(-0.08);
-    ctx.globalAlpha = st;
-    ctx.strokeStyle = red; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, 58 * pulse + 6 * Math.sin(f * 0.1), 0, 7); ctx.globalAlpha = st * 0.4; ctx.stroke();
-    ctx.globalAlpha = st * 0.92; ctx.scale(s, s);
-    ctx.fillStyle = red; rr(-36, -36, 72, 72, 8); ctx.fill();
-    ctx.strokeStyle = '#f6ead6'; ctx.lineWidth = 3; rr(-30, -30, 60, 60, 5); ctx.stroke();
-    ctx.fillStyle = '#f6ead6'; ctx.font = `bold 44px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('惠', 0, 2);
-    ctx.restore();
-  }
-  // labels
-  const lb = seg(0.5, 0.58);
-  if (lb > 0) {
-    ctx.save(); ctx.globalAlpha = lb; ctx.translate(-30 * (1 - lb), 0);
-    const x = B[0] - 470, y = B[1] - 70;
-    ctx.fillStyle = 'rgba(246,236,216,0.85)'; rr(x, y, 400, 150, 14); ctx.fill();
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = ink; ctx.font = `bold 40px ${F}`; ctx.fillText('惠州', x + 20, y + 50);
-    ctx.font = `32px ${F}`; ctx.fillText('（今广东惠州）', x + 110, y + 50);
-    ctx.fillStyle = red; ctx.font = `bold 38px ${F}`; ctx.fillText('1094–1097', x + 20, y + 110);
-    ctx.strokeStyle = red; ctx.lineWidth = 3; rr(x + 250, y + 78, 110, 46, 10); ctx.stroke();
-    ctx.font = `bold 32px ${F}`; ctx.fillText('贬谪', x + 273, y + 113);
-    ctx.restore();
-  }
-  ctx.restore();
-  // title (screen space)
-  const tt = ease(seg(0, 0.08));
-  ctx.save(); ctx.globalAlpha = tt;
-  ctx.fillStyle = 'rgba(246,236,216,0.82)'; rr(60, 40, 900, 100, 18); ctx.fill();
-  ctx.fillStyle = ink; ctx.font = `bold 62px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('⑦ 惠州（今广东惠州）· 1094–1097', 90, 92 + 8 * (1 - tt));
-  ctx.restore();
-  // key-point panel
-  const pp = ease(seg(0.56, 0.64));
-  if (pp > 0) {
-    const x = 1300 + 60 * (1 - pp), y = 250;
-    ctx.save(); ctx.globalAlpha = pp;
-    ctx.fillStyle = 'rgba(246,236,216,0.9)'; rr(x, y, 560, 260, 20); ctx.fill();
-    ctx.strokeStyle = 'rgba(58,42,28,0.3)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = red; ctx.fillRect(x, y + 20, 8, 220);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const items = [['助修东新桥、西新桥', false, 0.64], ['“日啖荔枝三百颗”', true, 0.76]];
-    items.forEach(([t, b, s], i) => {
-      const a = ease(seg(s, s + 0.07)); if (!a) return;
-      ctx.globalAlpha = pp * a;
-      const yy = y + 75 + i * 110, xx = x + 40 + 20 * (1 - a);
-      ctx.fillStyle = red; ctx.beginPath(); ctx.arc(xx + 8, yy, 9, 0, 7); ctx.fill();
-      ctx.fillStyle = b ? red : ink; ctx.font = `${b ? 'bold ' : ''}${b ? 46 : 40}px ${F}`;
-      ctx.fillText(t, xx + 34, yy);
-      if (b) { // underline sweep + breathing glow
-        const w = ctx.measureText(t).width, u = seg(0.8, 0.9);
-        ctx.strokeStyle = red; ctx.lineWidth = 4; ctx.globalAlpha = pp * (0.5 + 0.3 * Math.sin(f * 0.12));
-        ctx.beginPath(); ctx.moveTo(xx + 34, yy + 34); ctx.lineTo(xx + 34 + w * u, yy + 34); ctx.stroke();
-      }
-    });
-    ctx.restore();
-  }
-}
- return draw; })() },
-{ id: "danzhou", title: "⑧ 儋州（今海南儋州）· 1097–1100", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, INK = '#3a2a1c', AC = T.accent || '#b8322a';
-  const cl = (v, a, b) => Math.max(a, Math.min(b, v));
-  const ease = t => { t = cl(t, 0, 1); return t * t * (3 - 2 * t); };
-  const seg = (a, b) => ease((p - a) / (b - a));
-  const P = [
-    { n: '眉州', x: 541.3, y: 411.8 }, { n: '汴京', x: 1049.3, y: 152.7 }, { n: '杭州', x: 1329.5, y: 400.9 },
-    { n: '密州', x: 1293.2, y: 87.8 }, { n: '徐州', x: 1186.0, y: 182.2 }, { n: '黄州', x: 1074.5, y: 390.0 },
-    { n: '惠州', x: 1052.7, y: 790.4 }, { n: '常州', x: 1320.8, y: 315.8 }];
-  const HZ = { x: 1052.7, y: 790.4 }, DZ = { x: 819.0, y: 986.2 };
-  function rr(x, y, w, h, r, fill, stroke) {
-    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
-  }
-  function txt(s, x, y, size, col, align, bold) {
-    ctx.font = (bold ? 'bold ' : '') + size + 'px ' + T.font; ctx.fillStyle = col;
-    ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
-  }
-  // route curve (quadratic) from Huizhou to Danzhou
-  const C = { x: 960, y: 930 };
-  const pt = t => ({ x: (1 - t) * (1 - t) * HZ.x + 2 * t * (1 - t) * C.x + t * t * DZ.x,
-                     y: (1 - t) * (1 - t) * HZ.y + 2 * t * (1 - t) * C.y + t * t * DZ.y });
-  const SEA = 0.55; // after this fraction the route crosses sea
-  // previous stops, faint
-  P.forEach(q => {
-    ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, 7); ctx.fillStyle = 'rgba(58,42,28,0.45)'; ctx.fill();
-    if (q.n === '惠州') { rr(q.x + 14, q.y - 24, 88, 46, 10, 'rgba(250,244,230,0.75)'); txt(q.n, q.x + 22, q.y, 32, INK); }
-  });
+    return quad(a, b, c, t);
+  };
+  const dot = (q, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, 7); ctx.fill(); };
+
   // title
-  const ta = seg(0, 0.08);
-  ctx.globalAlpha = ta;
-  rr(60, 40, 1000, 100, 18, 'rgba(250,244,230,0.82)', 'rgba(58,42,28,0.25)');
-  txt('⑧ 儋州（今海南儋州）· 1097–1100', 90, 90 + (1 - ta) * 10, 62, INK, 'left', true);
-  ctx.globalAlpha = 1;
-  // draw route
-  const rp = seg(0.06, 0.5), N = 80;
-  ctx.lineCap = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = 6;
-  for (let i = 0; i < N; i++) {
-    const t0 = i / N, t1 = (i + 1) / N;
-    if (t0 >= rp) break;
-    const a = pt(t0), b = pt(Math.min(t1, rp));
-    ctx.setLineDash(t0 >= SEA ? [14, 12] : []);
-    ctx.lineDashOffset = -f * 0.8;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  const ta = ease(p / 0.08);
+  panel(60, 50 - (1 - ta) * 30, 640, 110, ta);
+  ctx.save(); ctx.globalAlpha = ta; ctx.fillStyle = ink; ctx.font = font(64, true); ctx.textBaseline = 'middle';
+  ctx.fillText('⑥ 黄州（今湖北黄冈）', 90, 105 - (1 - ta) * 30); ctx.restore();
+
+  // previous journey, faint ink
+  const prev = ['meizhou', 'bianjing', 'hangzhou', 'mizhou', 'xuzhou'];
+  ctx.save(); ctx.globalAlpha = 0.45;
+  for (let i = 0; i < prev.length - 1; i++) route(P[prev[i]], P[prev[i + 1]], 1, '#6b5a48', 4);
+  prev.forEach(k => dot(P[k], 7, '#6b5a48'));
+  ctx.restore();
+  ctx.save(); ctx.fillStyle = ink; ctx.font = font(32); ctx.textBaseline = 'middle';
+  ctx.fillText('徐州', P.xuzhou[0] + 16, P.xuzhou[1] - 6); ctx.restore();
+
+  // new exile route xuzhou -> huangzhou, darker grey ink
+  const lt = ease((p - 0.05) / 0.25);
+  if (lt > 0) {
+    const tip = route(P.xuzhou, P.huangzhou, lt, 'rgba(40,36,34,0.9)', 9);
+    if (lt < 1) { dot(tip, 10 + 2 * Math.sin(f * 0.5), 'rgba(30,26,24,0.85)'); }
   }
-  ctx.setLineDash([]);
-  // brush tip / travelling dot
-  const tipT = rp < 1 ? rp : ((f % 90) / 90);
-  const tip = pt(tipT);
-  ctx.beginPath(); ctx.arc(tip.x, tip.y, rp < 1 ? 10 : 7, 0, 7); ctx.fillStyle = rp < 1 ? INK : AC; ctx.fill();
-  // sea label
-  const sa = seg(0.3, 0.42);
-  if (sa > 0) { ctx.globalAlpha = sa * 0.8; const m = pt(0.72); txt('渡海', m.x + 30, m.y - 30, 32, INK, 'left'); ctx.globalAlpha = 1; }
-  // stamp
-  const st = seg(0.5, 0.58);
+  dot(P.xuzhou, 8, ink);
+
+  // seal at huangzhou
+  const st = cl((p - 0.3) / 0.06);
+  const [hx, hy] = P.huangzhou;
   if (st > 0) {
     const pulse = (f % 60) / 60;
-    ctx.beginPath(); ctx.arc(DZ.x, DZ.y, 30 + pulse * 40, 0, 7);
-    ctx.strokeStyle = AC; ctx.globalAlpha = (1 - pulse) * 0.6 * st; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
-    const s = 1 + (1 - st) * 1.5;
-    ctx.save(); ctx.translate(DZ.x, DZ.y); ctx.rotate(-0.08); ctx.scale(s, s); ctx.globalAlpha = st;
-    rr(-28, -28, 56, 56, 6, AC); rr(-23, -23, 46, 46, 4, null, 'rgba(255,240,230,0.9)');
-    txt('儋', 0, 2, 34, '#fff5ea', 'center', true);
-    ctx.restore(); ctx.globalAlpha = 1;
+    ctx.save(); ctx.strokeStyle = red; ctx.globalAlpha = (1 - pulse) * 0.6 * st; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(hx, hy, 30 + pulse * 50, 0, 7); ctx.stroke(); ctx.restore();
+    const s = 1 + (1 - ease(st)) * 0.8;
+    ctx.save(); ctx.translate(hx, hy); ctx.rotate(-0.08); ctx.scale(s, s); ctx.globalAlpha = st * 0.92;
+    ctx.fillStyle = red; rr(-34, -34, 68, 68, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-28, -28, 56, 56, 4); ctx.stroke();
+    ctx.fillStyle = '#fff4ea'; ctx.font = font(24, true); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('黄', 0, -11); ctx.fillText('州', 0, 13); ctx.restore();
   }
-  // labels (kept above caption area)
-  const la = seg(0.6, 0.72);
+  // label
+  const la = ease((p - 0.36) / 0.07);
   if (la > 0) {
-    ctx.globalAlpha = la;
-    const lx = 430, ly = 735 + (1 - la) * 15;
-    rr(lx, ly, 360, 150, 16, 'rgba(250,244,230,0.85)', 'rgba(58,42,28,0.3)');
-    txt('儋州（今海南儋州）', lx + 20, ly + 40, 36, INK, 'left', true);
-    txt('1097–1100', lx + 20, ly + 100, 36, INK);
-    rr(lx + 220, ly + 78, 110, 46, 23, AC);
-    txt('贬谪', lx + 275, ly + 101, 30, '#fff5ea', 'center', true);
-    ctx.strokeStyle = 'rgba(58,42,28,0.5)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(lx + 360, ly + 140); ctx.lineTo(DZ.x - 30, DZ.y - 40 * la); ctx.stroke();
-    ctx.globalAlpha = 1;
+    const lx = hx - 60 - (1 - la) * 30;
+    panel(lx - 360, hy - 62, 370, 124, la);
+    ctx.save(); ctx.globalAlpha = la; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = ink; ctx.font = font(38, true); ctx.fillText('黄州（今湖北黄冈）', lx - 12, hy - 24);
+    ctx.fillStyle = red; ctx.font = font(34, true); ctx.fillText('1080–1084 贬谪', lx - 12, hy + 28);
+    ctx.restore();
   }
-  // key points panel
-  const pa = seg(0.7, 0.78);
+
+  // paper panel with bullets
+  const pa = ease((p - 0.42) / 0.06);
   if (pa > 0) {
-    const px = 1380, py = 560;
-    ctx.globalAlpha = pa;
-    rr(px, py + (1 - pa) * 20, 440, 250, 20, 'rgba(250,244,230,0.88)', 'rgba(58,42,28,0.3)');
-    txt('要点', px + 30, py + 50, 40, AC, 'left', true);
-    ['办学讲学', '东坡书院在此'].forEach((s, i) => {
-      const a = seg(0.76 + i * 0.08, 0.84 + i * 0.08);
-      ctx.globalAlpha = pa * a;
-      const y = py + 120 + i * 70;
-      ctx.beginPath(); ctx.arc(px + 42, y, 8, 0, 7); ctx.fillStyle = AC; ctx.fill();
-      txt(s, px + 66 + (1 - a) * 20, y, 40, INK);
+    const px = 1330, py = 480 + (1 - pa) * 40;
+    panel(px, py, 560, 400, pa);
+    ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = red; ctx.fillRect(px + 30, py + 30, 8, 44);
+    ctx.fillStyle = ink; ctx.font = font(40, true); ctx.textBaseline = 'middle';
+    ctx.fillText('黄州时期', px + 54, py + 52); ctx.restore();
+    const items = [[0.46, ['开垦东坡，自号“东坡居士”']], [0.6, ['前后《赤壁赋》', '《念奴娇·赤壁怀古》']], [0.8, ['《寒食帖》']]];
+    let y = py + 125;
+    items.forEach(([t0, lines]) => {
+      const a = ease((p - t0) / 0.07);
+      if (a > 0) {
+        ctx.save(); ctx.globalAlpha = a; ctx.textBaseline = 'middle';
+        const ox = (1 - a) * 30;
+        dot([px + 44 + ox, y], 7, red);
+        ctx.fillStyle = ink; ctx.font = font(36);
+        lines.forEach((l, i) => ctx.fillText(l, px + 66 + ox, y + i * 48));
+        ctx.restore();
+      }
+      y += lines.length * 48 + 30;
     });
-    ctx.globalAlpha = 1;
-    // underline shimmer
-    const u = (f % 120) / 120;
-    ctx.strokeStyle = AC; ctx.lineWidth = 3; ctx.globalAlpha = 0.6 * pa;
-    ctx.beginPath(); ctx.moveTo(px + 30, py + 78); ctx.lineTo(px + 30 + 100 * (0.4 + 0.6 * Math.sin(u * Math.PI)), py + 78); ctx.stroke();
-    ctx.globalAlpha = 1;
+    // ink underline sweeping under the latest item
+    const sw = (f % 90) / 90;
+    ctx.save(); ctx.globalAlpha = 0.5 * pa; ctx.strokeStyle = red; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(px + 30, py + 376); ctx.lineTo(px + 30 + 500 * ease(sw), py + 376); ctx.stroke(); ctx.restore();
+  }
+}
+ return draw; })() },
+{ id: "place_7_huizhou", title: "⑦ 惠州（今广东惠州）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n, ink = '#3a2a1c', red = T.accent || '#b23a2a', font = T.font;
+  const cl = (x) => Math.max(0, Math.min(1, x));
+  const seg = (a, b) => cl((p - a) / (b - a));
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const A = { x: 1074.5, y: 390.0 }, B = { x: 1052.7, y: 790.4 }, C = { x: 1150, y: 590 };
+  const q = (t) => ({ x: (1 - t) * (1 - t) * A.x + 2 * t * (1 - t) * C.x + t * t * B.x, y: (1 - t) * (1 - t) * A.y + 2 * t * (1 - t) * C.y + t * t * B.y });
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function panel(x, y, w, h, a) { ctx.save(); ctx.globalAlpha = a; rr(x, y, w, h, 18); ctx.fillStyle = 'rgba(250,243,228,0.86)'; ctx.fill(); ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); }
+  function text(s, x, y, size, col, a, align, bold) { ctx.save(); ctx.globalAlpha = a; ctx.font = (bold ? 'bold ' : '') + size + 'px ' + font; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); ctx.restore(); }
+
+  // Title
+  const ta = ease(seg(0, 0.08));
+  panel(60, 50, 640, 110, ta);
+  text('⑦ 惠州（今广东惠州）', 90 - (1 - ta) * 30, 105, 64, ink, ta, 'left', true);
+
+  // Huangzhou origin marker
+  ctx.save(); ctx.fillStyle = 'rgba(58,42,28,0.6)'; ctx.beginPath(); ctx.arc(A.x, A.y, 9, 0, 7); ctx.fill(); ctx.restore();
+  text('黄州', A.x + 20, A.y - 4, 34, 'rgba(58,42,28,0.75)', seg(0, 0.06));
+
+  // Ink line drawing south
+  const lt = ease(seg(0.04, 0.32));
+  ctx.save(); ctx.strokeStyle = 'rgba(70,64,58,0.8)'; ctx.lineCap = 'round'; ctx.lineWidth = 6;
+  ctx.setLineDash([22, 12]); ctx.lineDashOffset = -f * 0.8;
+  ctx.beginPath();
+  for (let i = 0; i <= 60; i++) { const t = (i / 60) * lt, pt = q(t); i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y); }
+  ctx.stroke(); ctx.setLineDash([]);
+  if (lt > 0 && lt < 1) { const h = q(lt); ctx.fillStyle = 'rgba(58,42,28,0.85)'; ctx.beginPath(); ctx.arc(h.x, h.y, 10, 0, 7); ctx.fill(); }
+  ctx.restore();
+
+  // Seal stamp
+  const st = seg(0.3, 0.38);
+  if (st > 0) {
+    const s = 1 + (1 - ease(st)) * 0.8, pulse = 1 + 0.04 * Math.sin(f * 0.12);
+    ctx.save(); ctx.translate(B.x, B.y); ctx.rotate(-0.08); ctx.scale(s * pulse, s * pulse);
+    ctx.globalAlpha = ease(st) * 0.92;
+    ctx.beginPath(); ctx.arc(0, 0, 50 + 6 * Math.sin(f * 0.12), 0, 7); ctx.strokeStyle = red; ctx.globalAlpha *= 0.3; ctx.lineWidth = 3; ctx.stroke();
+    ctx.globalAlpha = ease(st) * 0.92;
+    rr(-32, -32, 64, 64, 8); ctx.fillStyle = red; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 3; rr(-26, -26, 52, 52, 5); ctx.stroke();
+    ctx.font = 'bold 40px ' + font; ctx.fillStyle = '#fff6ee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('惠', 0, 2);
+    ctx.restore();
+  }
+
+  // Place labels (left of seal)
+  const la = ease(seg(0.36, 0.48));
+  panel(560, 718, 430, 150, la);
+  text('惠州（今广东惠州）', 585 - (1 - la) * 20, 763, 40, ink, la, 'left', true);
+  text('1094–1097 贬谪', 585 - (1 - la) * 20, 825, 38, red, la, 'left', true);
+  ctx.save(); ctx.globalAlpha = la; ctx.strokeStyle = 'rgba(58,42,28,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(990, 790); ctx.lineTo(B.x - 40, B.y); ctx.stroke(); ctx.restore();
+
+  // Paper panel with facts
+  const pa = ease(seg(0.46, 0.56));
+  const px = 1240 + (1 - pa) * 40, py = 470;
+  panel(px, py, 600, 300, pa);
+  text('在惠州', px + 36, py + 55, 44, ink, pa, 'left', true);
+  ctx.save(); ctx.globalAlpha = pa; ctx.strokeStyle = red; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px + 36, py + 88); ctx.lineTo(px + 36 + 140 * pa, py + 88); ctx.stroke(); ctx.restore();
+  const l1 = ease(seg(0.54, 0.64)), l2 = ease(seg(0.64, 0.76));
+  text('· 助修东新桥、西新桥', px + 36 + (1 - l1) * 30, py + 145, 40, ink, l1);
+  text('· “日啖荔枝三百颗”', px + 36 + (1 - l2) * 30, py + 215, 40, red, l2, 'left', true);
+  // little bridge icon under line 1
+  if (l1 > 0) {
+    ctx.save(); ctx.globalAlpha = l1 * 0.7; ctx.strokeStyle = ink; ctx.lineWidth = 3;
+    const bx = px + 470, by = py + 150, w = 90 * l1;
+    ctx.beginPath(); ctx.arc(bx + 45, by + 40, 50, Math.PI * 1.18, Math.PI * 1.82); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx, by + 28); ctx.lineTo(bx + w, by + 28); ctx.stroke(); ctx.restore();
+  }
+
+  // Lychee sprig
+  const ya = ease(seg(0.72, 0.9));
+  if (ya > 0) {
+    const sway = Math.sin(f * 0.06) * 0.06;
+    ctx.save(); ctx.globalAlpha = ya; ctx.translate(1700, 410); ctx.rotate(sway);
+    ctx.strokeStyle = '#5a4630'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -20); ctx.quadraticCurveTo(-60, 0, -120, 30); ctx.stroke();
+    ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-70, 12); ctx.lineTo(-80, 50); ctx.moveTo(-100, 24); ctx.lineTo(-125, 58); ctx.moveTo(-45, 5); ctx.lineTo(-40, 45); ctx.stroke();
+    ctx.fillStyle = 'rgba(80,100,60,0.75)';
+    [[-20, -30, -0.6], [-55, -18, -0.9], [-95, 5, -1.2], [10, -10, 0.4]].forEach(([x, y, r]) => { ctx.save(); ctx.translate(x, y); ctx.rotate(r); ctx.beginPath(); ctx.ellipse(0, 0, 34, 11, 0, 0, 7); ctx.fill(); ctx.restore(); });
+    [[-80, 66], [-125, 74], [-40, 62], [-102, 90], [-60, 88]].forEach(([x, y], i) => {
+      const s = ease(cl(ya * 1.6 - i * 0.12));
+      ctx.beginPath(); ctx.arc(x, y, 17 * s, 0, 7); ctx.fillStyle = red; ctx.fill();
+      ctx.strokeStyle = 'rgba(90,20,10,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(x - 5, y - 5, 4 * s, 0, 7); ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  // Gentle floating ink dot along route at the end (keeps motion)
+  if (p > 0.32) { const t = (f * 0.004) % 1, d = q(t); ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(d.x, d.y, 6, 0, 7); ctx.fill(); ctx.restore(); }
+}
+ return draw; })() },
+{ id: "place_8_danzhou", title: "⑧ 儋州（今海南儋州）", draw: (() => { function draw(ctx, f, n, W, H, T) {
+  const p = f / n, ink = '#3a2a1c', red = T.accent || '#b23a2a';
+  const font = T.font || 'sans-serif';
+  const cl = v => Math.max(0, Math.min(1, v));
+  const ease = v => { v = cl(v); return v * v * (3 - 2 * v); };
+  const seg = (a, b) => ease((p - a) / (b - a));
+  const P = {
+    meizhou: [541.3, 411.8], bianjing: [1049.3, 152.7], hangzhou: [1329.5, 400.9],
+    mizhou: [1293.2, 87.8], xuzhou: [1186.0, 182.2], huangzhou: [1074.5, 390.0],
+    huizhou: [1052.7, 790.4], danzhou: [819.0, 986.2]
+  };
+  function panel(x, y, w, h, a) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = 'rgba(250,243,228,0.86)';
+    ctx.strokeStyle = 'rgba(58,42,28,0.35)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  function text(s, x, y, size, col, a, weight, align) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = col;
+    ctx.font = (weight || '') + ' ' + size + 'px ' + font;
+    ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y); ctx.restore();
+  }
+  // faint earlier route
+  const order = ['meizhou', 'bianjing', 'hangzhou', 'mizhou', 'xuzhou', 'huangzhou', 'hangzhou', 'huizhou'];
+  ctx.save(); ctx.strokeStyle = 'rgba(58,42,28,0.28)'; ctx.lineWidth = 3; ctx.setLineDash([10, 10]);
+  ctx.lineDashOffset = -f * 0.6;
+  ctx.beginPath(); order.forEach((k, i) => i ? ctx.lineTo(...P[k]) : ctx.moveTo(...P[k])); ctx.stroke();
+  ctx.restore();
+  order.forEach(k => { ctx.fillStyle = 'rgba(58,42,28,0.4)'; ctx.beginPath(); ctx.arc(...P[k], 6, 0, 7); ctx.fill(); });
+  // new route huizhou -> danzhou with wave over sea
+  const A = P.huizhou, B = P.danzhou, dx = B[0] - A[0], dy = B[1] - A[1];
+  const L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L;
+  const pt = t => {
+    const w = t > 0.5 ? Math.sin((t - 0.5) * 60 + f * 0.15) * 9 * Math.sin((t - 0.5) / 0.5 * Math.PI) : 0;
+    return [A[0] + dx * t + nx * w, A[1] + dy * t + ny * w];
+  };
+  const lp = seg(0.08, 0.5);
+  ctx.save(); ctx.strokeStyle = 'rgba(58,42,28,0.85)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i <= 120 * lp; i++) { const q = pt(i / 120); i ? ctx.lineTo(...q) : ctx.moveTo(...q); }
+  ctx.stroke(); ctx.restore();
+  // head / travelling dot
+  if (lp > 0) {
+    const t = lp < 1 ? lp : ((p - 0.5) * 2) % 1;
+    const q = pt(t);
+    ctx.fillStyle = lp < 1 ? ink : 'rgba(58,42,28,0.5)';
+    ctx.beginPath(); ctx.arc(q[0], q[1], lp < 1 ? 9 : 6, 0, 7); ctx.fill();
+  }
+  // huizhou marker
+  ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(...A, 9, 0, 7); ctx.fill();
+  text('惠州', A[0] + 20, A[1] - 6, 34, ink, 0.8, 'bold');
+  // seal stamp at danzhou
+  const s = seg(0.5, 0.58);
+  if (s > 0) {
+    const pulse = (p * 3) % 1;
+    ctx.save(); ctx.strokeStyle = red; ctx.globalAlpha = (1 - pulse) * 0.6 * s; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(...B, 30 + pulse * 40, 0, 7); ctx.stroke(); ctx.restore();
+    const sc = 1 + (1 - s) * 0.8, sz = 52;
+    ctx.save(); ctx.translate(...B); ctx.rotate(-0.08); ctx.scale(sc, sc); ctx.globalAlpha = s;
+    ctx.fillStyle = red; ctx.beginPath(); ctx.roundRect(-sz / 2, -sz / 2, sz, sz, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 2;
+    ctx.strokeRect(-sz / 2 + 5, -sz / 2 + 5, sz - 10, sz - 10);
+    ctx.fillStyle = '#fff4ea'; ctx.font = 'bold 32px ' + font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('儋', 0, 2); ctx.restore();
+  }
+  // label above marker (kept out of bottom 16%)
+  const la = seg(0.56, 0.68), ly = 760 + (1 - la) * 20;
+  if (la > 0) {
+    panel(470, ly, 400, 130, la);
+    text('儋州（今海南儋州）', 490, ly + 42, 40, ink, la, 'bold');
+    text('1097–1100 贬谪', 490, ly + 96, 36, red, la, 'bold');
+    ctx.save(); ctx.globalAlpha = la * 0.6; ctx.strokeStyle = red; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(800, ly + 130); ctx.lineTo(B[0] - 4, B[1] - 34); ctx.stroke(); ctx.restore();
+  }
+  // title
+  const ta = seg(0, 0.1);
+  panel(80, 60 - (1 - ta) * 20, 640, 110, ta);
+  text('⑧ 儋州（今海南儋州）', 110, 115 - (1 - ta) * 20, 64, ink, ta, 'bold');
+  // info panel
+  const pa = seg(0.64, 0.74);
+  if (pa > 0) {
+    const px = 1380 + (1 - pa) * 40;
+    panel(px, 560, 460, 250, pa);
+    text('在儋州', px + 30, 610, 44, red, pa, 'bold');
+    const items = ['· 办学讲学', '· 东坡书院在此'];
+    items.forEach((s2, i) => {
+      const a = seg(0.7 + i * 0.08, 0.8 + i * 0.08);
+      text(s2, px + 40 + (1 - a) * 30, 680 + i * 70, 42, ink, a * pa, '');
+    });
+    const u = seg(0.86, 1);
+    ctx.save(); ctx.strokeStyle = red; ctx.lineWidth = 4; ctx.globalAlpha = pa;
+    ctx.beginPath(); ctx.moveTo(px + 30, 640); ctx.lineTo(px + 30 + 400 * u, 640); ctx.stroke(); ctx.restore();
   }
 }
  return draw; })() },
 { id: "recap_route", title: "回顾：一生的路线", draw: (() => { function draw(ctx, f, n, W, H, T) {
-  const p = f / n, ink = '#3a2a1c', red = T.accent || '#b8322a';
-  const P = {meizhou:[541.3,411.8,'眉州','1037 出生',-1],bianjing:[1049.3,152.7,'汴京','1057 起在朝',-1],hangzhou:[1329.5,400.9,'杭州','1071 / 1089',1],mizhou:[1293.2,87.8,'密州','1074–1076',1],xuzhou:[1186.0,182.2,'徐州','1077–1079',1],huangzhou:[1074.5,390.0,'黄州','1080–1084',-1],huizhou:[1052.7,790.4,'惠州','1094–1097',1],danzhou:[819.0,986.2,'儋州','1097–1100',1],changzhou:[1320.8,315.8,'常州','1101 病逝',1]};
-  const order = ['meizhou','bianjing','hangzhou','mizhou','xuzhou','huangzhou','huizhou','danzhou'];
-  const cl = (v,a,b)=>Math.max(a,Math.min(b,v)), seg=(a,b)=>cl((p-a)/(b-a),0,1), ease=t=>t*t*(3-2*t);
-  const font = (s,b)=>(b?'bold ':'')+Math.round(s)+'px '+T.font;
-  function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
-  function quadPts(a,b,bend){const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,dx=b[0]-a[0],dy=b[1]-a[1];const cx=mx-dy*bend,cy=my+dx*bend;const pts=[];for(let i=0;i<=40;i++){const t=i/40,u=1-t;pts.push([u*u*a[0]+2*u*t*cx+t*t*b[0],u*u*a[1]+2*u*t*cy+t*t*b[1]]);}return pts;}
-  function poly(pts,t){const k=Math.floor(t*(pts.length-1));if(t<=0)return;ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<=k;i++)ctx.lineTo(pts[i][0],pts[i][1]);const r=t*(pts.length-1)-k;if(k<pts.length-1){const A=pts[k],B=pts[k+1];ctx.lineTo(A[0]+(B[0]-A[0])*r,A[1]+(B[1]-A[1])*r);}ctx.stroke();}
-  function label(x,y,txt,sub,side,col,a){ctx.save();ctx.globalAlpha=a;ctx.font=font(H*0.032,true);const w=Math.max(ctx.measureText(txt).width,0)+16;ctx.font=font(H*0.024);const w2=ctx.measureText(sub).width+16;const bw=Math.max(w,w2);const bx=side>0?x+26:x-26-bw,by=y-36;ctx.fillStyle='rgba(250,243,228,0.82)';rr(bx,by,bw,72,8);ctx.fill();ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.font=font(H*0.032,true);ctx.fillText(txt,bx+8,by+20);ctx.fillStyle=ink;ctx.font=font(H*0.024);ctx.fillText(sub,bx+8,by+54);ctx.restore();}
-  function seal(x,y,s,a,col){ctx.save();ctx.globalAlpha=a;ctx.translate(x,y);ctx.rotate(-0.08);ctx.fillStyle=col;rr(-s/2,-s/2,s,s,s*0.15);ctx.fill();ctx.strokeStyle='rgba(255,240,225,0.9)';ctx.lineWidth=2;rr(-s/2+4,-s/2+4,s-8,s-8,s*0.1);ctx.stroke();ctx.restore();}
+  var p = f / n, ink = '#3a2a1c', red = T.accent || '#b8322a', F = T.font;
+  var P = [
+    ['眉州', 541.3, 411.8, '1037', '1037 出生', -1, 0],
+    ['汴京', 1049.3, 152.7, '1057', '1057 入京', -1, 0],
+    ['杭州', 1329.5, 400.9, '1071', '1071 杭州通判', 1, 10],
+    ['密州', 1293.2, 87.8, '1074', '1074 知密州', 1, 0],
+    ['徐州', 1186.0, 182.2, '1077', '1077 知徐州', 1, 30],
+    ['黄州', 1074.5, 390.0, '1080', '1080 贬黄州', -1, 0],
+    ['惠州', 1052.7, 790.4, '1094', '1094 贬惠州', 1, 0],
+    ['儋州', 819.0, 986.2, '1097', '1097 贬儋州', 1, -95]
+  ];
+  var CZ = [1320.8, 315.8];
+  function cl(v) { return Math.max(0, Math.min(1, v)); }
+  function ease(v) { v = cl(v); return 1 - Math.pow(1 - v, 3); }
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function panel(x, y, w, h, a) { ctx.save(); ctx.globalAlpha *= a; rr(x, y, w, h, 12); ctx.fillStyle = 'rgba(250,243,228,0.85)'; ctx.fill(); ctx.strokeStyle = 'rgba(58,42,28,0.25)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); }
+  function seal(x, y, s, col, txt, a) {
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.scale(s, s);
+    rr(-18, -18, 36, 36, 6); ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,230,0.8)'; ctx.lineWidth = 2; rr(-13, -13, 26, 26, 4); ctx.stroke();
+    if (txt) { ctx.fillStyle = '#fff4ea'; ctx.font = 'bold 20px ' + F; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, 0, 1); }
+    ctx.restore();
+  }
+  function label(x, y, side, dy, t1, t2, a, col) {
+    ctx.save(); ctx.font = 'bold 32px ' + F;
+    var w = Math.max(ctx.measureText(t1).width, 0) + 20; ctx.font = '28px ' + F;
+    w = Math.max(w, ctx.measureText(t2).width + 20);
+    var lx = side > 0 ? x + 30 : x - 30 - w, ly = y - 38 + dy;
+    panel(lx, ly, w, 76, a);
+    ctx.globalAlpha = a; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = col; ctx.font = 'bold 32px ' + F; ctx.fillText(t1, lx + 10, ly + 4);
+    ctx.fillStyle = ink; ctx.font = '28px ' + F; ctx.fillText(t2, lx + 10, ly + 40);
+    ctx.restore();
+  }
   // title
-  ctx.save();ctx.fillStyle='rgba(250,243,228,0.85)';rr(50,30,560,100,14);ctx.fill();ctx.fillStyle=ink;ctx.font=font(H*0.06,true);ctx.textBaseline='middle';ctx.fillText('回顾：一生的路线',75,82);ctx.restore();
-  // phase 1: return north dashed
-  const t1=ease(seg(0.03,0.25));
-  const back=quadPts(P.danzhou,P.changzhou,-0.18);
-  ctx.save();ctx.strokeStyle='rgba(58,42,28,0.55)';ctx.lineWidth=4;ctx.setLineDash([14,12]);ctx.lineDashOffset=-f*0.8;poly(back,t1);ctx.restore();
-  if(t1>0){const q=back[Math.floor(t1*40)];ctx.save();ctx.fillStyle='rgba(58,42,28,0.7)';ctx.beginPath();ctx.arc(q[0],q[1],7,0,7);ctx.fill();ctx.restore();
-    const m=back[20];ctx.save();ctx.globalAlpha=seg(0.08,0.16);ctx.fillStyle='rgba(250,243,228,0.85)';rr(m[0]+20,m[1]-28,300,56,10);ctx.fill();ctx.fillStyle=ink;ctx.font=font(H*0.03,true);ctx.textBaseline='middle';ctx.fillText('1101 遇赦北归',m[0]+34,m[1]);ctx.restore();}
-  const ca=seg(0.22,0.28);
-  if(ca>0){const c=P.changzhou;ctx.save();ctx.globalAlpha=ca;ctx.fillStyle='#8a8278';ctx.beginPath();ctx.arc(c[0],c[1],11*(0.6+0.4*ca),0,7);ctx.fill();ctx.restore();label(c[0],c[1]-6,'常州 · 1101 病逝','苏轼辞世',1,'#6a625a',ca);}
-  // phase 2: route + seals
-  const s0=0.28,s1=0.78,step=(s1-s0)/8;
-  ctx.save();ctx.strokeStyle=red;ctx.lineWidth=5;ctx.lineCap='round';ctx.globalAlpha=0.8;
-  for(let i=1;i<8;i++){const t=ease(seg(s0+step*(i-0.15),s0+step*(i+0.5)));if(t>0)poly(quadPts(P[order[i-1]],P[order[i]],0.12),t);}
-  ctx.restore();
-  order.forEach((id,i)=>{const a=seg(s0+step*i,s0+step*(i+0.5));if(a<=0)return;const c=P[id];const pulse=p>0.85?1+0.08*Math.sin(f*0.15+i):1;const s=(34+30*(1-ease(a)))*pulse;seal(c[0],c[1],s,ease(a),red);
-    ctx.save();ctx.globalAlpha=ease(a);ctx.fillStyle='#fff';ctx.font=font(20,true);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(i+1),c[0],c[1]);ctx.restore();
-    const ly=id==='danzhou'?c[1]-60:c[1];label(c[0],ly,c[2],c[3],c[4],red,ease(a));});
-  // table panel
-  const ta=seg(0.3,0.38);
-  if(ta>0){ctx.save();ctx.globalAlpha=ta;ctx.fillStyle='rgba(248,239,220,0.9)';rr(50,160,400,730,16);ctx.fill();ctx.strokeStyle='rgba(58,42,28,0.3)';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=ink;ctx.font=font(H*0.034,true);ctx.textBaseline='middle';ctx.fillText('八地简表',78,205);ctx.restore();
-    order.forEach((id,i)=>{const a=ease(seg(s0+step*(i+0.2),s0+step*(i+0.7)));if(a<=0)return;const y=270+i*78;ctx.save();ctx.globalAlpha=a;ctx.translate((1-a)*-30,0);seal(96,y,40,1,red);ctx.fillStyle='#fff';ctx.font=font(20,true);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(i+1),96,y);ctx.textAlign='left';ctx.fillStyle=ink;ctx.font=font(H*0.032,true);ctx.fillText(P[id][2],132,y);ctx.font=font(H*0.026);ctx.fillStyle='#5a4a3a';ctx.fillText(P[id][3],222,y);ctx.restore();});}
-  // final hold glow
-  if(p>0.8){const g=0.5+0.5*Math.sin(f*0.12);ctx.save();ctx.globalAlpha=seg(0.8,0.88)*(0.3+0.4*g);ctx.strokeStyle=red;ctx.lineWidth=3;rr(48,158,404,734,18);ctx.stroke();ctx.restore();}
+  var ta = ease(p / 0.08);
+  panel(50, 40, 560, 110, ta);
+  ctx.save(); ctx.globalAlpha = ta; ctx.fillStyle = ink; ctx.font = 'bold 64px ' + F; ctx.textBaseline = 'middle';
+  ctx.fillText('回顾：一生的路线', 76, 96); ctx.restore();
+  // dashed line danzhou -> changzhou
+  var dp = ease((p - 0.03) / 0.12), D = P[7];
+  if (dp > 0) {
+    ctx.save(); ctx.strokeStyle = 'rgba(90,85,80,0.75)'; ctx.lineWidth = 4; ctx.setLineDash([16, 12]); ctx.lineDashOffset = -f * 1.2;
+    ctx.beginPath(); ctx.moveTo(D[1], D[2]); ctx.lineTo(D[1] + (CZ[0] - D[1]) * dp, D[2] + (CZ[1] - D[2]) * dp); ctx.stroke(); ctx.restore();
+  }
+  var ca = ease((p - 0.12) / 0.05);
+  if (ca > 0) {
+    ctx.save(); ctx.globalAlpha = ca; ctx.beginPath(); ctx.arc(CZ[0], CZ[1], 11, 0, 7); ctx.fillStyle = '#77716a'; ctx.fill(); ctx.restore();
+    label(CZ[0], CZ[1], 1, -10, '常州', '1101 病逝', ca, '#5a554f');
+  }
+  // ink route
+  var t0 = 0.18, dt = 0.075;
+  ctx.save(); ctx.strokeStyle = ink; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(P[0][1], P[0][2]);
+  for (var i = 0; i < 7; i++) {
+    var lp = ease((p - (t0 + i * dt)) / dt); if (lp <= 0) break;
+    var a = P[i], b = P[i + 1];
+    ctx.lineTo(a[1] + (b[1] - a[1]) * lp, a[2] + (b[2] - a[2]) * lp);
+  }
+  ctx.globalAlpha = 0.85; ctx.stroke(); ctx.restore();
+  // seals + labels
+  var cur = Math.floor((p - t0) / dt);
+  for (i = 0; i < 8; i++) {
+    var q = P[i], ti = t0 + i * dt, s = ease((p - ti) / 0.05);
+    seal(q[1], q[2], 0.8, 'rgba(160,140,130,0.5)', '', 1 - s);
+    if (s > 0) {
+      var pulse = 1 + (i === cur ? 0.12 * Math.sin(f * 0.25) : 0.03 * Math.sin(f * 0.08 + i));
+      seal(q[1], q[2], (1.6 - 0.6 * s) * pulse, red, String(i + 1), s);
+      label(q[1], q[2], q[5], q[6], q[0], q[3], s, red);
+    }
+  }
+  // timeline panel (right side)
+  var tx = 1470, ty = 150, tw = 400, rh = 76, pa = ease((p - 0.14) / 0.06);
+  panel(tx, ty, tw, 30 + rh * 8, pa);
+  ctx.save(); ctx.globalAlpha = pa; ctx.strokeStyle = 'rgba(58,42,28,0.4)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(tx + 40, ty + 30); ctx.lineTo(tx + 40, ty + rh * 8); ctx.stroke(); ctx.restore();
+  for (i = 0; i < 8; i++) {
+    var ra = ease((p - (t0 + i * dt)) / 0.05); if (ra <= 0) continue;
+    var y = ty + 53 + i * rh, hl = i === cur;
+    ctx.save(); ctx.globalAlpha = ra;
+    if (hl) { rr(tx + 10, y - 32, tw - 20, 64, 10); ctx.fillStyle = 'rgba(184,50,42,0.12)'; ctx.fill(); }
+    ctx.beginPath(); ctx.arc(tx + 40, y, hl ? 12 : 9, 0, 7); ctx.fillStyle = red; ctx.fill();
+    ctx.translate((1 - ra) * 30, 0); ctx.textBaseline = 'middle';
+    ctx.fillStyle = red; ctx.font = 'bold 34px ' + F; ctx.fillText(P[i][0], tx + 66, y);
+    ctx.fillStyle = ink; ctx.font = '30px ' + F; ctx.fillText(P[i][4], tx + 150, y);
+    ctx.restore();
+  }
+  // final 东坡 stamp
+  var sp = (p - 0.8) / 0.08;
+  if (sp > 0) {
+    var e = ease(sp), sc = 2.2 - 1.2 * e;
+    ctx.save(); ctx.translate(1770, 830); ctx.rotate(-0.08 + 0.01 * Math.sin(f * 0.05)); ctx.scale(sc, sc); ctx.globalAlpha = e * 0.92;
+    rr(-62, -62, 124, 124, 12); ctx.fillStyle = red; ctx.fill();
+    ctx.strokeStyle = '#fff1e6'; ctx.lineWidth = 4; rr(-52, -52, 104, 104, 8); ctx.stroke();
+    ctx.fillStyle = '#fff1e6'; ctx.font = 'bold 44px ' + F; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('东', 0, -22); ctx.fillText('坡', 0, 26); ctx.restore();
+  }
 }
  return draw; })() }
 ];
