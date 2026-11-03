@@ -1,56 +1,55 @@
 
 $ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/narrate.py scenes.json . --tts polly --voice Zhiyu
-title_card: voice 12048ms -> 400 frames
-place_1_meizhou: voice 11088ms -> 372 frames
-place_2_bianjing: voice 11928ms -> 397 frames
-place_3_hangzhou: voice 15816ms -> 513 frames
-place_4_mizhou: voice 11184ms -> 375 frames
-place_5_xuzhou: voice 10368ms -> 350 frames
-place_6_huangzhou: voice 13008ms -> 429 frames
-place_7_huizhou: voice 12048ms -> 400 frames
-place_8_danzhou: voice 9840ms -> 334 frames
-recap_route: voice 11040ms -> 370 frames
-total 131.37s, 3940 frames
+title_card: voice 11160ms -> 374 frames
+meizhou: voice 10656ms -> 359 frames
+bianjing: voice 11112ms -> 372 frames
+hangzhou: voice 13968ms -> 458 frames
+mizhou: voice 11808ms -> 393 frames
+xuzhou: voice 9960ms -> 338 frames
+huangzhou: voice 13632ms -> 448 frames
+huizhou: voice 11976ms -> 398 frames
+danzhou: voice 10080ms -> 341 frames
+recap_route: voice 9456ms -> 323 frames
+total 126.81s, 3804 frames
 
 $ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/sfx.py scenes.json .
-sfx: 0.40s whoosh, 1.33s thud, 13.83s thud, 14.50s pop, 26.13s whoosh, 26.73s thud, 39.37s whoosh, 40.03s pop, 56.47s whoosh, 57.07s thud, 68.97s whoosh, 69.50s hiss, 80.63s whoosh, 81.23s thud, 94.93s whoosh, 95.60s pop, 108.27s whoosh, 108.87s thud, 119.50s rise, 120.83s thud
+sfx: 0.50s whoosh, 1.50s thud, 12.87s thud, 13.80s pop, 24.77s whoosh, 25.93s thud, 37.17s whoosh, 38.17s pop, 52.43s whoosh, 53.27s rise, 65.53s whoosh, 66.20s hiss, 76.80s whoosh, 78.13s thud, 91.73s whoosh, 92.90s pop, 105.00s whoosh, 106.00s pop, 116.53s rise, 117.87s thud
 
 $ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/mix_bgm.py . --music $EVP_TOOLS/music/qiufengci.flac --music-volume 0.9
-mix 131.37s  sfx yes  overall -24.6 dB  first 2.5s -21.5 dB
+mix 126.81s  sfx yes  overall -24.2 dB  first 2.5s -21.9 dB
 
 $ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/captions.py scenes.json . --size 1920x1080
-500 chars timed across 55 lines -> captions.ass, words.json
+495 chars timed across 57 lines -> captions.ass, words.json
 
-$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/capture_html.py index.html silent.mp4 --frames 3940 --size 1920x1080
-frame 0/3940
-frame 150/3940
-frame 300/3940
-frame 450/3940
-frame 600/3940
-frame 750/3940
-frame 900/3940
-frame 1050/3940
-frame 1200/3940
-frame 1350/3940
-frame 1500/3940
-frame 1650/3940
-frame 1800/3940
-frame 1950/3940
-frame 2100/3940
-frame 2250/3940
-frame 2400/3940
-frame 2550/3940
-frame 2700/3940
-frame 2850/3940
-frame 3000/3940
-frame 3150/3940
-frame 3300/3940
-frame 3450/3940
-frame 3600/3940
-frame 3750/3940
-frame 3900/3940
-wrote silent.mp4 3940 frames
+$ $EVP_TOOLS/venv/bin/python <repo>/skills/explainer-video-pipeline/scripts/capture_html.py index.html silent.mp4 --frames 3804 --size 1920x1080
+frame 0/3804
+frame 150/3804
+frame 300/3804
+frame 450/3804
+frame 600/3804
+frame 750/3804
+frame 900/3804
+frame 1050/3804
+frame 1200/3804
+frame 1350/3804
+frame 1500/3804
+frame 1650/3804
+frame 1800/3804
+frame 1950/3804
+frame 2100/3804
+frame 2250/3804
+frame 2400/3804
+frame 2550/3804
+frame 2700/3804
+frame 2850/3804
+frame 3000/3804
+frame 3150/3804
+frame 3300/3804
+frame 3450/3804
+frame 3600/3804
+frame 3750/3804
+wrote silent.mp4 3804 frames
 
 $ $EVP_TOOLS/ffmpeg -y -v error -i silent.mp4 -i narration_bgm.wav -vf ass=captions.ass -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -ac 2 -shortest -movflags +faststart final.mp4
 
-$ $EVP_TOOLS/ffmpeg -y -v error -ss 8.00 -i final.mp4 -frames:v 1 -vf scale=640:-2 poster.jpg
+$ $EVP_TOOLS/ffmpeg -y -v error -ss 7.48 -i final.mp4 -frames:v 1 -vf scale=640:-2 poster.jpg

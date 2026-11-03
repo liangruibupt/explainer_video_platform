@@ -88,6 +88,11 @@ Hard requirements:
 - p = f / n is scene progress. Build the diagram up step by step in sync with the narration;
   something must visibly move on every part of the timeline (no static frames).
 - Keep the bottom 16% of the canvas free of text and key drawing: captions go there.
+- Text timing: every piece of text must be fully visible by p = 0.6 and stay fully visible
+  until the scene ends. A typewriter or fade reveal must finish before p = 0.6.
+- Text fit: size every panel from ctx.measureText of its longest line plus padding. Never
+  clip text or let it run past its panel; if a line is too wide, wrap it or shrink the font
+  (but not below the label minimum).
 - Large readable type: titles >= H*0.055, labels >= H*0.03. Use ctx.font with T.font.
 - Clean slide/keynote style; one accent colour; diagrams, arrows, charts, labels.
 - Define helper functions INSIDE draw if you need them. Keep the code compact
