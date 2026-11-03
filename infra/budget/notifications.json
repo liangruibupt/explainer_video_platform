@@ -1,0 +1,10 @@
+[
+  {"Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 200, "ThresholdType": "ABSOLUTE_VALUE"},
+   "Subscribers": [{"SubscriptionType": "EMAIL", "Address": "ALERT_EMAIL"}]},
+  {"Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 500, "ThresholdType": "ABSOLUTE_VALUE"},
+   "Subscribers": [{"SubscriptionType": "EMAIL", "Address": "ALERT_EMAIL"}]},
+  {"Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 800, "ThresholdType": "ABSOLUTE_VALUE"},
+   "Subscribers": [{"SubscriptionType": "EMAIL", "Address": "ALERT_EMAIL"}]},
+  {"Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 1000, "ThresholdType": "ABSOLUTE_VALUE"},
+   "Subscribers": [{"SubscriptionType": "EMAIL", "Address": "ALERT_EMAIL"}]}
+]

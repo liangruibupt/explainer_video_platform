@@ -1,0 +1,6 @@
+{
+  "BudgetName": "explainer-video-platform-monthly",
+  "BudgetLimit": {"Amount": "1000", "Unit": "USD"},
+  "BudgetType": "COST",
+  "TimeUnit": "MONTHLY"
+}
