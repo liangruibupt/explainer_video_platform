@@ -63,12 +63,17 @@ def plan(show=True):
 
 
 def build():
-    tag = dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    # SageMaker rejects OCI image manifests, so build with buildx and emit a Docker v2
+    # manifest (oci-mediatypes=false) pushed straight to ECR. --provenance=false avoids
+    # the attestation manifest that turns the result into an OCI image index.
+    tag = dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S") + "-amd64"
     pw = subprocess.check_output(["aws", "ecr", "get-login-password", "--region", R])
     subprocess.run(["docker", "login", "-u", "AWS", "--password-stdin", REPO.split("/")[0]],
                    input=pw, check=True)
-    subprocess.run(["docker", "build", "-t", f"{REPO}:{tag}", str(HERE / "container")], check=True)
-    subprocess.run(["docker", "push", f"{REPO}:{tag}"], check=True)
+    subprocess.run(["docker", "buildx", "build", "--builder", "evpamd64",
+                    "--platform", "linux/amd64", "--provenance=false",
+                    "--output", "type=registry,oci-mediatypes=false",
+                    "-t", f"{REPO}:{tag}", str(HERE / "container")], check=True)
     (HERE / ".image_tag").write_text(tag)
     print("pushed", f"{REPO}:{tag}")
 

@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3.11 pyth
 ENV PATH=/opt/venv/bin:$PATH
 
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0 \
+RUN pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.7.1 torchvision==0.22.1 \
       && pip install -r /tmp/requirements.txt
 
 COPY serve.py /app/serve.py

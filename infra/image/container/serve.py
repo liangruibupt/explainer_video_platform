@@ -46,6 +46,10 @@ def load():
                 MODEL_DIR, subfolder="text_encoder", torch_dtype=torch.bfloat16,
                 quantization_config=BitsAndBytesConfig(load_in_8bit=True), device_map={"": 0})
         pipe = QwenImage21Pipeline.from_pretrained(MODEL_DIR, **kw)
+        # The VAE decode of a 1920x1088 frame allocates several GB in one block and OOMs
+        # the 31 GB card; tiling + slicing cap the peak so decode fits. Harmless to output.
+        pipe.vae.enable_tiling()
+        pipe.vae.enable_slicing()
         pipe.to("cuda")
         state.update(pipe=pipe, mode=mode, gpu=gpu.name)
         print(f"loaded on {gpu.name} ({gpu.total_memory / 1024**3:.0f} GB), mode={mode}", flush=True)
