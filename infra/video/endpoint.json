@@ -1,0 +1,21 @@
+{
+  "_doc": "Video endpoint config. deploy.py fetches each candidate's GPU memory and host RAM, keeps those meeting the plan thresholds, orders the pool cheapest first, and (when SageMaker pricing lacks ap-south-1 g7e) falls back to the EC2 on-demand price with a note. ml.g7e.2xlarge is excluded: 64 GB host RAM cannot hold the CPU-offloaded text encoder.",
+  "region": "ap-south-1",
+  "endpoint": "evp-video",
+  "candidates": [
+    {"instance": "ml.g7e.4xlarge"},
+    {"instance": "ml.g7e.8xlarge"}
+  ],
+  "gpu_gb_needed": 90,
+  "host_ram_gb_needed": 120,
+  "inference_ami": "al2023-ami-sagemaker-inference-gpu-4-1",
+  "volume_gb": 300,
+  "provision_timeout_s": 900,
+  "download_timeout_s": 3600,
+  "startup_timeout_s": 3600,
+  "invocation_timeout_s": 900,
+  "max_instances": 1,
+  "scale_in_idle_s": 900,
+  "max_concurrent_per_instance": 1,
+  "tags": {"project": "explainer-video", "module": "video"}
+}
