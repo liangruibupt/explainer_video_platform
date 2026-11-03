@@ -19,6 +19,7 @@ export default function Workbench() {
   const [ratio, setRatio] = useState('16:9')
   const [captions, setCaptions] = useState(true)
   const [music, setMusic] = useState('synth')
+  const [illustrations, setIllustrations] = useState(0)
   const [musicChoices, setMusicChoices] = useState({ synth: '合成垫乐', none: '无音乐' })
   useEffect(() => { api('/music').then(setMusicChoices).catch(() => {}) }, [])
   const [busy, setBusy] = useState(false)
@@ -31,7 +32,7 @@ export default function Workbench() {
     try {
       const j = await api('/jobs', {
         method: 'POST',
-        body: JSON.stringify({ topic, seconds, ratio, captions, music }),
+        body: JSON.stringify({ topic, seconds, ratio, captions, music, illustrations }),
       })
       nav(`/jobs/${j.id}`)
     } catch (e) { setErr(e.message); setBusy(false) }
@@ -65,6 +66,13 @@ export default function Workbench() {
               {Object.entries(musicChoices).map(([k, label]) => (
                 <option key={k} value={k}>{label}</option>
               ))}
+            </select>
+          </label>
+          <label className="opt" title="Qwen-Image 生成插图，用在合适的几段；GPU 从 0 启动约 8 分钟，与配音同时进行">AI 插图
+            <select value={illustrations} onChange={(e) => setIllustrations(+e.target.value)}>
+              <option value={0}>不用</option>
+              <option value={2}>最多 2 张</option>
+              <option value={4}>最多 4 张</option>
             </select>
           </label>
           <label className="toggle">

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import pipeline
+from . import image, images, pipeline
 
 app = FastAPI(title="explainer_video_platform")
 WEB = Path(__file__).resolve().parents[2] / "web" / "dist"
@@ -30,6 +30,7 @@ class JobIn(BaseModel):
     brief: str = Field(default="", max_length=8000)
     scene_context: str = Field(default="", max_length=8000)
     background_png_b64: str = Field(default="", max_length=12_000_000)
+    illustrations: int = Field(default=0, ge=0, le=4)
 
 
 @app.get("/api/health")
@@ -63,7 +64,58 @@ def create(body: JobIn):
     return pipeline.create_job(job_id, body.topic.strip(), body.language, body.seconds,
                                body.ratio, body.captions, body.music, body.voice,
                                brief=body.brief.strip(), scene_context=body.scene_context.strip(),
-                               background_png=bg)
+                               background_png=bg, illustrations=body.illustrations)
+
+
+class ImageIn(BaseModel):
+    prompt: str = Field(min_length=2, max_length=1500)
+    ratio: str = Field(default="16:9", pattern=r"^(16:9|9:16|1:1)$")
+    mode: str = Field(default="t2i", pattern=r"^(t2i|rgba)$")
+    seed: int = Field(default=42, ge=0, le=2**31 - 1)
+    n: int = Field(default=1, ge=1, le=4)
+
+
+def _img_id(img_id: str) -> str:
+    if not re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}", img_id):
+        raise HTTPException(404, "no such image")
+    return img_id
+
+
+@app.get("/api/image/status")
+def image_status():
+    try:
+        return image.status()
+    except Exception as e:  # noqa: BLE001 - e.g. no AWS credentials
+        return {"deployed": False, "state": "unavailable", "error": str(e)[:200]}
+
+
+@app.get("/api/images")
+def image_list():
+    return images.list_all()
+
+
+@app.post("/api/images", status_code=201)
+def image_create(body: ImageIn):
+    img_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    return images.create(img_id, body.model_dump())
+
+
+@app.get("/api/images/{img_id}")
+def image_get(img_id: str):
+    s = images.get(_img_id(img_id))
+    if not s:
+        raise HTTPException(404, "no such image")
+    return s
+
+
+@app.get("/api/images/{img_id}/{name}")
+def image_file(img_id: str, name: str):
+    if not re.fullmatch(r"[0-3]\.png", name):
+        raise HTTPException(404, "no such file")
+    p = images.ROOT / _img_id(img_id) / name
+    if not p.exists():
+        raise HTTPException(404, "not ready")
+    return FileResponse(p, media_type="image/png")
 
 
 def _id(job_id: str) -> str:

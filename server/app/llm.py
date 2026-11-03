@@ -52,12 +52,36 @@ One idea per scene. Narration in the requested language; ids in English.
 Check facts; do not invent numbers you are unsure of."""
 
 
-def storyboard(topic: str, language: str, seconds: int, brief: str = "") -> list:
+ILLUSTRATION_NOTE = """
+
+AI illustrations are available for up to {n} scenes. Add an "illustration" field only to
+the scenes where a picture explains better than a diagram (a place, an object, a historical
+scene, a mood), never to the title card's text or to scenes that are charts or flows:
+"illustration": {{"prompt": "detailed image prompt in Chinese or English: subject, style,
+composition, lighting; always end with 画面中没有任何文字", "place": "background|left|right"}}
+"background" fills the whole frame behind the scene; "left"/"right" is a picture panel on
+that half while the diagram and text use the other half."""
+
+IMG_NOTE = """This scene has an AI illustration: T.img['{sid}'] (an HTMLImageElement, already
+loaded). Placement: {place}.
+- background: draw it with ctx.drawImage over the whole canvas first, then a soft dark or
+  light veil (globalAlpha 0.25-0.45) where text sits, so text stays readable. Animate it gently
+  (slow zoom from 1.0 to 1.06 across the scene, centred), never cropping more than 6%.
+- left/right: draw it inside a rounded panel filling that half (keep the bottom 16% free),
+  cover-fit and clipped to the panel, with the same slow zoom; put text and diagrams on the
+  other half.
+Never draw text on top of the picture without a backing panel."""
+
+
+def storyboard(topic: str, language: str, seconds: int, brief: str = "",
+               illustrations: int = 0) -> list:
     user = (f"Topic: {topic}\nNarration language: {language}\n"
             f"Target total length: about {seconds} seconds.")
     if brief:
         user += ("\n\nBrief from the user (follow it; it overrides the default scene count "
                  "and must be used for facts):\n" + brief)
+    if illustrations:
+        user += ILLUSTRATION_NOTE.format(n=illustrations)
     text = ask(STORYBOARD_SYSTEM, user, max_tokens=4000)
     scenes = json.loads(_extract(text, "["))
     out = []
@@ -69,6 +93,19 @@ def storyboard(topic: str, language: str, seconds: int, brief: str = "") -> list
                     "narration": str(s["narration"]), "visual": str(s.get("visual", "")),
                     "sfx": [e for e in s.get("sfx", []) if isinstance(e, dict)
                             and e.get("kind") in ("whoosh", "pop", "rise", "thud", "hiss")][:2]})
+        ill = s.get("illustration")
+        if illustrations and isinstance(ill, dict) and str(ill.get("prompt", "")).strip():
+            out[-1]["illustration"] = {
+                "prompt": str(ill["prompt"])[:600],
+                "place": ill.get("place") if ill.get("place") in ("background", "left", "right")
+                else "background"}
+    if illustrations:  # never more than asked for, first ones win
+        seen = 0
+        for s in out:
+            if "illustration" in s:
+                seen += 1
+                if seen > illustrations:
+                    del s["illustration"]
     if not out:
         raise ValueError("storyboard came back empty")
     return out
@@ -84,7 +121,9 @@ Signature (exactly this name and parameters):
   T: theme = {bg, ink, dim, accent, accent2, font}  (use these colours and T.font)
 Hard requirements:
 - Draw everything from f alone: no requestAnimationFrame, timers, Date, performance,
-  Math.random, globals, closures over mutable state, DOM access, images or network.
+  Math.random, globals, closures over mutable state, DOM access or network. Do not create
+  or load images; you may only draw the already-loaded images this prompt names
+  (T.bg_img, T.img[...]).
 - p = f / n is scene progress. Build the diagram up step by step in sync with the narration;
   something must visibly move on every part of the timeline (no static frames).
 - Keep the bottom 16% of the canvas free of text and key drawing: captions go there.
@@ -108,8 +147,14 @@ const T = {bg:'#141210', ink:'#f4ede4', dim:'#9a8f85', accent:'#e0603f', accent2
   font:'"Noto Sans CJK SC","PingFang SC",sans-serif'};
 const ctx = document.getElementById('c').getContext('2d');
 const BG = __BG__;
-const bgReady = BG ? new Promise((ok) => { const im = new Image(); im.onload = () => { T.bg_img = im; ok(); };
-  im.onerror = () => ok(); im.src = BG; }) : Promise.resolve();
+const IMGS = __IMGS__;
+const loadImg = (src) => new Promise((ok) => { const im = new Image();
+  im.onload = () => ok(im); im.onerror = () => ok(null); im.src = src; });
+T.img = {};
+const bgReady = Promise.all([
+  BG ? loadImg(BG).then((im) => { if (im) T.bg_img = im; }) : null,
+  ...Object.entries(IMGS).map(([k, src]) => loadImg(src).then((im) => { if (im) T.img[k] = im; })),
+]);
 const SCENES = [
 __SCENES__
 ];
@@ -161,18 +206,25 @@ The background is light paper: use dark ink for text, e.g. '#3a2a1c', and T.acce
 
 
 def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
-               context: str = "", bg_data_url: str = "") -> str:
+               context: str = "", bg_data_url: str = "", images: dict | None = None) -> str:
     """One Opus call per scene, run in parallel; each returns a draw() function.
     context: extra facts every scene needs (e.g. pixel coordinates of map places).
-    bg_data_url: optional data: URL of a W x H background painted under every frame."""
+    bg_data_url: optional data: URL of a W x H background painted under every frame.
+    images: optional {scene_id: data URL} of AI illustrations, exposed as T.img[id]."""
     from concurrent.futures import ThreadPoolExecutor
+    images = images or {}
     ctx = "\n\n".join(x for x in ((BG_NOTE if bg_data_url else ""), context) if x)
 
     def one(i):
         s = scenes[i]
         brief = {k: s[k] for k in ("id", "title", "narration", "visual")}
+        sctx = ctx
+        if s["id"] in images:
+            note = IMG_NOTE.format(sid=s["id"], place=s.get("illustration", {}).get("place",
+                                                                                  "background"))
+            sctx = "\n\n".join(x for x in (ctx, note) if x)
         try:
-            return scene_draw(brief, i, len(scenes), frames[i], width, height, ctx), None
+            return scene_draw(brief, i, len(scenes), frames[i], width, height, sctx), None
         except Exception as e:  # noqa: BLE001 - fall back to a title card for this scene
             return None, f"{s['id']}: {e}"
 
@@ -192,6 +244,7 @@ def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
         blocks.append(f"{{ id: {json.dumps(s['id'])}, title: {title}, draw: {body} }}")
     return (PAGE.replace("__W__", str(width)).replace("__H__", str(height))
                 .replace("__BG__", json.dumps(bg_data_url))
+                .replace("__IMGS__", json.dumps(images))
                 .replace("__DUR__", json.dumps(frames)).replace("__SCENES__", ",\n".join(blocks)))
 
 
