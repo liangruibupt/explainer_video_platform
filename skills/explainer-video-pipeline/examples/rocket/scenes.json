@@ -1,0 +1,8 @@
+[
+  {"id": "launch", "narration": "火箭点火，气体向下喷出，箭体被向上推。",
+   "visual": "rocket on pad, exhaust plume, rocket rises",
+   "sfx": [{"at": 15, "kind": "hiss"}, {"at": 45, "kind": "whoosh"}]},
+  {"id": "orbit", "narration": "进入轨道后，它沿着圆形路径飞行。",
+   "visual": "rocket dot circles a planet",
+   "sfx": [{"at": 10, "kind": "pop"}]}
+]
