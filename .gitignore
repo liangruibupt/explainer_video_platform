@@ -8,6 +8,8 @@
 **/audio/
 
 # environments and caches
+data/
+web/dist/
 infra/budget/*.local.json
 .venv/
 venv/
