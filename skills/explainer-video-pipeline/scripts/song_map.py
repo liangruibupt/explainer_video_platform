@@ -93,10 +93,24 @@ REGION = [('北宋', 113.5, 31.5, 0.075, (150, 60, 40)), ('辽', 118.5, 40.6, 0.
           ('西夏', 104.0, 39.0, 0.045, INK), ('大理', 100.2, 25.2, 0.04, INK),
           ('吐蕃', 98.8, 33.0, 0.04, INK), ('交趾', 105.6, 20.4, 0.032, INK),
           ('高丽', 124.2, 40.6, 0.032, INK)]
+places = json.load(open(a.places))
+pts = [px(p['lon'], p['lat']) for p in places]
+labels = []
 for name, lon, lat, frac, col in REGION:
     x, y = px(lon, lat)
-    if 0 < x < W and 0 < y < H:
-        d.text((x, y), name, font=fs(frac), fill=col, anchor='mm')
+    if not (0 < x < W and 0 < y < H):
+        continue
+    f = fs(frac); bw, bh = d.textbbox((0, 0), name, font=f)[2:]
+    clear = lambda cx, cy: all(abs(cx - qx) > bw / 2 + H * .06 or abs(cy - qy) > bh / 2 + H * .06
+                               for qx, qy in pts)
+    if not clear(x, y):  # search nearby spots, nearest first, for one away from every place
+        cand = [(x + dx * H * .03, y + dy * H * .03) for dx in range(-8, 9) for dy in range(-8, 9)]
+        cand = sorted((c for c in cand if bw < c[0] < W - bw and bh < c[1] < H * .8),
+                      key=lambda c: (c[0] - x) ** 2 + (c[1] - y) ** 2)
+        x, y = next((c for c in cand if clear(*c)), (x, y))
+    d.text((x, y), name, font=f, fill=col, anchor='mm')
+    labels.append({'text': name, 'x0': round(x - bw / 2), 'y0': round(y - bh / 2),
+                   'x1': round(x + bw / 2), 'y1': round(y + bh / 2)})
 for name, lon, lat in (('长江', 112.6, 29.4), ('黄河', 111.0, 35.4)):
     x, y = px(lon, lat)
     d.text((x, y), name, font=fs(0.022), fill=(80, 110, 125), anchor='mm')
@@ -114,8 +128,7 @@ img = Image.composite(img, Image.new('RGB', (W, H), (150, 125, 90)), vig)
 
 os.makedirs(a.out, exist_ok=True)
 img.save(os.path.join(a.out, 'song_map.png'), optimize=True)
-places = json.load(open(a.places))
-out = [dict(p, x=round(px(p['lon'], p['lat'])[0], 1), y=round(px(p['lon'], p['lat'])[1], 1))
-       for p in places]
+out = [dict(p, x=round(qx, 1), y=round(qy, 1)) for p, (qx, qy) in zip(places, pts)]
 json.dump(out, open(os.path.join(a.out, 'places_px.json'), 'w'), ensure_ascii=False, indent=1)
+json.dump(labels, open(os.path.join(a.out, 'map_labels.json'), 'w'), ensure_ascii=False)
 print('wrote song_map.png', W, 'x', H, 'and', len(out), 'place coordinates')

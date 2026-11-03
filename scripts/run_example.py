@@ -37,6 +37,16 @@ if (ex / 'places.json').exists():
         "the map itself is the background image):\n" + json.dumps(
             [{k: p[k] for k in ('id', 'name', 'modern', 'years', 'x', 'y')} for p in places],
             ensure_ascii=False))
+    lab = ex / 'map_labels.json'
+    if lab.exists():
+        body['scene_context'] += (
+            "\n\nText already printed on the map (boxes in canvas pixels). Do not put markers, "
+            "place labels or panels on top of these boxes; offset your labels away from them:\n"
+            + lab.read_text())
+    body['scene_context'] += (
+        "\n\nPlace-label rule: put each place's name tag on the side of its marker that faces "
+        "away from the map centre and from other places, so it covers neither the route nor "
+        "other markers. Panels go at the canvas edge, never over a marker.")
 
 job = call('POST', '/api/jobs', body)
 print('job', job['id'])
