@@ -1,0 +1,7 @@
+.image_tag
+.pending_tag*
+_passrole.json
+*.log
+__pycache__/
+*.started
+*.ended

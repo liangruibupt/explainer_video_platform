@@ -1,0 +1,9 @@
+# QwenImage21Pipeline is only in diffusers main for now; pin the commit.
+diffusers @ git+https://github.com/huggingface/diffusers@647a01571512e273a9ed234bc0c3a8db134e07f2
+transformers==5.22.1
+accelerate==1.15.0
+bitsandbytes==0.50.2
+safetensors==0.8.0
+pillow==13.0.0
+fastapi==0.162.0
+uvicorn==0.54.0
