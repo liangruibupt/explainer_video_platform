@@ -26,6 +26,7 @@ CFG = json.load(open("/opt/evp/config.json"))
 ST = "/opt/evp/state"
 B, P = CFG["bucket"], CFG["jobs_prefix"]
 PORT = CFG["container_port"]
+CNAME = CFG.get("container_name", "h3")
 s3 = boto3.client("s3", region_name=CFG["region"])
 
 
@@ -53,12 +54,16 @@ META = {"instance_id": imds("instance-id"), "instance_type": imds("instance-type
 def state_files():
     """Bootstrap timings (seconds) and markers, for the result/heartbeat."""
     out = {}
-    for k in ("pull_s", "weights_s", "driver", "ready_s", "boot"):
+    for k in ("pull_s", "weights_s", "load_s", "driver", "ready_s", "boot"):
         try:
             v = open(f"{ST}/{k}").read().strip()
             out[k] = int(v) if v.isdigit() else v
         except OSError:
             pass
+    try:  # when bootstrap started (instance boot done), for launch->boot timing
+        out["bootstrap_ts"] = round(os.path.getmtime(f"{ST}/cap"), 1)
+    except OSError:
+        pass
     return out
 
 
@@ -66,8 +71,8 @@ def upload_log():
     """No inbound access to the box, so its log goes to S3: logs/<instance_id>.log."""
     try:
         txt = open("/var/log/evp-worker.log", "rb").read()[-400_000:]
-        dl = subprocess.run(["docker", "logs", "--tail", "300", "h3"], capture_output=True)
-        txt += b"\n===== docker logs h3 (tail) =====\n" + dl.stdout[-200_000:] + dl.stderr[-200_000:]
+        dl = subprocess.run(["docker", "logs", "--tail", "300", CNAME], capture_output=True)
+        txt += f"\n===== docker logs {CNAME} (tail) =====\n".encode() + dl.stdout[-200_000:] + dl.stderr[-200_000:]
         s3.put_object(Bucket=B, Key=f"{P}logs/{META['instance_id']}.log", Body=txt)
     except Exception as e:
         log("log upload failed", e)
@@ -89,7 +94,7 @@ def ping():
 
 
 def container_alive():
-    r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", "h3"],
+    r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", CNAME],
                        capture_output=True, text=True)
     return r.stdout.strip() == "true"
 
@@ -100,7 +105,7 @@ def shutdown(reason):
         heartbeat("stopping", note=reason)
     except Exception as e:
         log("heartbeat failed", e)
-    subprocess.run(["docker", "logs", "--tail", "200", "h3"])
+    subprocess.run(["docker", "logs", "--tail", "200", CNAME])
     subprocess.run(["shutdown", "-h", "now"])
     sys.exit(0)
 
@@ -117,7 +122,7 @@ def wait_ready():
             shutdown("container exited while loading")
         heartbeat("loading")
         time.sleep(20)
-    shutdown("sglang not ready within ready_timeout_s")
+    shutdown("adapter not ready within ready_timeout_s")
 
 
 current = {"id": None, "body": None}
@@ -194,6 +199,45 @@ def claim():
     return None, None
 
 
+CTYPES = {"mp4": "video/mp4", "png": "image/png", "flac": "audio/flac", "mp3": "audio/mpeg",
+          "wav": "audio/wav", "jpg": "image/jpeg"}
+
+
+def store_outputs(jid, res):
+    """Move binary payloads out of the result JSON into S3 objects.
+
+    Any top-level string key ending in "_b64", and the list under "images", is written
+    as out/<id>.<n>.<ext> (n counts files across all keys; ext from config "outputs",
+    e.g. {"video_b64": "mp4", "audio_b64": "flac", "images": "png"}; an audio result
+    whose "format" says mp3 is stored as .mp3). The result lists the keys under
+    "files" = {key: [s3 key, ...]}. Returns the total bytes written."""
+    outputs = CFG.get("outputs", {})
+    files, n, total = {}, 0, 0
+    for k in list(res):
+        v = res[k]
+        if k.endswith("_b64") and isinstance(v, str):
+            blobs = [v]
+        elif k == "images" and isinstance(v, list):
+            blobs = v
+        else:
+            continue
+        ext = outputs.get(k, "bin")
+        if k == "audio_b64" and res.get("format") in ("flac", "mp3"):
+            ext = res["format"]
+        res.pop(k)
+        for b in blobs:
+            data = base64.b64decode(b)
+            key = f"{P}out/{jid}.{n}.{ext}"
+            s3.put_object(Bucket=B, Key=key, Body=data,
+                          ContentType=CTYPES.get(ext, "application/octet-stream"))
+            files.setdefault(k, []).append(key)
+            n += 1; total += len(data)
+    res["files"] = files
+    if "video_b64" in files:  # older controllers read video_key
+        res["video_key"] = files["video_b64"][0]
+    return total
+
+
 def run(jid, body):
     req = json.loads(body)
     t0 = time.time()
@@ -202,9 +246,8 @@ def run(jid, body):
             f"http://127.0.0.1:{PORT}/invocations", data=body,
             headers={"Content-Type": "application/json"}), timeout=CFG["invoke_timeout_s"])
         res = json.loads(r.read())
-        mp4 = base64.b64decode(res.pop("video_b64"))
-        s3.put_object(Bucket=B, Key=f"{P}out/{jid}.mp4", Body=mp4, ContentType="video/mp4")
-        res.update(video_key=f"{P}out/{jid}.mp4", bytes=len(mp4), worker_s=round(time.time() - t0, 1),
+        nbytes = store_outputs(jid, res)
+        res.update(bytes=nbytes, worker_s=round(time.time() - t0, 1),
                    submitted_ts=req.get("_submitted_ts"), done_ts=time.time(),
                    instance=dict(META, **state_files()))
         s3.put_object(Bucket=B, Key=f"{P}out/{jid}.json", Body=json.dumps(res).encode())

@@ -81,7 +81,9 @@ EC2 后端的做法（`server/app/gpu_ec2.py`，每个模块一份配置 `infra/
 - 没有实例时按配置的容量顺序启动一台（每个模块最多一台），实例空闲 15 分钟后自己关机。启动时设了“关机即终止”，所以闲置不花钱，也不留下磁盘。另有 4 小时硬上限。
 - 实例没有入站端口，不配密钥对，只用 IMDSv2。
 
-下面 SageMaker 的部分仍然适用于图像模块（g7/g6e 在 us-east-1 拿得到）。
+下面 SageMaker 的部分保留作记录和后备（g5/g4dn 这类老 GPU）。**2026-11-04 起三个 GPU 模块都跑在 EC2 上**：视频（MiniMax H3，ap-south-1，`modules/video.json`）、图像（Qwen-Image 2.1，us-east-1，`modules/image.json`）、音乐（YuE2-3B，us-east-1，`modules/music.json`）。图像和音乐的 SageMaker 端点已下线，代码保留。实测见 docs/VIDEO.md 第 8 节、docs/IMAGE.md 第 7a 节、docs/MUSIC.md 第 7a 节。worker 把结果里的 `*_b64` 字段和 `images` 列表存成 `out/<id>.<n>.<ext>`，结果 JSON 的 `files` 列出这些对象；容器名、docker 参数和输出扩展名都写在各模块配置里。
+
+权限：图像和音乐的测试沿用实例配置文件 `evp-video-builder`，加了内联策略 `evp-gpu-us-east-1`（读 us-east-1 桶、读写 `jobs/image-ec2/*` 和 `jobs/music-ec2/*`、拉 `evp/qwen-image` 和 `evp/yue2`）。长期用 `infra/gpu_ec2/grant_worker_role.sh` 创建三个模块共用的最小权限角色 `evp-gpu-worker`。这个脚本由管理员在 CloudShell 里运行，agent 不运行；运行后把三个配置里的 `instance_profile` 改成 `evp-gpu-worker`。
 
 ### 方案：SageMaker 异步推理端点
 

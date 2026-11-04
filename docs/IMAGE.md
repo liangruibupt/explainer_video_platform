@@ -129,6 +129,33 @@ us-east-1 的按需价格（AWS 价目表 API，2026-11-03 查询）：
 
 样例：`docs/assets/image_smoke.jpg`，提示词是北宋山水长卷、淡墨设色、无文字。
 
+## 7a. EC2 部署（2026-11-04 起，当前方案）
+
+**SageMaker 端点 `evp-image` 已下线**（`infra/image/deploy.py down`，S3 权重和 ECR 镜像保留）。图像模块现在和视频模块一样跑在平台自己启停的 EC2 GPU 实例上：控制器 `server/app/gpu_ec2.py`，配置 `infra/gpu_ec2/modules/image.json`，工作室客户端 `server/app/image.py`（对外函数 `status()` 和 `generate()` 不变）。`infra/image/deploy.py` 保留，作为 g5/g4dn 这类老 GPU 的后备方案。
+
+- 区域 us-east-1，队列 `s3://evp-models-747411437379-us-east-1/jobs/image-ec2/`（和 SageMaker 用的 `jobs/image/` 分开）。
+- 镜像和权重沿用 SageMaker 那套：`evp/qwen-image:20261103-125014-amd64`，权重 33 GB 复制到本地 NVMe 后只读挂到 `/opt/ml/model`。`EVP_MEM_MODE=auto`：显存 ≥ 44 GB 用 `full`，32 GB 的 g7 用 `lowvram`。
+- 容量顺序：按需 g6e.2xlarge → g7.2xlarge → g7e.2xlarge（每种在提供该机型的可用区里最多试 3 个），然后同样的顺序试 Spot。拿到一台就停。
+- 空闲 15 分钟自己关机并终止，4 小时硬上限。
+
+实测（提示词同第 7 节，16:9 文生图，40 步，seed 7）：
+
+| 项目 | 实测 | 说明 |
+|---|---|---|
+| 拿到实例的选项 | **Spot g7.2xlarge**，us-east-1a | 前 12 项（按需 g6e/g7/g7e 各 3 个可用区，Spot g6e 3 个可用区）都是 `InsufficientInstanceCapacity` |
+| 依次尝试到拿到实例 | 151 秒 | 第 13 项 |
+| 实例开机到 bootstrap 开始 | 约 55 秒 | |
+| 拉镜像（7 GB） | 112 秒 | 和复制权重同时进行 |
+| 复制权重（33 GB，S3 → NVMe） | 68 秒 | |
+| 模型加载 | 40 秒 | 容器启动到 `/ping` 200 |
+| 生成 1920×1080 | 64.0 秒 | `lowvram` 模式，RTX PRO 4500 Blackwell 32 GB |
+| **从 0 冷启动到拿到图** | **8.4 分钟**（501 秒） | 从提交请求算起，和 SageMaker 的 498 秒差不多 |
+| 热实例上再出一张（seed 11，走工作室客户端） | 62.1 秒生成，**70.8 秒端到端** | |
+| 最后一张到实例自己关机 | **15.1 分钟**（空闲 904 秒） | 04:41:11 最后一张完成，04:56:16 自己关机并终止 |
+| 一次使用（冷启动 + 几张图 + 闲置 15 分钟） | 约 30 分钟 × $0.58/小时（Spot）≈ **$0.3**；按需 g7.2xlarge $2.52/小时约 $1.3 | |
+
+画面：淡墨设色的绢本山水，远山层叠、江面开阔，左下一叶带桅杆的渔舟，船尾立一人，没有文字。热实例那张（seed 11）构图相近，青绿设色更重。
+
 ## 8. 验收（阶段 2 图像部分）
 
 1. 在 us-east-1 从 0 实例发出一张图。记录冷启动和出图各花了多久，并写回本文第 7 节。

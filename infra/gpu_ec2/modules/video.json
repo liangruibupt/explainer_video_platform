@@ -8,6 +8,9 @@
   "weights": "s3://evp-models-747411437379-ap-south-1/weights/minimax-h3/42ed227ee7df40d41602854ae760620d6eb651fe/",
   "model_mount": "/opt/ml/model",
   "container_port": 8080,
+  "container_name": "h3",
+  "docker_args": ["--ipc", "host"],
+  "outputs": {"video_b64": "mp4"},
   "env": {
     "SGLANG_USE_RUNAI_MODEL_STREAMER": "0",
     "SGLANG_DIFFUSION_FLASHINFER_FP4_GEMM_BACKEND": "auto",

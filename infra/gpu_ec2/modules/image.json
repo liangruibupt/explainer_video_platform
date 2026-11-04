@@ -1,0 +1,129 @@
+{
+  "_doc": "EC2 GPU worker config for the image module (Qwen-Image 2.1, infra/image/container). EVP_MEM_MODE=auto: full on >=44 GB GPUs (g6e, g7e), lowvram on 32 GB (g7). Capacity: on-demand cheapest first, then the same as Spot; only AZs that offer the type (describe-instance-type-offerings, 2026-11-04), at most 3 per type.",
+  "module": "image",
+  "region": "us-east-1",
+  "bucket": "evp-models-747411437379-us-east-1",
+  "jobs_prefix": "jobs/image-ec2/",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/qwen-image:20261103-125014-amd64",
+  "weights": "s3://evp-models-747411437379-us-east-1/weights/qwen-image-2.1/d26bb61231c349cf6b7896fa83353113880e1ba3/",
+  "model_mount": "/opt/ml/model",
+  "container_port": 8080,
+  "container_name": "qwen-image",
+  "docker_args": [
+    "--ipc",
+    "host"
+  ],
+  "env": {
+    "EVP_MEM_MODE": "auto"
+  },
+  "outputs": {
+    "images": "png"
+  },
+  "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
+  "min_driver_major": 570,
+  "root_gb": 80,
+  "instance_profile": "evp-video-builder",
+  "security_group": "evp-gpu-worker",
+  "name": "evp-image-worker",
+  "tags": {
+    "project": "explainer-video",
+    "module": "image"
+  },
+  "capacity": [
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1d",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1d",
+      "market": "spot"
+    }
+  ],
+  "idle_shutdown_s": 900,
+  "hard_cap_s": 14400,
+  "ready_timeout_s": 2400,
+  "invoke_timeout_s": 1200,
+  "heartbeat_stale_s": 180
+}

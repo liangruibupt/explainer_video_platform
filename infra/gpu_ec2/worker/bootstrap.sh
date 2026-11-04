@@ -95,16 +95,19 @@ wait $WP || die "weight copy failed: $(tail -3 $ST/weights.log)"
 kill $HBP 2>/dev/null
 cat "$ST/pull.log" "$ST/weights.log"
 
-# 6. Start the adapter container (it launches sglang itself). Port bound to loopback only.
-if ! docker ps --format '{{.Names}}' | grep -qx h3; then
-  docker rm -f h3 >/dev/null 2>&1 || true
-  ENVS=$(python3 -c "import json;print(' '.join('-e %s=%s'%kv for kv in json.load(open('$CFG'))['env'].items()))")
+# 6. Start the adapter container. Port bound to loopback only. Container name and extra
+#    docker args (e.g. ["--ipc", "host"] or ["--shm-size", "8g"]) come from the config.
+CNAME=$(cfg ".get('container_name','h3')")
+if ! docker ps --format '{{.Names}}' | grep -qx "$CNAME"; then
+  docker rm -f "$CNAME" >/dev/null 2>&1 || true
+  ENVS=$(python3 -c "import json;print(' '.join('-e %s=%s'%kv for kv in json.load(open('$CFG')).get('env',{}).items()))")
+  DARGS=$(python3 -c "import json,shlex;print(' '.join(shlex.quote(a) for a in json.load(open('$CFG')).get('docker_args',['--ipc','host'])))")
   # shellcheck disable=SC2086
-  docker run -d --name h3 --gpus all --ipc host \
+  docker run -d --name "$CNAME" --gpus all $DARGS \
     -v "$NV/model:$MOUNT:ro" -p "127.0.0.1:$PORT:8080" $ENVS "$IMAGE" || die "docker run failed"
-  stamp container_started; log "container started"
+  stamp container_started; log "container $CNAME started"
 fi
-hb loading "sglang loading weights"
+hb loading "model loading"
 
 # 7. Hand over to the poll loop (waits for /ping, then serves the queue). If it ever
 #    crashes, power off rather than leave a GPU running with nobody serving the queue.

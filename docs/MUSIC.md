@@ -125,6 +125,35 @@
 
 ## 8. 验收
 
+## 7a. EC2 部署（2026-11-04 起，当前方案）
+
+**SageMaker 端点 `evp-music` 已下线**（`infra/music/deploy.py down`，S3 权重和 ECR 镜像保留）。音乐模块现在跑在平台自己启停的 EC2 GPU 实例上：控制器 `server/app/gpu_ec2.py`，配置 `infra/gpu_ec2/modules/music.json`，工作室客户端 `server/app/music.py`（`status()`，`generate(style, lyrics, cot, seed)` 返回 `{"flac", "seconds", "sample_rate", "abc"}`）。`infra/music/deploy.py` 保留，作为 g5/g4dn 这类老 GPU 的后备方案。
+
+- 区域 us-east-1，队列 `s3://evp-models-747411437379-us-east-1/jobs/music-ec2/`（和 SageMaker 的 `jobs/music/` 分开）。
+- 镜像 `evp/yue2:20261104-013851-amd64`，权重 7.8 GB（`model/` 和 `vae/`）复制到本地 NVMe，只读挂到 `/opt/ml/model`。
+- 容量顺序：按需 g6.2xlarge → g5.2xlarge → g6.4xlarge → g5.4xlarge → g6e.xlarge（每种最多 3 个可用区），然后同样的顺序试 Spot。拿到一台就停。
+- 空闲 15 分钟自己关机并终止，4 小时硬上限。
+
+实测（`instrumental_en` 那组：英文风格词「Chinese classical instrumental, guqin and xiao flute, slow, ethereal, ambient, no drums, instrumental, no vocals」，歌词只有段落标签，`cot=full`，seed 7）：
+
+| 项目 | 实测 | 说明 |
+|---|---|---|
+| 拿到实例的选项 | **按需 g5.2xlarge**，us-east-1a | 按需 g6.2xlarge 三个可用区都没有容量 |
+| 依次尝试到拿到实例 | 36 秒 | 第 4 项 |
+| 实例开机到 bootstrap 开始 | 约 54 秒 | |
+| 拉镜像（7.3 GB） | 151 秒 | 和复制权重同时进行 |
+| 复制权重（7.8 GB） | 44 秒 | |
+| 模型加载 | 20 秒 | 容器启动到 `/ping` 200 |
+| 生成 258.8 秒的音乐 | 168 秒（乐谱 21 / 语义 85 / NAR 53 / VAE 10 秒） | A10G 24 GB |
+| **从 0 冷启动到拿到结果** | **9.0 分钟**（538 秒） | SageMaker 是 494 秒 |
+| 热实例上再生成一次（同样参数，走工作室客户端） | 166.5 秒生成，**171.8 秒端到端** | 同 seed，输出一样长 |
+| 最后一首到实例自己关机 | **15.0 分钟**（空闲 900 秒） | 04:43:01 最后一首完成，04:58:02 自己关机并终止 |
+| 一次使用（冷启动 + 一两首 + 闲置 15 分钟） | 约 32 分钟 × $1.21/小时 ≈ **$0.65** | |
+
+结果：FLAC，258.8 秒，48 kHz，双声道，23 MB，带 ABC 乐谱。`infra/music/check_audio.py` 的 faster-whisper 转写为空，按这个代理指标判断没有人声（和第 7 节 SageMaker 上的结果一致，尚未人耳确认）。
+
+## 8. 验收
+
 1. ✅ 从 0 实例发出请求，冷启动 494 秒（第 7 节）。
 2. ⚠️ 纯音乐：中文风格词 + 只有段落标签的歌词仍然出了人声；英文风格词或 `cot=off` 转写为空。还需要人耳听一遍确认。
 3. ✅ 一首 30–60 秒、两段主歌的中文歌（71 秒和 57 秒两版）。
