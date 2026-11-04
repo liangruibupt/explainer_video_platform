@@ -415,6 +415,14 @@ for _part in ("chat", "assets", "tasks", "settings"):
             raise
         _logging.getLogger(__name__).info("phase 4 part %s not present", _part)
 
+# Digital human (docs/AVATAR_CONTRACT.md): /api/avatars/* and /api/avatar/status.
+try:
+    app.include_router(_importlib.import_module("app.avatar_api").router)
+except ModuleNotFoundError as _e:
+    if _e.name not in ("app.avatar_api", "app.avatar"):
+        raise
+    _logging.getLogger(__name__).info("avatar module not present")
+
 
 if WEB.exists():
     app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")

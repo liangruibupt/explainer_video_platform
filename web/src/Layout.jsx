@@ -6,6 +6,7 @@ const ico = {
   tasks: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
   image: 'M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5',
   video: 'M3 6h13v12H3zM16 10l5-3v10l-5-3',
+  avatar: 'M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21a8 8 0 0 1 16 0M17 4l2-1M19 7h2',
   music: 'M4 14a8 8 0 0 1 16 0v4a2 2 0 0 1-2 2h-1v-6h3M4 14v4a2 2 0 0 0 2 2h1v-6H4',
   flow: 'M10 3h4v4h-4zM3 17h4v4H3zM17 17h4v4h-4zM12 7v5M5 17v-3h14v3',
   chat: 'M4 5h16v11H8l-4 4z',
@@ -47,6 +48,7 @@ export default function Layout() {
         <div className="group">生成</div>
         <Item to="/image" icon="image" label="图像" />
         <Item to="/video" icon="video" label="AI 视频" />
+        <Item to="/avatar" icon="avatar" label="数字人" />
         <Item to="/music" icon="music" label="音乐" />
         <div className="group">创作方式</div>
         <Item to="/workflow" icon="flow" label="工作流" />

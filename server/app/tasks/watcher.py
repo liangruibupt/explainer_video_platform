@@ -17,7 +17,7 @@ SEEN = ROOT / "seen.json"
 INTERVAL = 10
 NOTIFY_ON = ("done", "failed", "waiting_review")
 KIND_LABEL = {"job": "讲解视频", "image": "图像", "video": "AI 视频", "music": "音乐",
-              "workflow": "工作流"}
+              "workflow": "工作流", "avatar": "数字人"}
 STATUS_LABEL = {"done": "已完成", "failed": "失败", "waiting_review": "待审核"}
 LEVEL = {"done": "success", "failed": "error", "waiting_review": "warning"}
 log = logging.getLogger(__name__)
