@@ -13,6 +13,8 @@
 | `infinitetalk_promo45_480_fast.mp4`、`_sheet.jpg` | 集成验证 A：数字人页 API，45 秒超市促销口播（49.3 秒），640 宽 crf 31；六帧 0/20/40/60/80/99 % |
 | `infinitetalk_live90_480_fast.mp4`、`_sheet.jpg` | 集成验证 B：90 秒直播带货（89.5 秒），长片段身份 / 偏色检查 |
 | `traces/promo45.json`、`traces/live90.json` | 逐秒身份余弦和 ΔE（`infra/avatar/bench/trace.py`） |
+| `wf_product_pitch_milk.mp4`、`_sheet.jpg` | 集成验证 C：模板「商品口播（数字人）」端到端，有机纯牛奶，42.4 秒 |
+| `infinitetalk_15s_720_fast_sheet.jpg`、`traces/pitch15_720.json` | 集成验证 D：720P 快速 15 秒的六帧和逐秒指标 |
 
 原始文件（未压缩）：`s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/examples/avatar/`。
 
