@@ -1,0 +1,7 @@
+{
+ "_doc": "Copied by bootstrap.sh to /opt/ml/model/index.json (module 'weights' prefix). The adapter fetches models[<model>].s3 to /weights/<model> on first use. Upload: aws s3 cp weights_index.json s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/weights-index/index.json",
+ "models": {
+  "infinitetalk": {"s3": "s3://evp-models-747411437379-us-east-1/weights/infinitetalk/d59847ebdacf19245bfca3fb23311c0cada8378a/"},
+  "longcat": {"s3": "s3://evp-models-747411437379-us-east-1/weights/longcat-avatar-1.5/92016c71d5d318d0f5d84e4db30015a571484ab6/"}
+ }
+}

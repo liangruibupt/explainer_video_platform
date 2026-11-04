@@ -1,0 +1,7 @@
+{"Version":"2012-10-17","Statement":[
+ {"Sid":"AvatarJobs","Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],
+  "Resource":"arn:aws:s3:::evp-models-747411437379-us-east-1/jobs/avatar-ec2/*"},
+ {"Sid":"AvatarJobsList","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::evp-models-747411437379-us-east-1",
+  "Condition":{"StringLike":{"s3:prefix":["jobs/avatar-ec2/*"]}}},
+ {"Sid":"AvatarEcrPull","Effect":"Allow","Action":["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability"],
+  "Resource":"arn:aws:ecr:us-east-1:747411437379:repository/evp/avatar"}]}
