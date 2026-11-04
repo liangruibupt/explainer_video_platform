@@ -149,7 +149,14 @@ def test_name_and_filename_are_not_paths(media_files):
 def test_path_traversal_ids(bad):
     for url in (f"/api/assets/{bad}", f"/api/assets/{bad}/file", f"/api/assets/{bad}/thumb",
                 f"/api/projects/{bad}", f"/api/projects/{bad}/items"):
-        assert client.get(url).status_code == 404, url
+        r = client.get(url)
+        # ".." segments are normalised away by the client; what is left may hit the SPA
+        # catch-all (index.html) when web/dist exists, never a file or a record
+        if r.status_code == 200:
+            assert r.headers["content-type"].startswith("text/html"), url
+            assert b"root:" not in r.content and b'"sha256"' not in r.content, url
+        else:
+            assert r.status_code == 404, url
     assert client.delete(f"/api/assets/{bad}").status_code in (404, 405)
     assert client.patch(f"/api/projects/{bad}", json={"name": "x"}).status_code in (404, 405)
     with pytest.raises(KeyError):
