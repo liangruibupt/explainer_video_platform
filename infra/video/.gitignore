@@ -1,0 +1,6 @@
+.image_tag
+.pending_tag*
+*.log
+__pycache__/
+*.started
+*.ended
