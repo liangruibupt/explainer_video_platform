@@ -1,6 +1,6 @@
 # 视频模块设计（阶段 2 第二步）
 
-图像模块（[IMAGE.md](IMAGE.md)）跑通「SageMaker 异步端点 + 缩容到 0」之后，视频模块照同一套做法部署。本文只写视频模块和图像模块不同的地方。
+图像模块（[IMAGE.md](IMAGE.md)）用的是「SageMaker 异步端点 + 缩容到 0」。视频模块要用 g7e，SageMaker 在孟买连续 5 次拿不到容量，所以改成平台自己启停的 EC2 实例（设计文档第 4 节「GPU 后端选择」）。本文只写视频模块和图像模块不同的地方。
 
 ## 1. 在讲解视频里用来做什么
 
@@ -42,108 +42,116 @@ H3 生成的视频自带声音，混音时去掉这条音轨，只保留旁白�
 
 **分辨率**：默认 768p，比例 16:9 或 9:16。讲解视频是 1080p 输出，先用 ffmpeg 把片子放大到 1080p 再进合成。H3 原生到 768p，更高的分辨率参考仓库没有测过。
 
-## 4. 机型
+## 4. 机型和容量顺序
 
 所有档位都只用 1 张 GPU。参考仓库在 g7e.4xlarge 和 g7e.12xlarge 上测试，单卡峰值显存约 52–56 GB。
 
-| 机型 | GPU | 内存 | EC2 孟买 $/小时 | 能否使用 |
-|---|---|---|---|---|
-| ml.g7e.2xlarge | 1 × 96 GB | 64 GB | 5.49 | 不能。text encoder 放在 CPU 上要 63 GB 内存，装不下 |
-| **ml.g7e.4xlarge** | 1 × 96 GB | 128 GB | 6.53 | **首选** |
-| ml.g7e.8xlarge | 1 × 96 GB | 256 GB | 未查 | 备选，内存余量大 |
+| 机型 | GPU | 内存 | 本地 NVMe | EC2 孟买按需 $/小时 | 能否使用 |
+|---|---|---|---|---|---|
+| g7e.2xlarge | 1 × 96 GB | 64 GB | — | 5.49 | 不能。text encoder 放在 CPU 上要 63 GB 内存，装不下 |
+| **g7e.4xlarge** | 1 × 96 GB | 128 GB | 1.9 TB | 6.53 | **首选** |
+| g7e.8xlarge | 1 × 96 GB | 256 GB | 1.9 TB | 8.60 | 备选 |
 
-表里是 EC2 的按需价格。AWS 价目表 API 暂时查不到 SageMaker 在孟买的 g7e 价格，部署时用 `deploy.py plan` 实时取。参考 us-east-1 的情况，SageMaker 价格比 EC2 略低：us-east-1 的 ml.g7e.4xlarge 是 $5.00/小时。
+容量顺序写在 `infra/gpu_ec2/modules/video.json`，平台按顺序调 `RunInstances`，遇到 `InsufficientInstanceCapacity`、`InstanceLimitExceeded`、`Unsupported` 就试下一项：
 
-instance pools 按图像模块的规则排列：先剔除内存或显存不够的机型，剩下的按价格从低到高排序。结果是 **g7e.4xlarge 优先，g7e.8xlarge 其次**。本账号在 ap-south-1 这三种机型的端点配额都是 2 个。
+1. 按需 g7e.4xlarge：ap-south-1a，再 ap-south-1b（只有这两个可用区有 g7e）
+2. 按需 g7e.8xlarge：1a，再 1b
+3. 同样四项改用 Spot（一次性请求，被回收时终止；正在跑的任务放回队列）
+
+`ctl.py plan` 打印这个顺序和实时价格（按需价来自价目表 API，Spot 取最近成交价）。2026-11-04 实测 1b 的 Spot g7e.4xlarge 约 $2.67/小时，1a 是 $6.53/小时。
 
 ## 5. 容器
 
-SageMaker 和 sglang 服务对接的方式：
+镜像沿用 SageMaker 那次构建的 `evp/minimax-h3:adapter-20261103-150557`（孟买 ECR，14 GB）：
 - 容器里在 8000 端口启动 `sglang serve`，参数与参考仓库 `serve.sh` 中 fl2va 单卡那组一致。
-- 再起一个很小的适配层，在 8080 端口提供 `/ping` 和 `/invocations`。
+- 外面一层很小的适配层，在 8080 端口提供 `/ping` 和 `/invocations`。
   - `/ping`：sglang 的 `/health` 返回 200 后，它才返回 200。
-  - `/invocations`：把请求转成 sglang 的 `POST /v1/videos`，轮询直到完成，再从 `/v1/videos/{id}/content` 取回 MP4，以 base64 返回。
+  - `/invocations`：把请求转成 sglang 的 `POST /v1/videos`，轮询直到完成，再取回 MP4，以 base64 返回。
 - 请求字段：`mode`（t2va 或 fl2va）、`prompt`、`aspect`、`short_edge`、`duration`（默认 5 秒）、`seed`；fl2va 另有 `first_frame` 和可选的 `last_frame`（base64 PNG）。
-- 默认档位需要的环境变量（NVFP4、Cache-DiT 两组）写进 SageMaker Model 的 Environment 里。
+- NVFP4、Cache-DiT 两组环境变量写在模块配置的 `env` 里，worker 用 `docker run -e` 传入。
+- 端口只绑定 127.0.0.1，实例外面访问不到。
 
-一条 768p、5 秒的 MP4 约几 MB，base64 之后仍在异步推理的单条结果上限以内。
+## 6. 权重准备（只做一次，已完成）
 
-## 6. 权重准备（只做一次）
+量化需要 CPU 和大内存，本机只有 30 GB 内存，所以在孟买临时开了一台 `r7i.8xlarge` 来做，做完即终止：从 Hugging Face 下载 FL2VA 分区（revision `42ed227`）和 Turbo LoRA，合并后量化成 NVFP4（自检 `259/259 modules`、`worst rel ≈ 0.095`），把服务需要的部分（约 96 GB，121 个对象）放到
+`s3://evp-models-747411437379-ap-south-1/weights/minimax-h3/42ed227ee7df40d41602854ae760620d6eb651fe/`。镜像也在那台机器上构建并推到孟买 ECR。
 
-量化需要 CPU 和大内存，本机只有 30 GB 内存，放不下。所以在孟买临时开一台 EC2 来做，做完立刻终止：
+## 7. EC2 后端：自己启停的 GPU 实例
 
-1. 开 `r7i.8xlarge`（256 GB 内存，$2.18/小时），挂 600 GB gp3 盘。
-2. 从 Hugging Face 下载 FL2VA 分区（约 135 GB），revision 固定为 `42ed227`。下载 Turbo LoRA。
-3. 运行参考仓库的 `lora_merge_transformer.py` 和 `nvfp4_quantize_transformer.py`，自检要求 `259/259 modules` 和 `worst rel ≈ 0.095`。
-4. 把服务需要的目录同步到 `s3://evp-models-747411437379-ap-south-1/weights/minimax-h3/<sha>/`：FL2VA 分区去掉 BF16 的 transformer，再加上 NVFP4 文件，约 90 GB。
-5. 终止这台 EC2，删除它的盘。
+代码：控制器 `server/app/gpu_ec2.py`（各模块通用），配置 `infra/gpu_ec2/modules/video.json`，实例上的程序 `infra/gpu_ec2/worker/`，命令行 `infra/gpu_ec2/ctl.py`。
 
-预计 1.5–2 小时，费用约 $5，加上一次性的 S3 写入费用。
+**队列放在 S3**（单用户，不需要新的 IAM 权限），都在 `jobs/video/` 下：
+- `in/<id>.json`：请求。控制器写入后，如果没有实例就启动一台。
+- `claimed/<id>.json`：认领标记。worker 用 S3 条件写入（`If-None-Match`）认领，两台机器不会同时拿到同一个任务。
+- `out/<id>.json` 和 `out/<id>.mp4`：结果；`fail/<id>.json`：失败原因。
+- `heartbeat.json`：实例 id、状态（booting / loading / ready / busy）、时间、机型、可用区、按需还是 Spot。超过 3 分钟没更新就算过期。
+- `logs/<实例 id>.log`：实例日志（实例没有入站端口，日志随心跳传到 S3）。
 
-容器镜像约 47 GB，在本机构建会占满磁盘（本机剩 32 GB），所以也在这台临时 EC2 上构建，推到孟买的 ECR。
+**控制器**：`submit(req)` 写入请求并确保有实例；`poll(id)` 查结果；`status()` 返回 none / launching / booting / loading / ready / busy；`stop()` 终止实例。启动前按标签 `project=explainer-video,module=video` 检查，每个模块最多一台。
 
-## 7. 端点和缩容到 0
+**实例启动参数**：AMI 取 SSM 参数里最新的 Deep Learning Base OSS Nvidia Driver GPU AMI (Amazon Linux 2023)，本次是 `ami-06b0a48b43294cce8`（20261101），NVIDIA 驱动 595.112.07（要求 ≥ 580）。根盘 gp3 100 GB，终止时删除。安全组 `evp-gpu-worker` 没有任何入站规则。默认 VPC 公有子网，强制 IMDSv2，不配密钥对。`InstanceInitiatedShutdownBehavior=terminate`：实例自己关机就是终止，不留下任何东西。
 
-和图像模块相同：异步推理，最少 0、最多 1 个实例，空闲 15 分钟后缩回 0，有任务但没有实例时拉起 1 个。不同之处：
+**实例上的流程**（user-data 安装一个 systemd 服务，每一步可重入）：
+1. 设 4 小时后强制关机。
+2. 检查驱动版本。
+3. 格式化本地 NVMe（1.9 TB 实例存储）挂到 `/opt/dlami/nvme`，docker 数据目录也放在上面。
+4. 同时拉镜像、从 S3 复制权重到 NVMe（`aws s3 cp --recursive`，CRT 传输客户端）。
+5. `docker run --gpus all`，权重目录只读挂到 `/opt/ml/model`。
+6. 等 `/ping` 返回 200，然后每 5 秒查一次队列，一次跑一个任务。
+7. 连续 15 分钟没有任务就 `shutdown -h now`，实例随即终止。
 
-| 配置 | 视频 | 图像 |
+**权限**：这次测试用现有的 `evp-video-builder` 实例配置文件（它能读写整个桶、能推 ECR，但没有 S3 删除权限，所以由控制器清理 `in/` 和 `claimed/`）。**建议改用** `infra/gpu_ec2/grant_worker_role.sh` 创建的最小权限角色 `evp-video-worker`：只读权重，读写 `jobs/video/*`，只能拉镜像，加 SSM。这个脚本要由管理员在 CloudShell 里运行，运行后把配置里的 `instance_profile` 改成 `evp-video-worker`。
+
+控制面（工作室、编排、作品存储）仍在 us-east-1，输入输出走孟买的 S3。一条片子 1–2 MB，跨区域传输费可以忽略。
+
+### 之前 SageMaker 方案的结果
+
+`infra/video/deploy.py` 保留，用来记录这条路为什么没走通：异步端点 + instance pools（ml.g7e.4xlarge → ml.g7e.8xlarge），2026-11-03 两次、2026-11-04 三次，每次约 17 分钟后都报 `InsufficientInstanceCapacity`，端点从没到过 InService。同一天改用 EC2 后，按需四项仍然全部没有容量，但第 6 项（Spot g7e.4xlarge，1b）一次就拿到了，整轮尝试约 80 秒。
+
+## 8. 成本和耗时（2026-11-04 EC2 实测，ap-south-1）
+
+测试提示词「西湖清晨，薄雾笼罩湖面……」，t2va，768p 16:9（1344×768），5 秒，8 步 Turbo + Cache-DiT。
+
+| 项目 | 实测 | 说明 |
 |---|---|---|
-| 区域 | ap-south-1 | us-east-1 |
-| `InvocationTimeoutSeconds` | 900 | 3600 |
-| 模型下载超时 | 3600 秒（约 90 GB） | 1800 秒 |
-| 实例数据盘 | 300 GB | 100 GB |
+| 拿到实例的选项 | Spot g7e.4xlarge，ap-south-1b | 按需 4 项和 1a 的 Spot 都是 `InsufficientInstanceCapacity`，三次启动都一样 |
+| 依次尝试到拿到实例 | 75–84 秒 | 8 个选项里试到第 6 个 |
+| 实例开机到 bootstrap 开始 | 约 2.5 分钟 | DLAMI 首次开机 |
+| 拉镜像（14 GB） | 145–154 秒 | 和复制权重同时进行 |
+| 复制权重（96 GB，S3 → NVMe） | **70 秒**（CRT 客户端） | 默认传输客户端用了 797 秒，换成 CRT 后快 11 倍 |
+| sglang 加载 + 预热 | 140 秒 | 容器启动到 `/ping` 200 |
+| 第一条片生成 | 36.1 秒 | |
+| **从 0 冷启动到拿到第一条片** | **12.5 分钟**（750 秒） | 从提交请求算起 |
+| 热实例上再生成一条（seed 2） | **35.0 秒生成，52.5 秒端到端** | 端到端包括 S3 排队和传输 |
+| 最后一条到实例自己关机 | **15.0 分钟**（空闲 902 秒） | 03:17:07 最后一条完成，03:32:09 关机；再过约 7 分钟 EC2 显示 terminated（03:39） |
+| 第二次冷启动（实例终止后再提交，seed 11） | **12.6 分钟**（759 秒），生成 35.1 秒 | 拉镜像 154 秒、复制权重 71 秒；之后又空闲 15 分钟自己终止 |
+| 一次创作（冷启动 12.5 分钟 + 5 条约 4 分钟 + 空闲 15 分钟） | 约 32 分钟 × $2.67/小时 ≈ **$1.4**（Spot）；按需 $6.53/小时时约 $3.5 | |
+| 闲置 | 约 $3/月 | S3 里约 96 GB 权重加 14 GB ECR 镜像；没有实例时不产生 GPU 费用 |
 
-控制面（工作室、编排、作品存储）仍在 us-east-1。输入写到孟买的 S3，结果从孟买的 S3 取回。一条片子几 MB，跨区域传输费可以忽略。
+成片：H.264 1344×768、24 fps、124 帧、5.18 秒；AAC 双声道 32 kHz 音轨（RMS 约 −40 dBFS，混音时本来就要去掉）。第一条 1.4 MB。
 
-## 8. 成本和耗时（2026-11-03 部署实测，ap-south-1）
+画面：开头是西湖湖面、远处的三孔石拱桥、两岸绿树和高大的水杉，左边一艘红色游船；中间游船往右划到桥前；结尾游船到了画面中央偏左。镜头全程不动，湖面有轻微波光。提示词里的「薄雾」不明显，画面偏阴天。
 
-部署代码、镜像、IAM、权重、端点配置全部就绪并验证通过，但**端点始终没能跑到 InService：
-ap-south-1 的 g7e 持续没有容量**。至今共 5 次 `deploy.py up` 全部在约 16–17 分钟后以
-`InsufficientInstanceCapacity` 失败（先试首选 ml.g7e.4xlarge、再试 ml.g7e.8xlarge，两种都没容量）：
+![第一条片中间一帧](assets/video_smoke_mid.jpg)
 
-- 2026-11-03：2 次（首轮）。
-- 2026-11-04（Spot 容量评分 9/10 时重试，每次失败后退避 20 分钟）：
-  - 尝试 1：00:22:20Z 起，00:39:26Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
-  - 尝试 2：00:53:24Z 起，01:10:44Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
-  - 尝试 3：01:30:05Z 起，01:47:02Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
+本次测试 4 台实例（2 台因启动问题提前终止）合计约 90 分钟 Spot g7e.4xlarge，约 **$4**；SageMaker 的 5 次失败没有产生实例费。
 
-Spot 容量评分（9/10）只是提示、并不保证按需（on-demand）能拿到容量，实测依旧全程拿不到。
-这是 AWS 侧的瞬时容量问题，不是代码/镜像/权限/配置的问题，设计第 4 节已预计到这种情况。
-失败的端点从没到过 InService，也没产生实例计费；每次失败后都 `deploy.py down`，确认端点/配置/模型全部清空。
-所以下表里和生成速度、缩容、单次创作成本相关的行仍是**估算**，要等有容量跑通后再填实测值。
+部署过程中修过的问题：
+- 第一次启动时 DLAMI 没有自动挂载实例存储，按设备名找盘也没找到，worker 按设计自己关机终止了。改成按型号「Amazon EC2 NVMe Instance Storage」找盘并格式化。
+- 第二次启动时 `evp-video-builder` 没有 `s3:DeleteObject`，worker 认领任务时出错退出了。改用 S3 条件写入认领，worker 不再需要删除权限。另外 worker 异常退出时实例会立刻关机，不会出现没人干活的 GPU 一直开着。
 
-| 项目 | 状态 | 实测 / 估算 |
-|---|---|---|
-| 容器镜像构建 + 推 ECR | ✅ 实测 | 临时 EC2（m7i.2xlarge，ap-south-1）上约 7 分钟：拉 14 GB 基础镜像（约 160 s 解包）+ 装 fastapi/uvicorn + 推 v2 manifest。镜像 `evp/minimax-h3:adapter-20261103-150557` |
-| IAM 角色校验 | ✅ 实测 | 首次用带 `s3:prefix` 条件的 ListBucket，被 SageMaker 角色预校验拒；去掉条件（Get 全桶 + Put 限 `jobs/`+ List 全桶）后通过 |
-| 实例起不来到报错 | ✅ 实测 | 每次约 16–17 分钟，然后 `InsufficientInstanceCapacity`（至今 5 次全是如此）。整个过程没出现日志组，说明容量始终没拿到，不是下载/加载阶段的问题 |
-| 首次部署到 InService | ⏳ 未测 | 预计 15–25 分钟：实例启动、拉 14 GB 镜像、下载约 90 GB 权重、加载、预热（只热 768p 16:9） |
-| 从 0 冷启动到第一条片 | ⏳ 未测 | 同上冷启动 + 约 36 秒生成 |
-| 单条 768p、5 秒（8 步，Turbo + Cache-DiT） | ⏳ 未测（估算） | 约 36 秒生成，加约 10 秒排队和传输。参考仓库 c380891 在 g7e 上的实测是 36 秒 |
-| 最后一条到实例回到 0 | ⏳ 未测 | 约 16–16.5 分钟（15 分钟冷却加告警判定） |
-| 一次创作（冷启动约 20 分钟 + 生成 5 条约 4 分钟 + 空闲 15 分钟） | ⏳ 未测（估算） | 约 40 分钟 × $6.53/小时 ≈ **$4.4**（g7e.4xlarge，EC2 按需价回退口径） |
-| 闲置 | — | S3 存约 102 GB 权重加 14 GB ECR 镜像约 $3/月 |
-
-价格说明：AWS 价目表 API 没有 ap-south-1 的 SageMaker g7e 行，`deploy.py plan` 自动回退到
-EC2 按需价并标注来源：ml.g7e.4xlarge **$6.53/小时**（首选）、ml.g7e.8xlarge **$8.60/小时**（备选）。
-
-冷启动比图像模块长很多。所以工作室在写完分镜、确认要生成视频片段时就先唤醒端点，和写绘制代码、合成旁白同时进行，不要等到真正用的时候才启动。
-
-**重跑说明**：代码已就绪，有容量时 `cd infra/video && python3 deploy.py up --weights
-s3://evp-models-747411437379-ap-south-1/weights/minimax-h3/42ed227ee7df40d41602854ae760620d6eb651fe/`
-即可（镜像和权重都在），跑通后 `deploy.py smoke` 做一条 768p t2va，再把上表的估算行换成实测。
-ap-south-1 的 g7e 已连续 5 次（2026-11-03 两次、2026-11-04 三次）都没拿到容量，建议下一步直接改到
-东京 ap-northeast-1（设计第 2 节列为备选区）重试——需先把镜像和权重跨区复制过去。
+冷启动约 12 分钟，所以工作室在写完分镜、确认要生成视频片段时就先提交任务唤醒实例，和写绘制代码、合成旁白同时进行。
 
 ## 9. 验收
 
-1. 从 0 个实例开始，在 ap-south-1 生成一条 768p、5 秒的 t2va 片子。记录冷启动和生成各用多久。
+1. ✅ 从 0 个实例开始，在 ap-south-1 生成一条 768p、5 秒的 t2va 片子。记录冷启动和生成各用多久（第 8 节）。
 2. 用图像模块生成的首帧图，做一条 fl2va。
-3. 闲置后实例数回到 0。
+3. ✅ 闲置后实例数回到 0（15 分钟空闲后自己终止，两次都确认）。
 4. 用 1–2 个视频镜头重做一个示例，例如苏轼杭州那段换成西湖实景。
-5. 按标签统计这次测试的实际花费。
+5. 按标签统计这次测试的实际花费（Cost Explorer 数据晚约 1 天，届时按 `module=video` 核对第 8 节的估算）。
 
 ## 10. 待定
 
 - 默认分辨率：768p 还是 480p。480p 快 3 倍，但放大到 1080p 后会比较软。
 - 是否需要 ref2va（参考图生视频，人物或物品保持一致）。需要的话要再部署一个端点，权重再加约 90 GB。
+�是把镜像和权重复制到东京 ap-northeast-1，在容量顺序里加上东京。

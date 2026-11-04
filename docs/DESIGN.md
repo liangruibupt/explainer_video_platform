@@ -70,6 +70,19 @@ API 服务（FastAPI）── 鉴权、项目、作品、任务、工作流 CRUD
 
 ## 4. 云上 GPU 部署与缩容到 0（阶段 2）
 
+### GPU 后端选择（2026-11-04 决定）
+
+**EC2 优先。** 新的、稀缺的 GPU（g6e、g7、g7e）跑在平台自己启停的 EC2 实例上；SageMaker 异步端点只用于量大好拿的老 GPU（g5、g4dn）。
+
+原因：视频模块在 ap-south-1 用 SageMaker 部署 ml.g7e.4xlarge / ml.g7e.8xlarge，连续 5 次都在约 17 分钟后报 `InsufficientInstanceCapacity`。SageMaker 每次只在一个区域里按 instance pool 顺序试，试完就失败，等一轮要 17 分钟。EC2 的 `RunInstances` 几秒就返回结果，可以依次试多个可用区、多个机型，再试 Spot，一轮不到 2 分钟。实测第一次就用 Spot 拿到了 g7e.4xlarge。
+
+EC2 后端的做法（`server/app/gpu_ec2.py`，每个模块一份配置 `infra/gpu_ec2/modules/<模块>.json`）：
+- 队列放在 S3：请求写到 `jobs/<模块>/in/`，实例上的 worker 认领、调用容器、把结果写到 `out/`，失败写到 `fail/`，并定期写心跳。
+- 没有实例时按配置的容量顺序启动一台（每个模块最多一台），实例空闲 15 分钟后自己关机。启动时设了“关机即终止”，所以闲置不花钱，也不留下磁盘。另有 4 小时硬上限。
+- 实例没有入站端口，不配密钥对，只用 IMDSv2。
+
+下面 SageMaker 的部分仍然适用于图像模块（g7/g6e 在 us-east-1 拿得到）。
+
 ### 方案：SageMaker 异步推理端点
 
 AWS 文档明确支持异步端点缩容到 0 实例。缩到 0 期间收到的请求会排队，等实例起来后处理（[Autoscale an asynchronous endpoint](https://docs.aws.amazon.com/sagemaker/latest/dg/async-inference-autoscale.html)）。
