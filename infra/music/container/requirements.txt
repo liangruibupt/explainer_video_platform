@@ -1,5 +1,5 @@
 # Exact pins required by yue2_infer-0.1.5 (torch==2.10.0 is installed from the cu128 index first).
-transformers==4.57.6
+transformers==5.10.1
 huggingface-hub==0.36.2
 safetensors==0.7.0
 tiktoken==0.12.0
