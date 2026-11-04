@@ -37,6 +37,7 @@ def _music_arg(key: str) -> list:
 
 STEPS = [
     ("storyboard", "Opus 5.5 写分镜"),
+    ("illustrate", "Qwen-Image 生成插图"),
     ("narrate", "Polly 合成旁白"),
     ("scene_code", "Opus 5.5 写绘制代码"),
     ("sfx", "放置音效"),
@@ -76,7 +77,8 @@ def _save(job: dict) -> None:
 
 def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
                captions: bool, music: str, voice: str, brief: str = "",
-               scene_context: str = "", background_png: bytes = b"") -> dict:
+               scene_context: str = "", background_png: bytes = b"",
+               illustrations: int = 0) -> dict:
     d = job_dir(job_id)
     d.mkdir(parents=True, exist_ok=False)
     if scene_context:
@@ -86,6 +88,7 @@ def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
     job = {"id": job_id, "topic": topic, "language": language, "seconds": seconds,
            "ratio": ratio, "captions": captions, "music": music, "voice": voice,
            "brief": brief, "has_background": bool(background_png),
+           "illustrations": illustrations,
            "status": "queued", "created": time.time(), "updated": time.time(),
            "steps": [{"key": k, "label": l, "status": "pending"} for k, l in STEPS],
            "error": None, "video": None, "scenes": []}
@@ -133,10 +136,46 @@ def _run(job_id: str) -> None:
     try:
         def do_storyboard():
             scenes = llm.storyboard(job["topic"], job["language"], job["seconds"],
-                                    brief=job.get("brief", ""))
+                                    brief=job.get("brief", ""),
+                                    illustrations=job.get("illustrations", 0))
             (d / "scenes.json").write_text(json.dumps(scenes, ensure_ascii=False, indent=1))
             job["scenes"] = scenes
         step("storyboard", do_storyboard)
+
+        # Illustrations run in the background while narration is synthesised: the image
+        # endpoint may be cold (about 8 minutes), so it is woken as early as possible.
+        wanted = [s for s in job["scenes"] if s.get("illustration")]
+        ill_thread, ill_err = None, []
+        if wanted:
+            s_ill = next(x for x in job["steps"] if x["key"] == "illustrate")
+            s_ill["status"], s_ill["started"] = "running", time.time()
+            _save(job)
+
+            def do_illustrate():
+                from . import image
+                from concurrent.futures import ThreadPoolExecutor
+                (d / "img").mkdir(exist_ok=True)
+
+                def one(s):
+                    def waiting(sec):
+                        note = f"等待 GPU（{sec // 60} 分钟）" if sec >= 60 else ""
+                        if s_ill.get("note") != note:
+                            s_ill["note"] = note
+                            _save(job)
+                    try:
+                        png = image.generate(s["illustration"]["prompt"], ratio=job["ratio"]
+                                             if s["illustration"]["place"] == "background"
+                                             else "1:1", seed=7, on_wait=waiting)[0]
+                        (d / "img" / f"{s['id']}.png").write_bytes(png)
+                    except Exception as e:  # noqa: BLE001 - a missing picture is not fatal
+                        ill_err.append(f"{s['id']}: {e}")
+                # The endpoint runs one request at a time; submit all, they queue in order.
+                with ThreadPoolExecutor(max_workers=len(wanted)) as ex:
+                    list(ex.map(one, wanted))
+            ill_thread = threading.Thread(target=do_illustrate, daemon=True)
+            ill_thread.start()
+        else:
+            skip("illustrate")
 
         step("narrate", lambda: _sh([PY, SCRIPTS / "narrate.py", "scenes.json", ".",
                                      "--tts", "polly", "--voice", job["voice"]], d, log))
@@ -149,13 +188,33 @@ def _run(job_id: str) -> None:
             def note(msg):
                 with log.open("a") as f:
                     f.write(msg + "\n")
+            import base64
+            imgs = {}
+            if ill_thread:
+                ill_thread.join()
+                s_ill["status"], s_ill["ended"] = "done", time.time()
+                s_ill.pop("note", None)
+                for err in ill_err:
+                    note(f"illustration skipped: {err}")
+                for s in wanted:
+                    p = d / "img" / f"{s['id']}.png"
+                    if p.exists():
+                        imgs[s["id"]] = "data:image/png;base64," + base64.b64encode(
+                            p.read_bytes()).decode()
+                    else:
+                        s.pop("illustration", None)
+                if wanted and not imgs:
+                    s_ill["note"] = "插图生成失败，已跳过（见日志）"
+                elif len(imgs) < len(wanted):
+                    s_ill["note"] = f"{len(imgs)}/{len(wanted)} 张成功"
+                _save(job)
             bg = ""
             if (d / "background.png").exists():
-                import base64
                 bg = "data:image/png;base64," + base64.b64encode((d / "background.png").read_bytes()).decode()
             ctx = (d / "scene_context.txt").read_text() if (d / "scene_context.txt").exists() else ""
             (d / "index.html").write_text(llm.scene_html(job["scenes"], frames, w, h, log=note,
-                                                         context=ctx, bg_data_url=bg))
+                                                         context=ctx, bg_data_url=bg,
+                                                         images=imgs))
         step("scene_code", do_scene_code)
 
         if any(s.get("sfx") for s in job["scenes"]):

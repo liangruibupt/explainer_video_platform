@@ -36,7 +36,7 @@ export default function Layout() {
         <Item to="/works" icon="works" label="作品集" />
         <Item to="/tasks" icon="tasks" label="任务中心" />
         <div className="group">进阶（规划中）</div>
-        <Item to="/advanced/image" icon="image" label="图像" soon />
+        <Item to="/image" icon="image" label="图像" />
         <Item to="/advanced/video" icon="video" label="AI 视频" soon />
         <Item to="/advanced/music" icon="music" label="音乐" soon />
         <Item to="/advanced/workflow" icon="flow" label="工作流" soon />

@@ -8,6 +8,7 @@ import Works from './pages/Works.jsx'
 import JobPage from './pages/JobPage.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Advanced from './pages/Advanced.jsx'
+import ImagePage from './pages/ImagePage.jsx'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -18,6 +19,7 @@ createRoot(document.getElementById('root')).render(
           <Route path="works" element={<Works />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="jobs/:id" element={<JobPage />} />
+          <Route path="image" element={<ImagePage />} />
           <Route path="advanced/:kind" element={<Advanced />} />
         </Route>
       </Routes>

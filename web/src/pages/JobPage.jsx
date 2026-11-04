@@ -66,7 +66,8 @@ export default function JobPage() {
           <ol className="steps">
             {job.steps.map((s) => (
               <li key={s.key} className={s.status}>
-                <i />{s.label}<span>{s.status === 'skipped' ? '跳过' : secs(s)}</span>
+                <i />{s.label}{s.note && <em className="muted"> · {s.note}</em>}
+                <span>{s.status === 'skipped' ? '跳过' : secs(s)}</span>
               </li>
             ))}
           </ol>
@@ -76,6 +77,7 @@ export default function JobPage() {
               {job.scenes.map((s, i) => (
                 <li key={s.id}>
                   <b>{i + 1}. {s.title || s.id}</b>
+                  {s.illustration && <span className="pill soon">AI 插图</span>}
                   {s.frames && <span className="frames">{(s.frames / 30).toFixed(1)}s</span>}
                   <p>{s.narration}</p>
                 </li>
