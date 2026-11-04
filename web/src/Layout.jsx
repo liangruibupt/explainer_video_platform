@@ -35,10 +35,11 @@ export default function Layout() {
         <div className="group">资产与管理</div>
         <Item to="/works" icon="works" label="作品集" />
         <Item to="/tasks" icon="tasks" label="任务中心" />
-        <div className="group">进阶（规划中）</div>
+        <div className="group">生成</div>
         <Item to="/image" icon="image" label="图像" />
-        <Item to="/advanced/video" icon="video" label="AI 视频" soon />
-        <Item to="/advanced/music" icon="music" label="音乐" soon />
+        <Item to="/video" icon="video" label="AI 视频" />
+        <Item to="/music" icon="music" label="音乐" />
+        <div className="group">进阶（规划中）</div>
         <Item to="/advanced/workflow" icon="flow" label="工作流" soon />
         <div className="side-foot">单用户 · 本地运行</div>
       </aside>

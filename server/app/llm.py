@@ -72,9 +72,60 @@ loaded). Placement: {place}.
   other half.
 Never draw text on top of the picture without a backing panel."""
 
+CLIP_SCENE_NOTE = """This scene has an AI video clip as its moving background: T.clipFrame (an
+HTMLImageElement, already loaded, exactly W x H) is the clip's frame for the current f; the
+page shell swaps it every frame. Draw it FIRST, every frame: ctx.drawImage(T.clipFrame, 0, 0,
+W, H) (guard with if (T.clipFrame)). Do not zoom or crop it: the footage already moves. Then
+draw a soft dark veil (a vertical gradient or rounded panel, rgba(0,0,0,0.35-0.55)) where the
+text sits, so text stays readable over the footage, and put the title, labels and a light
+diagram on top. Keep most of the footage visible; never cover the whole frame opaquely."""
+
+
+CLIP_NOTE = """
+
+AI video clips (5 s of real-looking footage, played as a moving background) are available for
+up to {n} scenes. Add a "clip" field only to scenes where real footage helps (a place, a
+machine, nature, a landscape), never to the title card, a chart, a flow or a diagram scene,
+and never to a scene that already has an "illustration":
+"clip": {{"prompt": "English description of one live-action shot: subject, setting, camera
+movement, light, time of day; no text, no people talking", "place": "background"}}"""
+
+MUSIC_NOTE = """
+
+The video also gets AI background music. Return an object instead of a bare array:
+{"scenes": [...the scenes as above...], "music_style": "..."}
+"music_style" is ONE line of English style text for a calm instrumental bed that fits the
+topic (genre, instruments, tempo, mood), and it must end with exactly
+"ambient, no drums, instrumental, no vocals"."""
+
+MUSIC_TAIL = "ambient, no drums, instrumental, no vocals"
+
+
+def parse_storyboard(text: str) -> tuple:
+    """(scenes list, music_style str). Accepts {"scenes": [...], "music_style": ...} or a bare
+    JSON array (the older format)."""
+    t = re.sub(r"^```[a-zA-Z]*\n", "", text.strip())
+    t = re.sub(r"\n```\s*$", "", t)
+    i, j = t.find("{"), t.find("[")
+    if i >= 0 and (j < 0 or i < j):
+        obj = json.loads(t[i: t.rfind("}") + 1])
+        return obj.get("scenes") or [], str(obj.get("music_style") or "")
+    return json.loads(_extract(text, "[")), ""
+
+
+def _music_style(style: str) -> str:
+    style = re.sub(r"\s+", " ", style).strip().rstrip(".")[:400]
+    if not style:
+        return ""
+    if not style.lower().endswith(MUSIC_TAIL):
+        style = f"{style}, {MUSIC_TAIL}"
+    return style
+
 
 def storyboard(topic: str, language: str, seconds: int, brief: str = "",
-               illustrations: int = 0) -> list:
+               illustrations: int = 0, clips: int = 0, music_ai: bool = False,
+               meta: dict | None = None) -> list:
+    """Returns the scenes. meta (a dict), when given, receives "music_style"."""
     user = (f"Topic: {topic}\nNarration language: {language}\n"
             f"Target total length: about {seconds} seconds.")
     if brief:
@@ -82,8 +133,14 @@ def storyboard(topic: str, language: str, seconds: int, brief: str = "",
                  "and must be used for facts):\n" + brief)
     if illustrations:
         user += ILLUSTRATION_NOTE.format(n=illustrations)
+    if clips:
+        user += CLIP_NOTE.format(n=clips)
+    if music_ai:
+        user += MUSIC_NOTE
     text = ask(STORYBOARD_SYSTEM, user, max_tokens=4000)
-    scenes = json.loads(_extract(text, "["))
+    scenes, style = parse_storyboard(text)
+    if meta is not None:
+        meta["music_style"] = _music_style(style)
     out = []
     for i, s in enumerate(scenes):
         if not s.get("narration"):
@@ -99,6 +156,10 @@ def storyboard(topic: str, language: str, seconds: int, brief: str = "",
                 "prompt": str(ill["prompt"])[:600],
                 "place": ill.get("place") if ill.get("place") in ("background", "left", "right")
                 else "background"}
+        clip = s.get("clip")
+        if (clips and isinstance(clip, dict) and str(clip.get("prompt", "")).strip()
+                and "illustration" not in out[-1] and i > 0):
+            out[-1]["clip"] = {"prompt": str(clip["prompt"])[:600], "place": "background"}
     if illustrations:  # never more than asked for, first ones win
         seen = 0
         for s in out:
@@ -106,6 +167,13 @@ def storyboard(topic: str, language: str, seconds: int, brief: str = "",
                 seen += 1
                 if seen > illustrations:
                     del s["illustration"]
+    if clips:
+        seen = 0
+        for s in out:
+            if "clip" in s:
+                seen += 1
+                if seen > clips:
+                    del s["clip"]
     if not out:
         raise ValueError("storyboard came back empty")
     return out
@@ -123,7 +191,7 @@ Hard requirements:
 - Draw everything from f alone: no requestAnimationFrame, timers, Date, performance,
   Math.random, globals, closures over mutable state, DOM access or network. Do not create
   or load images; you may only draw the already-loaded images this prompt names
-  (T.bg_img, T.img[...]).
+  (T.bg_img, T.img[...], T.clipFrame).
 - p = f / n is scene progress. Build the diagram up step by step in sync with the narration;
   something must visibly move on every part of the timeline (no static frames).
 - Keep the bottom 16% of the canvas free of text and key drawing: captions go there.
@@ -158,6 +226,13 @@ const bgReady = Promise.all([
 const SCENES = [
 __SCENES__
 ];
+// AI video clips: per scene, n JPEG frames at 30 fps in clip_<id>/00001.jpg ... next to
+// this page. seek() loads the frame it needs and exposes it as T.clipFrame before draw().
+const CLIPS = __CLIPS__;
+T.clip = {};
+for (const [k, n] of Object.entries(CLIPS)) {
+  T.clip[k] = { n, frame: (i) => loadImg(`clip_${k}/${String(Math.min(Math.max(i, 0), n - 1) + 1).padStart(5, '0')}.jpg`) };
+}
 function paintBg() {
   ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
   if (T.bg_img) ctx.drawImage(T.bg_img, 0, 0, W, H);
@@ -172,12 +247,16 @@ window.seek = async (frame) => {
   let start = 0, i = 0;
   while (i < DUR.length - 1 && frame >= start + DUR[i]) { start += DUR[i]; i++; }
   const f = Math.min(frame - start, DUR[i] - 1), n = DUR[i];
+  const cl = T.clip[SCENES[i].id];
+  T.clipFrame = cl ? await cl.frame(f) : null;
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
   paintBg();
+  if (T.clipFrame) ctx.drawImage(T.clipFrame, 0, 0, W, H);
   ctx.save();
   try { SCENES[i].draw(ctx, f, n, W, H, T); }
   catch (e) { ctx.restore(); ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
-              paintBg(); fallback(ctx, f, n, W, H, T, SCENES[i].title); }
+              paintBg(); if (T.clipFrame) ctx.drawImage(T.clipFrame, 0, 0, W, H);
+              fallback(ctx, f, n, W, H, T, SCENES[i].title); }
   ctx.restore();
 };
 </script></body></html>
@@ -206,13 +285,17 @@ The background is light paper: use dark ink for text, e.g. '#3a2a1c', and T.acce
 
 
 def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
-               context: str = "", bg_data_url: str = "", images: dict | None = None) -> str:
+               context: str = "", bg_data_url: str = "", images: dict | None = None,
+               clips: dict | None = None) -> str:
     """One Opus call per scene, run in parallel; each returns a draw() function.
     context: extra facts every scene needs (e.g. pixel coordinates of map places).
     bg_data_url: optional data: URL of a W x H background painted under every frame.
-    images: optional {scene_id: data URL} of AI illustrations, exposed as T.img[id]."""
+    images: optional {scene_id: data URL} of AI illustrations, exposed as T.img[id].
+    clips: optional {scene_id: frame count} of AI video clips whose JPEG frames sit in
+    clip_<id>/ next to index.html; the shell exposes the current one as T.clipFrame."""
     from concurrent.futures import ThreadPoolExecutor
     images = images or {}
+    clips = clips or {}
     ctx = "\n\n".join(x for x in ((BG_NOTE if bg_data_url else ""), context) if x)
 
     def one(i):
@@ -223,6 +306,8 @@ def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
             note = IMG_NOTE.format(sid=s["id"], place=s.get("illustration", {}).get("place",
                                                                                   "background"))
             sctx = "\n\n".join(x for x in (ctx, note) if x)
+        if s["id"] in clips:
+            sctx = "\n\n".join(x for x in (sctx, CLIP_SCENE_NOTE) if x)
         try:
             return scene_draw(brief, i, len(scenes), frames[i], width, height, sctx), None
         except Exception as e:  # noqa: BLE001 - fall back to a title card for this scene
@@ -245,6 +330,7 @@ def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
     return (PAGE.replace("__W__", str(width)).replace("__H__", str(height))
                 .replace("__BG__", json.dumps(bg_data_url))
                 .replace("__IMGS__", json.dumps(images))
+                .replace("__CLIPS__", json.dumps(clips))
                 .replace("__DUR__", json.dumps(frames)).replace("__SCENES__", ",\n".join(blocks)))
 
 
