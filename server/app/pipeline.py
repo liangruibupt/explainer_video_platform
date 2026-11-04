@@ -36,7 +36,9 @@ def _music_arg(key: str) -> list:
     return ["--music", str(TOOLS / "music" / v["file"]), "--music-volume", str(v.get("volume", 0.72))]
 
 
-AI_MUSIC_VOLUME = 0.8  # bgm is loudnorm'd to -24 LUFS in mix_bgm.py, then ducked under voice
+AI_MUSIC_VOLUME = 0.35  # bgm is loudnorm'd to -24 LUFS in mix_bgm.py; 0.35 (-9 dB) puts
+# music-only stretches near -35 dB RMS, about 11 dB under the narration (-24 dB), and the
+# sidechain ducks it further while someone speaks. 0.8 measured -26.4 dB: too close to voice.
 INSTRUMENTAL_LYRICS = "[Intro]\n\n[Instrumental]\n\n[Outro]"
 _whisper = None
 
@@ -257,6 +259,8 @@ def _run(job_id: str) -> None:
                             job["music_file"] = p.name
                             job["music_source"] = f"YuE2 AI 生成（第 {k + 1} 次，cot={cot}）"
                             s_mus["note"] = f"{round(r.get('seconds') or 0)} 秒纯音乐，无人声"
+                            s_mus["status"], s_mus["ended"] = "done", time.time()
+                            _save(job)
                             return
                         s_mus["note"] = "检测到人声，换 seed 重试"
                         _save(job)
@@ -267,6 +271,8 @@ def _run(job_id: str) -> None:
                 job["music_fallback"] = fb
                 job["music_source"] = f"AI 音乐失败或有人声，改用{music_choices().get(fb, fb)}"
                 s_mus["note"] = job["music_source"]
+                s_mus["status"], s_mus["ended"] = "done", time.time()
+                _save(job)
             music_thread = threading.Thread(target=do_music_ai, daemon=True)
             music_thread.start()
         else:
@@ -378,8 +384,6 @@ def _run(job_id: str) -> None:
         def do_mix():
             if music_thread:
                 music_thread.join()
-                s_mus["status"], s_mus["ended"] = "done", time.time()
-                _save(job)
             if job["music"] == "ai" and job.get("music_file"):
                 arg = ["--music", d / job["music_file"], "--music-volume", str(AI_MUSIC_VOLUME)]
             elif job["music"] == "ai":
