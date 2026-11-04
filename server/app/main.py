@@ -202,7 +202,11 @@ from .workflows import store as wf_store  # noqa: E402
 from .workflows.validate import levels as wf_levels  # noqa: E402
 from .workflows.validate import validate as wf_validate  # noqa: E402
 
-wf_engine.recover()
+@app.on_event("startup")
+def _recover_workflows() -> None:
+    # Only the serving process may mark 'running' nodes as interrupted: a script or test
+    # that imports app.main against the same data dir must not fail a live run.
+    wf_engine.recover()
 
 
 class WorkflowIn(BaseModel):
@@ -414,6 +418,14 @@ for _part in ("chat", "assets", "tasks", "settings"):
         if _e.name not in (f"app.{_part}", f"app.{_part}.api"):
             raise
         _logging.getLogger(__name__).info("phase 4 part %s not present", _part)
+
+# Digital human (docs/AVATAR_CONTRACT.md): /api/avatars/* and /api/avatar/status.
+try:
+    app.include_router(_importlib.import_module("app.avatar_api").router)
+except ModuleNotFoundError as _e:
+    if _e.name not in ("app.avatar_api", "app.avatar"):
+        raise
+    _logging.getLogger(__name__).info("avatar module not present")
 
 
 if WEB.exists():

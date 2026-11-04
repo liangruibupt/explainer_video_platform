@@ -6,7 +6,7 @@ import pytest
 from app.workflows import store
 from app.workflows.validate import check_types, levels, topo_order, validate
 
-MODS = {"image", "video", "music"}
+MODS = {"image", "video", "music", "avatar"}
 
 
 def codes(errs):

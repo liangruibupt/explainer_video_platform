@@ -108,7 +108,23 @@ workflow JSON that still does exactly what the user asked, changing the node clo
 affected output instead. If the instruction changes the subject or theme itself, or every
 re-run is needed, return your previous workflow unchanged."""
 
+def _avatar_minutes() -> tuple:
+    """(render minutes of a typical 30 s avatar clip, cold-start minutes) from
+    infra/gpu_ec2/modules/avatar.json (default model, 480 fast); fallbacks when absent."""
+    try:
+        from .. import avatar
+        cfg = avatar.config()
+    except ImportError:  # the avatar module is optional
+        cfg = {}
+    model = cfg.get("default_model") or "infinitetalk"
+    factor = ((cfg.get("render_s_per_s") or {}).get(model) or {}).get("480_fast") or 30
+    return round(30 * float(factor) / 60 + 1), round(float(cfg.get("cold_min") or 13))
+
+
+AVATAR_MIN, AVATAR_COLD_MIN = _avatar_minutes()
+
 COST = {"gpu:video": "GPU ~10 min", "gpu:music": "GPU ~9 min", "gpu:image": "GPU ~1 min",
+        "gpu:avatar": f"GPU ~{AVATAR_MIN} min per 30 s clip (+{AVATAR_COLD_MIN} min cold start)",
         "agent": "LLM call"}
 
 
@@ -151,7 +167,7 @@ def _below(wf: dict, nid: str) -> set:
 
 def gpu_cost(wf: dict, ids) -> int:
     """Rough GPU minutes of re-running ids, used to compare two edits."""
-    mins = {"gpu:video": 10, "gpu:music": 9, "gpu:image": 1}
+    mins = {"gpu:video": 10, "gpu:music": 9, "gpu:image": 1, "gpu:avatar": AVATAR_MIN}
     types = {n["id"]: n["type"] for n in wf.get("nodes", [])}
     return sum(mins.get(NODES.get(types.get(i), {}).get("runner"), 0) for i in ids)
 

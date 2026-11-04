@@ -1,0 +1,11 @@
+{"Version":"2012-10-17","Statement":[
+ {"Sid":"AvatarWeightsAndJobs","Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],
+  "Resource":["arn:aws:s3:::evp-models-747411437379-us-east-1/weights/infinitetalk/*",
+              "arn:aws:s3:::evp-models-747411437379-us-east-1/weights/longcat-avatar-1.5/*",
+              "arn:aws:s3:::evp-models-747411437379-us-east-1/jobs/avatar-ec2/*",
+              "arn:aws:s3:::evp-models-747411437379-us-east-1/jobs/avatar-build/*"]},
+ {"Sid":"AvatarList","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::evp-models-747411437379-us-east-1",
+  "Condition":{"StringLike":{"s3:prefix":["weights/infinitetalk/*","weights/longcat-avatar-1.5/*","jobs/avatar-ec2/*","jobs/avatar-build/*"]}}},
+ {"Sid":"AvatarEcrPush","Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer","ecr:BatchGetImage",
+  "ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload"],
+  "Resource":"arn:aws:ecr:us-east-1:747411437379:repository/evp/avatar"}]}

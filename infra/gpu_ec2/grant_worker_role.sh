@@ -31,16 +31,18 @@ POLICY=$(cat <<JSON
   "Resource":["arn:aws:s3:::$B_AP/weights/*","arn:aws:s3:::$B_US/weights/*"]},
  {"Sid":"Jobs","Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],
   "Resource":["arn:aws:s3:::$B_AP/jobs/video/*","arn:aws:s3:::$B_AP/jobs/video-ec2/*",
-              "arn:aws:s3:::$B_US/jobs/image-ec2/*","arn:aws:s3:::$B_US/jobs/music-ec2/*"]},
+              "arn:aws:s3:::$B_US/jobs/image-ec2/*","arn:aws:s3:::$B_US/jobs/music-ec2/*",
+              "arn:aws:s3:::$B_US/jobs/avatar-ec2/*"]},
  {"Sid":"ListAp","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::$B_AP",
   "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/video/*","jobs/video-ec2/*"]}}},
  {"Sid":"ListUs","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::$B_US",
-  "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/image-ec2/*","jobs/music-ec2/*"]}}},
+  "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/image-ec2/*","jobs/music-ec2/*","jobs/avatar-ec2/*"]}}},
  {"Sid":"EcrAuth","Effect":"Allow","Action":"ecr:GetAuthorizationToken","Resource":"*"},
  {"Sid":"EcrPull","Effect":"Allow","Action":["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability"],
   "Resource":["arn:aws:ecr:ap-south-1:$ACCT:repository/evp/minimax-h3",
               "arn:aws:ecr:us-east-1:$ACCT:repository/evp/qwen-image",
-              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/yue2"]}]}
+              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/yue2",
+              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/avatar"]}]}
 JSON
 )
 aws iam put-role-policy --role-name $ROLE --policy-name evp-gpu-worker --policy-document "$POLICY"

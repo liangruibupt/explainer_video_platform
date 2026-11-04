@@ -7,7 +7,7 @@ const TABS = [
 ]
 const KIND = {
   job: ['🎬', '讲解视频'], image: ['🖼️', '图像'], video: ['📹', 'AI 视频'],
-  music: ['🎵', '音乐'], workflow: ['🔀', '工作流'],
+  music: ['🎵', '音乐'], workflow: ['🔀', '工作流'], avatar: ['🧑‍💼', '数字人'],
 }
 const STATUS_ZH = {
   queued: '排队中', running: '进行中', waiting_review: '待审核', done: '已完成', failed: '失败',

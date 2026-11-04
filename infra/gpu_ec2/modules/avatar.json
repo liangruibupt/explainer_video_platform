@@ -1,0 +1,87 @@
+{
+  "_doc": "EC2 GPU worker config for the avatar (数字人) module: one image serves InfiniteTalk and LongCat-Video-Avatar-1.5 (request field model). server/app/gpu_ec2.py reads it. The adapter copies the requested model's weights from the pinned prefixes in weights_index to NVMe on first use; bootstrap copies only the small index (weights). Capacity order from the measurements in docs/AVATAR.md.",
+  "module": "avatar",
+  "region": "us-east-1",
+  "bucket": "evp-models-747411437379-us-east-1",
+  "jobs_prefix": "jobs/avatar-ec2/",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261104-190851",
+  "weights": "s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/weights-index/",
+  "model_mount": "/opt/ml/model",
+  "container_port": 8080,
+  "container_name": "avatar",
+  "docker_args": [
+    "--ipc",
+    "host",
+    "-v",
+    "/opt/dlami/nvme/avatar-weights:/weights"
+  ],
+  "outputs": {
+    "video_b64": "mp4"
+  },
+  "env": {
+    "AVATAR_DEFAULT_MODEL": "infinitetalk",
+    "AWS_REGION": "us-east-1"
+  },
+  "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
+  "min_driver_major": 570,
+  "root_gb": 100,
+  "instance_profile": "evp-gpu-worker",
+  "security_group": "evp-gpu-worker",
+  "name": "evp-avatar-worker",
+  "tags": {
+    "project": "explainer-video",
+    "module": "avatar"
+  },
+  "capacity": [
+    {
+      "type": "g7e.4xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.4xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.4xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.4xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.8xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    }
+  ],
+  "idle_shutdown_s": 900,
+  "hard_cap_s": 14400,
+  "ready_timeout_s": 1800,
+  "invoke_timeout_s": 5400,
+  "heartbeat_stale_s": 180,
+  "_capacity_note": "g7e.2xlarge (64 GB host RAM) is NOT listed: InfiniteTalk's loader merges the ~66 GB fp32 Wan2.1 DiT shards in CPU memory and the container was OOM-killed there (2026-11-04). g6e (48 GB GPU) would need CPU offload; not measured.",
+  "default_model": "infinitetalk",
+  "render_s_per_s": {
+    "infinitetalk": {
+      "480_fast": 27,
+      "720_fast": 95,
+      "480_full": 290,
+      "720_full": 940
+    },
+    "longcat": {
+      "480_fast": 31,
+      "720_fast": 71,
+      "480_full": 31,
+      "720_full": 71
+    }
+  },
+  "render_note": "Measured warm on g7e.4xlarge 2026-11-04: infinitetalk 480_fast 29.5 / 26.7 / 25.9 s per output s on 14 / 49 / 90 s clips (27 = mean), infinitetalk 720_fast 94.6 on a 15 s clip (1280x704, peak VRAM 80.9 GB), longcat 480_fast 30.9 on 14 s. Other cells estimated (720_full = 720_fast x10 for 4 vs 40 steps; docs/AVATAR.md). longcat fast/full are the same path (8-step distill is required).",
+  "cold_min": 13,
+  "usd_per_hour": 1.38,
+  "usd_per_hour_note": "first capacity option = g7e.4xlarge Spot us-east-1a (spot history 2026-11-04); on-demand fallback higher"
+}

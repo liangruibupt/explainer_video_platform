@@ -115,8 +115,13 @@ class GpuEC2:
         if i["State"]["Name"] == "pending":
             return dict(d, state="launching")
         hb = self.heartbeat()
+        # the worker writes "busy" once per job and nothing until it finishes, so a busy
+        # heartbeat stays valid for the whole invoke timeout (avatar renders run 20-50 min)
+        max_age = self.cfg["heartbeat_stale_s"]
+        if hb and hb.get("state") == "busy":
+            max_age = max(max_age, self.cfg.get("invoke_timeout_s", 0))
         fresh = (hb and hb.get("instance_id") == i["InstanceId"]
-                 and time.time() - hb["ts"] < self.cfg["heartbeat_stale_s"])
+                 and time.time() - hb["ts"] < max_age)
         if not fresh:
             return dict(d, state="booting", heartbeat="stale" if hb else "none")
         st = hb["state"] if hb["state"] in ("booting", "loading", "ready", "busy") else "booting"

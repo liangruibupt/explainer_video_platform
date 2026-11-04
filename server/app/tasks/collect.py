@@ -12,7 +12,7 @@ Item: {kind, id, title, status: queued|running|waiting_review|done|failed, creat
 import re
 from pathlib import Path
 
-KINDS = ("job", "image", "video", "music", "workflow")
+KINDS = ("job", "image", "video", "music", "workflow", "avatar")
 STATUSES = ("queued", "running", "waiting_review", "done", "failed")
 MEDIA = {".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image",
          ".mp4": "video", ".flac": "audio", ".mp3": "audio", ".wav": "audio", ".m4a": "audio"}
@@ -88,6 +88,11 @@ def _videos() -> list:
 def _musics() -> list:
     from .. import media
     return [_media_item("music", s, "/music", "style") for s in media.musics.list_all(limit=200)]
+
+
+def _avatars() -> list:  # 数字人 generations, data/avatars/<id>/state.json
+    from .. import avatar_api
+    return [_media_item("avatar", s, "/avatar", "title") for s in avatar_api.list_all(limit=200)]
 
 
 def _file_kind(v) -> str | None:
@@ -187,7 +192,7 @@ def _runs() -> list:
 
 
 SOURCES = {"job": _jobs, "image": _images, "video": _videos, "music": _musics,
-           "workflow": _runs}
+           "workflow": _runs, "avatar": _avatars}
 
 
 def collect(kinds=None) -> list:

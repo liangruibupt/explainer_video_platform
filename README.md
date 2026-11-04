@@ -4,7 +4,7 @@
 
 平台分两部分：
 - **基础版**：一个 agent skill 加一个本地网页工作室。Opus 5.5 写分镜和绘制代码，代码逐帧画出画面，配上 Polly 旁白、逐字字幕、背景音乐和音效，用 FFmpeg 合成 MP4。
-- **生成模块**：图像、视频、音乐三个自部署的开源模型，跑在平台自己启停的 EC2 GPU 上，闲置 15 分钟自动终止。可以单独用，也可以在讲解视频里配插图、实拍镜头和背景音乐。
+- **生成模块**：图像、视频、音乐、数字人四个自部署的开源模型，跑在平台自己启停的 EC2 GPU 上，闲置 15 分钟自动终止。可以单独用，也可以在讲解视频里配插图、实拍镜头和背景音乐，或在工作流里做商品口播。
 
 ## 快速开始
 
@@ -36,6 +36,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 图像 | Qwen-Image 2.1 | 1080p 图片，16:9 / 9:16 / 1:1，可选透明背景 PNG |
 | AI 视频 | MiniMax H3 | 768p、5 秒、带声音的片子，16:9 或 9:16 |
 | 音乐 | YuE2-3B | 歌曲或纯音乐，48 kHz 立体声 FLAC，附乐谱。可写「编排说明」控制乐器和段落，不会被唱出来 |
+| 数字人 | InfiniteTalk（默认）、LongCat-Video-Avatar 1.5 | 一张人像（或参考视频）加口播稿（Polly 合成）或音频，生成口型同步、带头部和上半身动作的口播视频，480p / 720p。用于电商口播、商超口播、直播间预录片段，离线生成，不是实时直播。只用有权使用的人像 |
 
 每个页面顶部显示 GPU 状态：已就绪、启动中，或已缩到 0（提交后自动启动）。
 
@@ -43,8 +44,8 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 
 `/workflow` 页面用节点图把生成步骤串起来，设计和实测见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。
 
-- **节点库**：文本输入；Agent 写作、写词、写图像/视频提示词、写音乐风格；Qwen-Image 生图、MiniMax H3 生视频（可用首帧图）、YuE2 生成音乐；讲解视频（整条基础版流水线作为一个节点）；配乐合成；人工审核；自动质检（时长、分辨率、响度、纯音乐里有没有人声）；保存作品。
-- **快捷开始**：一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图。
+- **节点库**：文本输入；Agent 写作、写词、写图像/视频提示词、写音乐风格；Qwen-Image 生图、MiniMax H3 生视频（可用首帧图）、YuE2 生成音乐；Polly 语音合成、数字人口播；讲解视频（整条基础版流水线作为一个节点）；配乐合成；人工审核；自动质检（时长、分辨率、响度、纯音乐里有没有人声）；保存作品。
+- **快捷开始**：一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图；模板「商品口播（数字人）」：商品介绍 → 口播稿 → 审核 → 语音 → 人像 → 数字人 → 审核 → 保存。
 - **一句话生成工作流**：Agent 读节点声明写出工作流，校验不通过就带着错误重写，最多 3 轮。实测 5 个不同的句子都是第 1 轮通过。右侧「AI 助手」用同样的方法按一句话改图，页面显示改了什么。
 - **缓存**：每个节点的结果按「类型 + 参数 + 输入」缓存。实测把 MV 的视频 seed 改掉重跑，歌词、歌、图、提示词 5 个节点全部命中缓存，2 分钟就能审核（第一次 14 分钟）。
 - **人工审核和重跑**：审核节点暂停运行等批准或打回；失败的节点可以单独重跑，上游不动。
@@ -61,6 +62,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 图像 | us-east-1 | Spot g7.2xlarge | 8.4 分钟 | 一张 71 秒 |
 | 视频 | ap-south-1（按 MiniMax H3 许可证的地区限制） | Spot g7e.4xlarge | 12.5 分钟 | 一条约 52 秒 |
 | 音乐 | us-east-1 | 按需 g5.2xlarge | 9 分钟 | 4 分钟纯音乐约 3 分钟 |
+| 数字人 | us-east-1 | Spot g7e.4xlarge | 13 分钟 | 480P 快速每秒视频约 27 秒（90 秒口播约 39 分钟） |
 
 ## 示例
 
@@ -77,11 +79,12 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | [server/](server/)、[web/](web/) | 工作室：FastAPI 后端，React 前端 |
 | [infra/gpu_ec2/](infra/gpu_ec2/) | EC2 GPU 后端：模块配置、worker、控制脚本、最小权限角色脚本 |
 | [infra/image/](infra/image/)、[infra/video/](infra/video/)、[infra/music/](infra/music/) | 三个模块的推理容器；SageMaker 部署脚本作为 g5/g4dn 的备用方案 |
+| [infra/avatar/](infra/avatar/) | 数字人模块：一个镜像两个模型（InfiniteTalk、LongCat），权重拷贝、构建机、测评脚本 |
 | [infra/budget/](infra/budget/) | AWS 成本告警配置 |
 | [docs/STUDIO.md](docs/STUDIO.md) | 工作室的功能、制作步骤、接口和运行方式 |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | 工作流：格式、节点、编排器、缓存、审核、Agent 生成、接口和实测 |
 | [docs/DESIGN.md](docs/DESIGN.md) | 平台总体设计：架构、GPU 后端选择、工作流、对话创作、自我改进、阶段与验收 |
-| [docs/IMAGE.md](docs/IMAGE.md)、[docs/VIDEO.md](docs/VIDEO.md)、[docs/MUSIC.md](docs/MUSIC.md) | 三个生成模块的设计和实测数据 |
+| [docs/IMAGE.md](docs/IMAGE.md)、[docs/VIDEO.md](docs/VIDEO.md)、[docs/MUSIC.md](docs/MUSIC.md)、[docs/AVATAR.md](docs/AVATAR.md) | 四个生成模块的设计和实测数据（数字人接口约定见 [docs/AVATAR_CONTRACT.md](docs/AVATAR_CONTRACT.md)） |
 
 ## 路线图
 
@@ -89,6 +92,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 |---|---|---|
 | 1 | 基础版 skill + 工作室（工作台、作品详情、作品集、任务中心） | 已完成 |
 | 2 | 云端生成：图像、视频、音乐，自管 EC2 GPU，闲置自动终止；接入工作室 | 已完成 |
+| 2b | 数字人：InfiniteTalk / LongCat 口播视频，数字人页面、工作流节点和「商品口播」模板 | 已完成（实测见 docs/AVATAR.md） |
 | 3 | 工作流编排 + Agent 生成工作流 | 已完成：节点库、校验、缓存、人工审核、Agent 生成和改图、模板、工作流页面（还没有拖拽编辑和候选数） |
 | 4 | 进阶界面：对话创作、工作流编辑器、设置 | 设计中 |
 | 5 | 差评驱动的 skill 自动改进（以 PR 形式提交，人工批准） | 设计中 |
@@ -105,5 +109,6 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 - 图像模型 Qwen-Image 2.1：Qwen Research License，限制商用。
 - 音乐模型 YuE2-3B：CC BY-NC 4.0，限制商用。
 - 视频模型 MiniMax H3：MiniMax H3 Community License，授权地区不包括欧盟、英国、韩国和美国。
+- 数字人模型 InfiniteTalk、Wan2.1：Apache-2.0；LongCat-Video-Avatar：MIT；4 步 lightx2v LoRA 未标许可证，商用前要确认。人像必须是本人、已同意的他人或 AI 生成的虚构人物；输出不加水印。
 
 详见 [设计文档](docs/DESIGN.md) 第 3 节和 [docs/VIDEO.md](docs/VIDEO.md)。MIT 只覆盖本仓库的代码，不改变这些模型的许可条款。
