@@ -11,6 +11,7 @@ import Advanced from './pages/Advanced.jsx'
 import ImagePage from './pages/ImagePage.jsx'
 import VideoPage from './pages/VideoPage.jsx'
 import MusicPage from './pages/MusicPage.jsx'
+import WorkflowPage from './pages/WorkflowPage.jsx'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -24,6 +25,8 @@ createRoot(document.getElementById('root')).render(
           <Route path="image" element={<ImagePage />} />
           <Route path="video" element={<VideoPage />} />
           <Route path="music" element={<MusicPage />} />
+          <Route path="workflow" element={<WorkflowPage />} />
+          <Route path="advanced/workflow" element={<Navigate to="/workflow" replace />} />
           <Route path="advanced/video" element={<Navigate to="/video" replace />} />
           <Route path="advanced/music" element={<Navigate to="/music" replace />} />
           <Route path="advanced/:kind" element={<Advanced />} />

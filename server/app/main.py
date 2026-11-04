@@ -193,6 +193,183 @@ _media_routes("musics", media.musics, MusicIn, {"0.flac": "audio/flac", "0.mp3":
                                                 "score.abc": "text/plain"})
 
 
+# ---------------------------------------------------------------- workflows (phase 3)
+
+from .workflows import agent as wf_agent  # noqa: E402
+from .workflows import engine as wf_engine  # noqa: E402
+from .workflows import nodes as wf_nodes  # noqa: E402
+from .workflows import store as wf_store  # noqa: E402
+from .workflows.validate import levels as wf_levels  # noqa: E402
+from .workflows.validate import validate as wf_validate  # noqa: E402
+
+wf_engine.recover()
+
+
+class WorkflowIn(BaseModel):
+    workflow: dict
+
+
+class GenerateIn(BaseModel):
+    prompt: str = Field(min_length=2, max_length=1000)
+
+
+class EditIn(BaseModel):
+    workflow: dict
+    instruction: str = Field(min_length=2, max_length=1000)
+
+
+class ReviewIn(BaseModel):
+    node_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
+    decision: str = Field(pattern=r"^(approve|reject)$")
+    note: str = Field(default="", max_length=500)
+
+
+class RetryIn(BaseModel):
+    node_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
+
+
+def _run_id(run_id: str) -> str:
+    if not re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}", run_id):
+        raise HTTPException(404, "no such run")
+    return run_id
+
+
+def _with_layout(wf: dict) -> dict:
+    errs = wf_validate(wf)
+    lv = wf_levels(wf.get("nodes") or [], wf.get("edges") or []) if not any(
+        e["code"] == "format" for e in errs) else {}
+    return {"workflow": wf, "errors": errs, "valid": not errs, "levels": lv}
+
+
+@app.get("/api/workflows/nodes")
+def wf_node_list():
+    return wf_nodes.declarations()
+
+
+@app.get("/api/workflows/templates")
+def wf_templates():
+    return wf_store.templates()
+
+
+@app.get("/api/workflows")
+def wf_list():
+    return wf_store.list_saved()
+
+
+@app.post("/api/workflows", status_code=201)
+def wf_save(body: WorkflowIn):
+    return wf_store.save(body.workflow)
+
+
+@app.post("/api/workflows/validate")
+def wf_check(body: WorkflowIn):
+    return _with_layout(body.workflow)
+
+
+@app.post("/api/workflows/generate")
+def wf_generate(body: GenerateIn):
+    res = wf_agent.generate(body.prompt)
+    if res["workflow"]:
+        res["levels"] = _with_layout(res["workflow"])["levels"]
+    return res
+
+
+@app.post("/api/workflows/edit")
+def wf_edit(body: EditIn):
+    res = wf_agent.edit(body.workflow, body.instruction)
+    if res["workflow"]:
+        res["levels"] = _with_layout(res["workflow"])["levels"]
+    return res
+
+
+@app.get("/api/workflows/{wf_id}")
+def wf_get(wf_id: str):
+    wf = wf_store.get(wf_id)
+    if not wf:
+        raise HTTPException(404, "no such workflow")
+    return wf
+
+
+@app.delete("/api/workflows/{wf_id}")
+def wf_delete(wf_id: str):
+    if not wf_store.delete(wf_id):
+        raise HTTPException(404, "no such saved workflow")
+    return {"deleted": wf_id}
+
+
+@app.post("/api/wf_runs", status_code=201)
+def wf_run(body: WorkflowIn):
+    try:
+        return wf_engine.start(body.workflow)
+    except ValueError as e:
+        raise HTTPException(422, e.args[0])
+
+
+@app.get("/api/wf_runs")
+def wf_runs():
+    return wf_engine.list_runs()
+
+
+@app.get("/api/wf_runs/{run_id}")
+def wf_run_get(run_id: str):
+    r = wf_engine.read_run(_run_id(run_id))
+    if not r:
+        raise HTTPException(404, "no such run")
+    for n in r["nodes"].values():
+        n.pop("trace", None)
+    r["levels"] = wf_levels(r["workflow"]["nodes"], r["workflow"]["edges"])
+    return r
+
+
+@app.post("/api/wf_runs/{run_id}/review")
+def wf_review(run_id: str, body: ReviewIn):
+    if not wf_engine.read_run(_run_id(run_id)):
+        raise HTTPException(404, "no such run")
+    try:
+        return wf_engine.review(run_id, body.node_id, body.decision, body.note)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/wf_runs/{run_id}/retry")
+def wf_retry(run_id: str, body: RetryIn):
+    if not wf_engine.read_run(_run_id(run_id)):
+        raise HTTPException(404, "no such run")
+    try:
+        return wf_engine.retry(run_id, body.node_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+WF_MEDIA = {".png": "image/png", ".mp4": "video/mp4", ".flac": "audio/flac",
+            ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+
+
+@app.get("/api/wf_runs/{run_id}/file")
+def wf_file(run_id: str, node: str, port: str = "", work: str = ""):
+    """A node's output file (node + port) or a saved work (work=<file name>)."""
+    r = wf_engine.read_run(_run_id(run_id))
+    if not r or node not in r["nodes"]:
+        raise HTTPException(404, "no such node")
+    if work:
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,32}\.[a-z0-9]{2,5}", work):
+            raise HTTPException(404, "no such file")
+        p = wf_engine.run_dir(run_id) / "outputs" / work
+    else:
+        n = r["nodes"][node]
+        v = (n.get("outputs") or {}).get(port) or (n.get("review_input")
+                                                   if port == "input" else None)
+        if not isinstance(v, str):
+            raise HTTPException(404, "no such file")
+        p = Path(v).resolve()
+        if not (p.is_relative_to(wf_engine.CACHE.resolve())
+                or p.is_relative_to(wf_engine.RUNS.resolve())):
+            raise HTTPException(404, "no such file")
+    if not p.is_file() or p.suffix not in WF_MEDIA:
+        raise HTTPException(404, "not ready")
+    return FileResponse(p, media_type=WF_MEDIA[p.suffix])
+
+
 @app.get("/api/jobs/{job_id}")
 def get(job_id: str):
     job = pipeline.read_job(_id(job_id))

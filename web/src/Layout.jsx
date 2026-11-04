@@ -39,8 +39,8 @@ export default function Layout() {
         <Item to="/image" icon="image" label="图像" />
         <Item to="/video" icon="video" label="AI 视频" />
         <Item to="/music" icon="music" label="音乐" />
-        <div className="group">进阶（规划中）</div>
-        <Item to="/advanced/workflow" icon="flow" label="工作流" soon />
+        <div className="group">创作方式</div>
+        <Item to="/workflow" icon="flow" label="工作流" />
         <div className="side-foot">单用户 · 本地运行</div>
       </aside>
       <main className="main"><Outlet /></main>

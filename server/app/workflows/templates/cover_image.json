@@ -1,0 +1,18 @@
+{
+  "id": "wf_cover_image",
+  "name": "封面图",
+  "description": "一句话 → 图像提示词 → Qwen-Image 生图 → 人工审核 → 保存。",
+  "nodes": [
+    {"id": "n1", "type": "input.text", "params": {"text": "小红书封面：秋天的杭州西湖，暖色调"}},
+    {"id": "n2", "type": "agent.image_prompt", "params": {}},
+    {"id": "n3", "type": "image.qwen", "params": {"ratio": "9:16", "seed": 42}},
+    {"id": "n4", "type": "review.human", "params": {"note": "看构图和颜色"}},
+    {"id": "n5", "type": "output.save", "params": {"title": "封面图"}}
+  ],
+  "edges": [
+    {"from": "n1.text", "to": "n2.idea"},
+    {"from": "n2.prompt", "to": "n3.prompt"},
+    {"from": "n3.image", "to": "n4.input"},
+    {"from": "n4.output", "to": "n5.work"}
+  ]
+}
