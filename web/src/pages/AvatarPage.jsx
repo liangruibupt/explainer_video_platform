@@ -35,7 +35,7 @@ function Seg({ value, onChange, options }) {
   )
 }
 
-function Result({ it, onDelete }) {
+function Result({ it, onDelete, onRetry }) {
   const notes = it.notes || []
   return (
     <div className="card">
@@ -52,7 +52,8 @@ function Result({ it, onDelete }) {
       <div className="card-body">
         <div className="muted">{it.model_used} · {it.size}p{it.fast ? ' · 快速' : ''} · seed {it.seed} · {ago(it.created)}
           {it.video_seconds ? ` · 时长 ${Math.round(it.video_seconds)} 秒` : it.audio_seconds ? ` · 语音约 ${Math.round(it.audio_seconds)} 秒` : ''}
-          {it.seconds && !live(it) ? ` · 用时 ${Math.round(it.seconds / 60)} 分钟` : ''}</div>
+          {it.seconds && !live(it) ? ` · 用时 ${Math.round(it.seconds / 60)} 分钟` : ''}
+          {it.segments > 1 ? ` · 分 ${it.segments} 段` : ''}</div>
         {it.title && <div className="clamp">{it.title}</div>}
         {it.script && <div className="clamp muted" title={it.script}>口播稿：{it.script}</div>}
         {live(it) && notes.length > 0 && <div className="muted">{notes[notes.length - 1].text}</div>}
@@ -60,6 +61,7 @@ function Result({ it, onDelete }) {
         <div className="muted" style={{ marginTop: 6 }}>
           {it.urls?.video && <><a href={it.urls.video} download>下载视频</a> · </>}
           {it.urls?.audio && <><a href={it.urls.audio} download>语音</a> · </>}
+          {it.status === 'failed' && <><a href="#" onClick={(e) => { e.preventDefault(); onRetry(it.id) }}>重试{it.segments > 1 ? '（已完成的段直接复用）' : ''}</a> · </>}
           {!live(it) && <a href="#" onClick={(e) => { e.preventDefault(); onDelete(it.id) }}>删除</a>}
         </div>
       </div>
@@ -86,6 +88,7 @@ export default function AvatarPage() {
   const [size, setSize] = useState('480')
   const [fast, setFast] = useState(true)
   const [seed, setSeed] = useState(42)
+  const [segment, setSegment] = useState('auto')   // auto = 每段 ≤ 55 秒, off = 不分段
   const [est, setEst] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -107,13 +110,14 @@ export default function AvatarPage() {
   const pPreview = useMemo(() => (pFile ? URL.createObjectURL(pFile) : null), [pFile])
   useEffect(() => () => { if (pPreview) URL.revokeObjectURL(pPreview) }, [pPreview])
 
+  const segS = opt?.limits?.segment_s || 55
   useEffect(() => {
-    const q = new URLSearchParams({ model, size, fast: String(fast) })
+    const q = new URLSearchParams({ model, size, fast: String(fast), segment_s: segment === 'auto' ? String(segS) : '0' })
     if (aSrc === 'script') q.set('script', script || ' ')
     else q.set('seconds', String(aSeconds || 30))
     const t = setTimeout(() => api(`/avatars/estimate?${q}`).then(setEst).catch(() => {}), 300)
     return () => clearTimeout(t)
-  }, [model, size, fast, aSrc, script, aSeconds])
+  }, [model, size, fast, aSrc, script, aSeconds, segment, segS])
 
   const pickAudio = (f) => {
     setAFile(f); setASeconds(0)
@@ -144,6 +148,7 @@ export default function AvatarPage() {
     }
     fd.append('scene', scene); fd.append('prompt', prompt); fd.append('model', model)
     fd.append('size', size); fd.append('fast', String(fast)); fd.append('seed', String(seed))
+    fd.append('segment_s', segment === 'auto' ? String(segS) : '0')
     setBusy(true)
     try {
       const r = await fetch('/api/avatars', { method: 'POST', body: fd })
@@ -159,6 +164,10 @@ export default function AvatarPage() {
   const del = async (id) => {
     if (!window.confirm('删除这条数字人视频？')) return
     try { await api(`/avatars/${id}`, { method: 'DELETE' }); setTick((t) => t + 1) } catch (e) { setErr(e.message) }
+  }
+
+  const retry = async (id) => {
+    try { await api(`/avatars/${id}/retry`, { method: 'POST' }); setTick((t) => t + 1) } catch (e) { setErr(e.message) }
   }
 
   const max = opt?.limits?.script_chars || 2000
@@ -239,8 +248,13 @@ export default function AvatarPage() {
           </label>
           <button className="primary" disabled={busy} onClick={go}>{busy ? '提交中…' : '生成数字人视频'} <span aria-hidden>→</span></button>
         </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <span className="opt">分段</span>
+          <Seg value={segment} onChange={setSegment} options={[['auto', `自动，每段 ≤ ${segS} 秒`], ['off', '不分段']]} />
+        </div>
+        <div className="muted">长口播一条生成，人像在约 60 秒后会慢慢不像原图；自动分段在句子结尾（上传音频则在停顿处）切开，每段都从原人像生成，再拼成一条（声音连续，接缝处 0.3 秒淡入淡出）。参考视频输入不分段。</div>
         {est && <div className="av-est">
-          预计：视频约 {Math.round(est.seconds)} 秒，生成约 {est.render_min} 分钟（GPU 从 0 启动另加约 {est.cold_min} 分钟），
+          预计：视频约 {Math.round(est.seconds)} 秒{est.segments > 1 ? `，分 ${est.segments} 段生成` : ''}，生成约 {est.render_min} 分钟（GPU 从 0 启动另加约 {est.cold_min} 分钟），
           GPU 费用约 ${est.usd_warm}（冷启动约 ${est.usd_cold}，按 ${est.usd_per_hour}/小时）。粗估，实测以 docs/AVATAR.md 为准。
         </div>}
       </div>
@@ -249,7 +263,7 @@ export default function AvatarPage() {
       <div className="section-head"><h2>生成记录</h2></div>
       {(items || []).length === 0
         ? <div className="empty">还没有生成过数字人视频。</div>
-        : <div className="grid">{items.map((it) => <Result key={it.id} it={it} onDelete={del} />)}</div>}
+        : <div className="grid">{items.map((it) => <Result key={it.id} it={it} onDelete={del} onRetry={retry} />)}</div>}
     </div>
   )
 }

@@ -36,15 +36,33 @@ def _avatar(inputs, p, ctx):
         raise ValueError("avatar.infinitetalk: 需要连一张人像图片（portrait）或参考视频（ref_video）")
     meta = {}
     try:
-        mp4 = avatar.generate(audio, image=img, video=vid, prompt=p["prompt"],
-                              model=p["model"], size=p["size"], fast=p["fast"], seed=p["seed"],
-                              on_wait=ctx.on_wait, meta_out=meta)
+        seg_s = 0 if vid else avatar.check_segment_s(p.get("segment_s"))
+        wav, _ = avatar.to_wav16k(audio)
+        segments = avatar.split_audio(wav, seg_s)
+        prefix = {"s": ""}
+
+        def on_segment(k, n, cached):
+            if n > 1:
+                prefix["s"] = f"第 {k}/{n} 段 · "
+                if hasattr(ctx, "note"):
+                    ctx.note(f"第 {k}/{n} 段" + ("：复用已生成的段" if cached else "：开始生成"))
+
+        def on_wait(sec):
+            if prefix["s"] and hasattr(ctx, "note"):
+                ctx.note(prefix["s"] + (f"等待 GPU（{sec // 60} 分钟）" if sec >= 60
+                                        else "已提交，等待 GPU"))
+            else:
+                ctx.on_wait(sec)
+        mp4 = avatar.generate_long(segments, ctx.dir, image=img, video=vid, prompt=p["prompt"],
+                                   model=p["model"], size=p["size"], fast=p["fast"],
+                                   seed=p["seed"], on_wait=on_wait, on_segment=on_segment,
+                                   meta_out=meta)
     except avatar.AvatarError as e:
         raise ValueError(str(e)) from None
     out = ctx.dir / "video.mp4"
     out.write_bytes(mp4)
     ctx.meta.update(model=p["model"] or avatar.default_model(), worker=meta,
-                    seconds=avatar.duration(out))
+                    segments=len(segments), seconds=avatar.duration(out))
     return {"video": str(out)}
 
 
@@ -70,9 +88,14 @@ DECLARATIONS = {
                    "prompt": {"type": "string", "default": "", "label": "场景描述（英文更稳）"},
                    "size": {"type": "string", "default": "480", "enum": list(avatar.SIZES)},
                    "fast": {"type": "boolean", "default": True, "label": "快速（少步数 LoRA）"},
-                   "seed": {"type": "integer", "default": 42, "min": 0, "max": 2**31 - 1}},
-        "passthrough": {}, "cache": True, "version": 1,
+                   "seed": {"type": "integer", "default": 42, "min": 0, "max": 2**31 - 1},
+                   "segment_s": {"type": "integer", "default": avatar.SEGMENT_S, "min": 0,
+                                 "max": avatar.SEGMENT_MAX_S,
+                                 "label": "分段：每段最长秒数（0 = 不分段）"}},
+        "passthrough": {}, "cache": True, "version": 2,
         "doc": "人像图片（或参考视频）+ 语音 → 口型、表情和上半身动作同步的口播视频，带原音轨。"
+               f"语音超过 segment_s（默认 {avatar.SEGMENT_S} 秒）时在停顿处切段，每段都从原人像生成再拼接"
+               "（身份不累积漂移，接缝处 0.3 秒画面淡入淡出，声音连续）；参考视频输入不分段。"
                "只用本人、已获授权或 AI 生成的人像。音频最长 10 分钟。",
         "run": _avatar,
     },

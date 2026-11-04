@@ -5,6 +5,11 @@ Store: data/avatars/<id>/ with req.json, state.json and the files
   ref.mp4        optional reference video (v2v) instead of a portrait
   audio.wav      16 kHz mono speech sent to the worker (upload / asset / Polly from script)
   video.mp4      the result (carries audio.wav), poster.jpg its first-second frame
+  speech/<k>.wav per-chunk Polly speech when the script is split into segments
+  segments/      per-segment videos <k>-<hash>.mp4, reused when a failed job is retried
+
+segment_s (default 55, 0 = off, 15-60): speech longer than that is generated in segments,
+each from the original portrait, and joined (avatar.generate_long). Not for reference video.
 
 POST /api/avatars takes JSON (asset ids, image generation id, script) or multipart
 (the same fields as form fields plus files `portrait`, `audio`, `ref_video`). Inputs are
@@ -13,6 +18,7 @@ background thread that records status (queued|running|done|failed), step and not
 """
 import json
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -183,6 +189,10 @@ def prepare(fields: dict, files: dict) -> tuple:
     if not prompt and scene:
         prompt = SCENES[scene][1]
     title = s("title", 20)[:80]
+    try:
+        segment_s = avatar.check_segment_s(fields.get("segment_s"))
+    except avatar.AvatarError as e:
+        raise HTTPException(422, str(e)) from None
 
     out = {}
     try:
@@ -242,49 +252,91 @@ def prepare(fields: dict, files: dict) -> tuple:
            "script": script, "voice": voice if script else "", "title": title
            or (script[:30] if script else ""), "portrait_source": portrait_source,
            "audio_source": audio_source, "audio_seconds": est_s}
-    req["estimate"] = avatar.estimate(est_s or 0, req["model_used"], size, req["fast"])
+    if portrait_source["type"] in ("ref_video", "ref_video_asset_id"):
+        segment_s = 0  # v2v is not segmented (the reference video drives the whole clip)
+    req["segment_s"] = segment_s
+    req["segments"] = avatar.segment_count(est_s or 0, segment_s, script)
+    req["estimate"] = avatar.estimate(est_s or 0, req["model_used"], size, req["fast"],
+                                      segment_s, script)
     return req, out
 
 
 # ---------------------------------------------------------------- background job
+
+def _speech_segments(d, req: dict, seg_s: int) -> list:
+    """The speech of a job as a list of 16 kHz wav segments (one when not segmented) and
+    audio.wav = their concatenation. Script: split at sentence ends, each chunk synthesized
+    alone (kept in speech/<k>.wav for a retry). Uploaded audio: cut at silences."""
+    audio = d / "audio.wav"
+    if req.get("script"):
+        chunks = avatar.split_text(req["script"], seg_s) or [req["script"]]
+        sp = d / "speech"
+        sp.mkdir(exist_ok=True)
+        wavs = []
+        for k, text in enumerate(chunks, 1):
+            p, txt = sp / f"{k:02d}.wav", sp / f"{k:02d}.txt"
+            if not (p.is_file() and txt.is_file() and txt.read_text() == text):
+                _state(d, step="speech", note=f"Polly 合成语音（{req['voice']}）"
+                       + (f"：第 {k}/{len(chunks)} 段" if len(chunks) > 1 else ""))
+                p.write_bytes(avatar.to_wav16k(avatar.speech(text, req["voice"]))[0])
+                (sp / f"{k:02d}.txt").write_text(text)
+            wavs.append(p.read_bytes())
+        if not audio.is_file():
+            audio.write_bytes(wavs[0] if len(wavs) == 1 else avatar.concat_wavs(wavs))
+            sec = round(avatar.wav_seconds(audio.read_bytes()), 2)
+            _state(d, audio_seconds=sec, files=_files(d),
+                   estimate=avatar.estimate(sec, req["model_used"], req["size"], req["fast"],
+                                            seg_s, req["script"]),
+                   note=f"语音 {sec} 秒" + (f"，按句子分成 {len(wavs)} 段" if len(wavs) > 1 else ""))
+        return wavs
+    wavs = avatar.split_audio(audio.read_bytes(), seg_s)
+    if len(wavs) > 1:
+        _state(d, note=f"音频按停顿切成 {len(wavs)} 段（"
+               + " / ".join(f"{avatar.wav_seconds(w):.1f}" for w in wavs) + " 秒）")
+    return wavs
+
 
 def _run(item_id: str) -> None:
     d = ROOT / item_id
     req = json.loads((d / "req.json").read_text())
     t0 = time.time()
     try:
-        _state(d, status="running")
-        if req.get("script") and not (d / "audio.wav").exists():
-            _state(d, step="speech", note=f"Polly 合成语音（{req['voice']}）")
-            wav, sec = avatar.to_wav16k(avatar.speech(req["script"], req["voice"]))
-            (d / "audio.wav").write_bytes(wav)
-            _state(d, audio_seconds=sec, files=_files(d),
-                   estimate=avatar.estimate(sec, req["model_used"], req["size"], req["fast"]),
-                   note=f"语音 {sec} 秒")
-        _state(d, step="render", note="提交数字人 GPU 任务")
-        last = {"m": -1}
+        _state(d, status="running", error=None)
+        ref = d / "ref.mp4"
+        seg_s = 0 if ref.exists() else int(req.get("segment_s") or 0)
+        segments = _speech_segments(d, req, seg_s)
+        n = len(segments)
+        _state(d, step="render", segments=n,
+               note="提交数字人 GPU 任务" + (f"（分 {n} 段生成）" if n > 1 else ""))
+        last = {"m": -1, "seg": ""}
+
+        def on_segment(k, total, cached):
+            last.update(m=-1, seg=f"第 {k}/{total} 段 · " if total > 1 else "")
+            if total > 1:
+                _state(d, segment=k, note=f"第 {k}/{total} 段" + ("：已生成过，直接复用" if cached
+                                                                 else "：开始生成"))
 
         def on_wait(sec):
             m = sec // 60
             if m != last["m"]:
                 last["m"] = m
-                _state(d, waited=sec, note=f"等待 GPU（{m} 分钟）" if m else "已提交，等待 GPU")
+                _state(d, waited=sec, note=last["seg"] + (f"等待 GPU（{m} 分钟）" if m
+                                                          else "已提交，等待 GPU"))
             else:
                 _state(d, waited=sec)
 
-        ref = d / "ref.mp4"
         meta = {}
-        mp4 = avatar.generate((d / "audio.wav").read_bytes(),
-                              image=None if ref.exists() else (d / "portrait.png").read_bytes(),
-                              video=ref.read_bytes() if ref.exists() else None,
-                              prompt=req["prompt"], model=req["model"], size=req["size"],
-                              fast=req["fast"], seed=req["seed"], on_wait=on_wait,
-                              meta_out=meta)
+        mp4 = avatar.generate_long(segments, d,
+                                   image=None if ref.exists() else (d / "portrait.png").read_bytes(),
+                                   video=ref.read_bytes() if ref.exists() else None,
+                                   prompt=req["prompt"], model=req["model"], size=req["size"],
+                                   fast=req["fast"], seed=req["seed"], on_wait=on_wait,
+                                   on_segment=on_segment, meta_out=meta)
         (d / "video.mp4").write_bytes(mp4)
         avatar.poster(d / "video.mp4", d / "poster.jpg")
         _state(d, status="done", step="done", files=_files(d), worker_meta=meta,
                video_seconds=avatar.duration(d / "video.mp4"), seconds=round(time.time() - t0),
-               note="完成")
+               note="完成" + (f"（{n} 段拼接）" if n > 1 else ""))
     except Exception as e:  # noqa: BLE001 - shown on the page
         _state(d, status="failed", error=str(e)[:500], seconds=round(time.time() - t0),
                note="失败：" + str(e)[:200])
@@ -326,7 +378,9 @@ def avatar_options():
             "scenes": [{"id": k, "label": v[0], "prompt": v[1]} for k, v in SCENES.items()],
             "limits": {"script_chars": avatar.SCRIPT_MAX, "audio_seconds": avatar.AUDIO_MAX_S,
                        "prompt_chars": avatar.PROMPT_MAX, "ref_video_seconds": avatar.VIDEO_MAX_S,
-                       "image_min_edge": avatar.IMAGE_MIN_EDGE},
+                       "image_min_edge": avatar.IMAGE_MIN_EDGE,
+                       "segment_s": avatar.SEGMENT_S, "segment_max_s": avatar.SEGMENT_MAX_S,
+                       "segment_min_s": avatar.SEGMENT_MIN_S},
             "configured": avatar.configured(),
             "cold_min": avatar.estimate(30)["cold_min"],
             "usd_per_hour": avatar.estimate(30)["usd_per_hour"]}
@@ -334,14 +388,20 @@ def avatar_options():
 
 @router.get("/api/avatars/estimate")
 def avatar_estimate(seconds: float = 30, model: str = "", size: str = "480",
-                    fast: bool = True, script: str = ""):
+                    fast: bool = True, script: str = "", segment_s: str = ""):
     if model and model not in avatar.MODELS:
         raise HTTPException(422, "unknown model")
     if size not in avatar.SIZES:
         raise HTTPException(422, "size must be 480 or 720")
+    try:
+        seg = avatar.check_segment_s(segment_s)
+    except avatar.AvatarError as e:
+        raise HTTPException(422, str(e)) from None
+    script = (script or "")[: avatar.SCRIPT_MAX]
     if script:
-        seconds = avatar.speech_seconds(script[: avatar.SCRIPT_MAX])
-    return avatar.estimate(max(0.0, min(seconds, avatar.AUDIO_MAX_S)), model, size, fast)
+        seconds = avatar.speech_seconds(script)
+    return avatar.estimate(max(0.0, min(seconds, avatar.AUDIO_MAX_S)), model, size, fast,
+                           seg, script.strip())
 
 
 @router.get("/api/avatars")
@@ -371,6 +431,20 @@ def avatar_get(item_id: str):
     return _public(s)
 
 
+@router.post("/api/avatars/{item_id}/retry")
+def avatar_retry(item_id: str):
+    """Run a failed job again; speech chunks and segments already generated are reused."""
+    d = _dir(item_id)
+    s = get(item_id)
+    if not s:
+        raise HTTPException(404, "no such avatar")
+    if s.get("status") != "failed":
+        raise HTTPException(409, "只有失败的任务可以重试")
+    s = _state(d, status="queued", step="queued", error=None, note="重试：已排队")
+    threading.Thread(target=_run, args=(item_id,), daemon=True).start()
+    return _public(s)
+
+
 @router.delete("/api/avatars/{item_id}")
 def avatar_delete(item_id: str):
     d = _dir(item_id)
@@ -381,9 +455,7 @@ def avatar_delete(item_id: str):
         raise HTTPException(409, "还在生成，不能删除")
     trash = ROOT / f".{item_id}.deleted"
     d.rename(trash)
-    for p in trash.iterdir():
-        p.unlink()
-    trash.rmdir()
+    shutil.rmtree(trash)
     return {"deleted": item_id}
 
 

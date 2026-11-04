@@ -36,7 +36,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 图像 | Qwen-Image 2.1 | 1080p 图片，16:9 / 9:16 / 1:1，可选透明背景 PNG |
 | AI 视频 | MiniMax H3 | 768p、5 秒、带声音的片子，16:9 或 9:16 |
 | 音乐 | YuE2-3B | 歌曲或纯音乐，48 kHz 立体声 FLAC，附乐谱。可写「编排说明」控制乐器和段落，不会被唱出来 |
-| 数字人 | InfiniteTalk（默认）、LongCat-Video-Avatar 1.5 | 一张人像（或参考视频）加口播稿（Polly 合成）或音频，生成口型同步、带头部和上半身动作的口播视频，480p / 720p。用于电商口播、商超口播、直播间预录片段，离线生成，不是实时直播。只用有权使用的人像 |
+| 数字人 | InfiniteTalk（默认）、LongCat-Video-Avatar 1.5 | 一张人像（或参考视频）加口播稿（Polly 合成）或音频，生成口型同步、带头部和上半身动作的口播视频，480p / 720p，横屏或竖屏 9:16。超过 55 秒的口播自动分段（按句子或停顿切开，每段从原人像生成再拼接，人像不会越来越不像）。用于电商口播、商超口播、直播间预录片段，离线生成，不是实时直播。只用有权使用的人像 |
 
 每个页面顶部显示 GPU 状态：已就绪、启动中，或已缩到 0（提交后自动启动）。
 
@@ -109,6 +109,6 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 - 图像模型 Qwen-Image 2.1：Qwen Research License，限制商用。
 - 音乐模型 YuE2-3B：CC BY-NC 4.0，限制商用。
 - 视频模型 MiniMax H3：MiniMax H3 Community License，授权地区不包括欧盟、英国、韩国和美国。
-- 数字人模型 InfiniteTalk、Wan2.1：Apache-2.0；LongCat-Video-Avatar：MIT；4 步 lightx2v LoRA 未标许可证，商用前要确认。人像必须是本人、已同意的他人或 AI 生成的虚构人物；输出不加水印。
+- 数字人模型 InfiniteTalk、Wan2.1：Apache-2.0；LongCat-Video-Avatar：MIT；4 步 lightx2v LoRA 的仓库没有写许可证，本项目只做个人、非商业使用。人像必须是本人、已同意的他人或 AI 生成的虚构人物；输出不加水印。
 
 详见 [设计文档](docs/DESIGN.md) 第 3 节和 [docs/VIDEO.md](docs/VIDEO.md)。MIT 只覆盖本仓库的代码，不改变这些模型的许可条款。
