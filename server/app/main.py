@@ -401,6 +401,20 @@ def file(job_id: str, name: str):
     return FileResponse(p)
 
 
+# Phase 4 parts (docs/PHASE4_CONTRACTS.md): each is a package with api.router; a part that is
+# not built yet is skipped, so the parts can be developed and tested independently.
+import importlib as _importlib
+import logging as _logging
+
+for _part in ("chat", "assets", "tasks", "settings"):
+    try:
+        app.include_router(_importlib.import_module(f"app.{_part}.api").router)
+    except ModuleNotFoundError as _e:
+        if _e.name not in (f"app.{_part}", f"app.{_part}.api"):
+            raise
+        _logging.getLogger(__name__).info("phase 4 part %s not present", _part)
+
+
 if WEB.exists():
     app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
 
