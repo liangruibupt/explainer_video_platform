@@ -25,10 +25,12 @@ note next to the upload. No watermark or "AI 生成" mark is added to outputs (u
   weights prefixes `weights/infinitetalk/<sha>/` (Wan2.1-I2V-14B-480P, chinese-wav2vec2-base,
   InfiniteTalk single/ + quant_models/ if used, optional lightx2v 4-step LoRA) and
   `weights/longcat-avatar-1.5/<sha>/` (LongCat-Video base + Avatar-1.5 + whisper-large-v3).
-- jobs_prefix `jobs/avatar/`, name `evp-avatar-worker`, tags project=explainer-video,
+- jobs_prefix `jobs/avatar-ec2/`, name `evp-avatar-worker`, tags project=explainer-video,
   module=avatar, instance_profile + SG `evp-gpu-worker`, idle 900 s, hard cap 4 h.
 - Capacity order is chosen by the infra agent from measurements (candidates: g7e.2xlarge /
   g7e.4xlarge, g6e.2xlarge / g6e.4xlarge; on-demand then Spot, two AZs each).
+- IAM: `evp-gpu-worker` needs Get/Put/Delete on `jobs/avatar-ec2/*` and ECR pull on
+  `evp/avatar` (us-east-1); add both to `infra/gpu_ec2/grant_worker_role.sh`.
 - ECR image `evp/avatar:<tag>`, CUDA 12.8 (Blackwell), weights NOT in the image,
   HTTP adapter on 8080 like the other containers (`/ping`, `/invocations`).
 
