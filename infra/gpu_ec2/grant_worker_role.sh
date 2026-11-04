@@ -15,7 +15,9 @@ ACCT=$(aws sts get-caller-identity --query Account --output text)
 B_AP=evp-models-$ACCT-ap-south-1     # video
 B_US=evp-models-$ACCT-us-east-1      # image, music
 ROLE=evp-gpu-worker
-AGENT_ROLE=${1:-$(aws iam list-roles --query "Roles[?starts_with(RoleName,'openclaw-bedrock-OpenClawInstanceRole')].RoleName | [0]" --output text)}
+AGENT_ROLE=${1:-openclaw-bedrock-OpenClawInstanceRole-4GeeSV4z0qo7}
+[[ "$AGENT_ROLE" =~ ^[A-Za-z0-9+=,.@_-]+$ ]] || { echo "bad agent role name: '$AGENT_ROLE'"; exit 1; }
+aws iam get-role --role-name "$AGENT_ROLE" --query Role.RoleName --output text >/dev/null
 echo "account $ACCT  worker role $ROLE  agent role $AGENT_ROLE"
 
 TRUST='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
