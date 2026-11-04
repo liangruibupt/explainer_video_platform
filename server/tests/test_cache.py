@@ -173,3 +173,32 @@ def test_same_gpu_module_is_serialised(monkeypatch):
         assert s2 >= e1 - 0.01  # the second started after the first ended
     finally:
         NODES.pop("test.slow")
+
+
+def test_downstream_gpu_modules_are_woken_once(monkeypatch):
+    """_warm_downstream calls ensure_running() for pending downstream GPU nodes' modules
+    (fake client: nothing is launched)."""
+    import sys
+    import types
+    woken = []
+
+    class FakeGpu:
+        def __init__(self, m):
+            self.m = m
+
+        def ensure_running(self):
+            woken.append(self.m)
+    fake = types.SimpleNamespace(gpu=FakeGpu)
+    monkeypatch.setitem(sys.modules, "app.gpu_client", fake)
+    import app
+    monkeypatch.setattr(app, "gpu_client", fake, raising=False)
+    monkeypatch.setattr(engine, "WARM_GPUS", True)
+    from app.workflows import store
+    wf = store.template("wf_mv_from_one_line")
+    run = {"id": "warm-test", "workflow": wf,
+           "nodes": {n["id"]: {"status": "pending"} for n in wf["nodes"]}}
+    run["nodes"]["n3"]["status"] = "running"  # music already running: not a target
+    engine._warm_downstream(run, "n4")  # n4 -> n5 image -> n7 video
+    engine._warm_downstream(run, "n5")  # video already woken: no second call
+    time.sleep(0.3)
+    assert sorted(woken) == ["image", "video"]
