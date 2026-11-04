@@ -10,8 +10,23 @@ review(..., decision="approve", choice=k) passes candidate k's outputs downstrea
 
 With candidates = 1 nothing here runs: the engine takes its ordinary path, and the
 `candidates` param is left out of every cache key, so existing keys do not change.
+
+Remembered choices. A candidate set is the ordered list of candidate cache keys; when a
+person approves candidate k, remember() writes data/wf_cache/_choices/<sha256 of the keys
+joined by newlines>.json = {choice, seed, keys, t} (tmp file + rename). On a later run where
+EVERY candidate is a cache hit and a choice exists for exactly that set, the engine takes
+it without asking: the node becomes done with candidate k's outputs, note
+"沿用上次的选择：候选 k+1（seed s）", choice/auto_choice on the node, and the run goes on
+downstream (no waiting_review, so the task center sends no 待审核 notification). If any
+candidate was generated in this run, or no choice is stored, the node waits as before.
+Only engine.review() writes a choice. To pick again, retry the node (engine.retry): when
+the retried node carries candidates it first forgets the stored choice for its set, so
+the rerun (all cache hits, nothing generated) waits for review with the same previews.
 """
+import hashlib
+import json
 import time
+import uuid
 
 from .nodes import NODES, effective_params
 
@@ -98,3 +113,62 @@ def choose(n: dict, choice) -> dict:
     c = cands[choice]
     n.update(choice=choice, cache_key=c["cache_key"], meta=c.get("meta", {}))
     return c["outputs"]
+
+
+# ---------------------------------------------------------------- remembered choices
+
+def _choices_dir():
+    from . import engine
+    return engine.CACHE / "_choices"
+
+
+def set_key(cands: list) -> str:
+    """Identity of a candidate set: sha256 of the ordered candidate cache keys."""
+    return hashlib.sha256("\n".join(c["cache_key"] for c in cands).encode()).hexdigest()
+
+
+def remembered(cands: list):
+    """The stored choice for this exact set, or None. Only when every candidate is a cache
+    hit: a freshly generated candidate is something the person has not seen yet."""
+    if not cands or not all(c.get("cached") for c in cands):
+        return None
+    p = _choices_dir() / f"{set_key(cands)}.json"
+    try:
+        j = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+    k = j.get("choice")
+    if isinstance(k, bool) or not isinstance(k, int) or not 0 <= k < len(cands) \
+            or j.get("keys") != [c["cache_key"] for c in cands]:
+        return None
+    return k
+
+
+def remember(cands: list, choice: int) -> None:
+    """Store a person's choice for this set (atomic: tmp file + rename)."""
+    d = _choices_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    key = set_key(cands)
+    tmp = d / f".{key}.{uuid.uuid4().hex[:6]}.tmp"
+    tmp.write_text(json.dumps({"choice": choice, "seed": cands[choice].get("seed"),
+                               "keys": [c["cache_key"] for c in cands], "t": time.time()},
+                              ensure_ascii=False))
+    tmp.replace(d / f"{key}.json")
+
+
+def forget(cands: list) -> None:
+    """Drop the stored choice for this set, so the next run asks again."""
+    if cands:
+        (_choices_dir() / f"{set_key(cands)}.json").unlink(missing_ok=True)
+
+
+def mark_auto(run: dict, nid: str, cands: list, k: int, t0: float, event) -> None:
+    """Take a remembered choice: the node is done with candidate k's outputs and keeps the
+    candidate list (previews for the inspector, and what retry needs to forget the set)."""
+    n = run["nodes"][nid]
+    c = cands[k]
+    n.update(status="done", candidates=cands, choice=k, auto_choice=True,
+             cache_key=c["cache_key"], meta=c.get("meta", {}), outputs=c["outputs"],
+             note=f"沿用上次的选择：候选 {k + 1}（seed {c['seed']}）",
+             ended=time.time(), seconds=round(time.time() - t0, 2))
+    event(run, f"{nid} reused earlier choice: candidate {k}")
