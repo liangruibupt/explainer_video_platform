@@ -1,0 +1,24 @@
+{
+  "id": "wf_product_pitch",
+  "name": "商品口播（数字人）",
+  "description": "商品介绍 → Agent 写 30–60 秒口播稿 → 人工审核 → Polly 语音 → AI 人像（或换成素材库人像）→ 数字人口播 → 人工审核 → 保存。",
+  "nodes": [
+    {"id": "n1", "type": "input.text", "params": {"text": "商品：山茶花保湿面霜，50 g，主打补水、温和不刺激，适合干皮和换季敏感肌，质地轻薄好推开。直播间价 89 元，下单送同款 15 g 小样。"}},
+    {"id": "n2", "type": "agent.write", "params": {"instruction": "根据商品介绍写一段电商直播间的中文口播稿，主播面对镜头说，口语、亲切、有节奏，长度 150–250 个汉字（约 30–60 秒）。结构：一句开场吸引注意 → 2–3 个卖点（用介绍里给出的事实）→ 价格或福利 → 一句行动号召。不要用「最」「第一」「顶级」「100%」「国家级」等绝对化用语，不承诺功效和疗效，不编造介绍里没有的数据。只输出口播稿正文，不要标题、不要括号里的动作提示、不要表情符号。", "max_tokens": 1200}},
+    {"id": "n3", "type": "review.human", "params": {"note": "检查口播稿：事实是否和商品介绍一致，有没有绝对化用语，读起来是否顺口。"}},
+    {"id": "n4", "type": "tts.polly", "params": {"voice": "Zhiyu"}},
+    {"id": "n5", "type": "image.qwen", "params": {"prompt": "电商直播间里的年轻女主播半身像，正面看镜头，自然微笑，干净的浅色上衣，背景是柔和虚化的直播间和货架，环形补光，写实摄影风格，五官清晰，画面中没有任何文字", "ratio": "9:16", "seed": 42}},
+    {"id": "n6", "type": "avatar.infinitetalk", "params": {"prompt": "a friendly host presenting a product to the camera in a bright livestream studio, ring light, product shelf behind, natural hand gestures, upper body, medium shot", "size": "480", "fast": true, "seed": 42}},
+    {"id": "n7", "type": "review.human", "params": {"note": "看口型是否对得上、脸和手有没有变形。"}},
+    {"id": "n8", "type": "output.save", "params": {"title": "商品口播"}}
+  ],
+  "edges": [
+    {"from": "n1.text", "to": "n2.text"},
+    {"from": "n2.text", "to": "n3.input"},
+    {"from": "n3.output", "to": "n4.text"},
+    {"from": "n4.audio", "to": "n6.audio"},
+    {"from": "n5.image", "to": "n6.portrait"},
+    {"from": "n6.video", "to": "n7.input"},
+    {"from": "n7.output", "to": "n8.work"}
+  ]
+}

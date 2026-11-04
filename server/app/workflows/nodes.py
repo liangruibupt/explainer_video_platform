@@ -458,3 +458,12 @@ except ModuleNotFoundError as _e:  # the assets package is optional
         raise
 else:
     _register_asset_node(NODES)
+
+# Digital human (docs/AVATAR_CONTRACT.md): tts.polly + avatar.infinitetalk (app/avatar_node.py).
+try:
+    from ..avatar_node import register as _register_avatar_nodes
+except ModuleNotFoundError as _e:  # the avatar module is optional
+    if _e.name not in ("app.avatar_node", "app.avatar"):
+        raise
+else:
+    _register_avatar_nodes(NODES)
