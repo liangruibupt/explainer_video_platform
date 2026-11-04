@@ -327,7 +327,9 @@ def avatar_options():
             "limits": {"script_chars": avatar.SCRIPT_MAX, "audio_seconds": avatar.AUDIO_MAX_S,
                        "prompt_chars": avatar.PROMPT_MAX, "ref_video_seconds": avatar.VIDEO_MAX_S,
                        "image_min_edge": avatar.IMAGE_MIN_EDGE},
-            "configured": avatar.configured()}
+            "configured": avatar.configured(),
+            "cold_min": avatar.estimate(30)["cold_min"],
+            "usd_per_hour": avatar.estimate(30)["usd_per_hour"]}
 
 
 @router.get("/api/avatars/estimate")

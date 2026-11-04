@@ -69,7 +69,11 @@ def default_model() -> str:
 def status() -> dict:
     """{'deployed', 'state': ready|starting|idle|failed|unavailable, 'instances', 'desired',
     'instance_type', ...}; without avatar.json: deployed False, label 未部署."""
-    base = {"models": MODELS, "default_model": default_model()}
+    cfg = config()
+    base = {"models": MODELS, "default_model": default_model(),
+            "render_s_per_s": cfg.get("render_s_per_s") or {},
+            "cold_min": float(cfg.get("cold_min") or COLD_MIN),
+            "usd_per_hour": float(cfg.get("usd_per_hour") or USD_PER_HOUR)}
     if not configured():
         return dict(base, deployed=False, state="unavailable", instances=0, desired=0,
                     instance_type="", backend="ec2", label="未部署",
@@ -227,7 +231,7 @@ RENDER = {("infinitetalk", "480", True): 4, ("infinitetalk", "720", True): 10,
           ("infinitetalk", "480", False): 20, ("infinitetalk", "720", False): 50,
           ("longcat", "480", True): 5, ("longcat", "720", True): 12,
           ("longcat", "480", False): 5, ("longcat", "720", False): 12}  # longcat: distill only
-COLD_MIN = 15
+COLD_MIN = 13  # measured cold start, docs/AVATAR.md
 USD_PER_HOUR = 3.0
 
 

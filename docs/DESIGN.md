@@ -59,6 +59,7 @@ API 服务（FastAPI）── 鉴权、项目、作品、任务、工作流 CRUD
 | 图像 | [Qwen-Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1)（7B DiT，FP8） | Qwen Research License | ml.g7.2xlarge（RTX PRO 4500，32 GB） | 文生图、编辑、透明 PNG，最多 10 张参考图 |
 | 视频 | [MiniMax H3](https://huggingface.co/MiniMaxAI/MiniMax-H3)（GGUF Q8） | MiniMax H3 Community License | ml.g7.4xlarge | 画面和同步音频一次生成；社区实测单张 24 GB 卡可跑 |
 | 音乐 | [YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B)（BF16） | CC BY-NC 4.0 | ml.g7.2xlarge | 歌词 + 风格 → 完整歌曲，48 kHz 立体声，附 ABC 乐谱 |
+| 数字人 | [InfiniteTalk](https://huggingface.co/MeiGen-AI/InfiniteTalk)（默认，Wan2.1-I2V-14B + 4 步 LoRA）、[LongCat-Video-Avatar 1.5](https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5) | Apache-2.0 / MIT | EC2 g7e.4xlarge（RTX PRO 6000 96 GB，128 GB 内存） | 人像 + 口播音频 → 口型同步的口播视频，一个镜像两个模型。设计、实测和选型见 [AVATAR.md](AVATAR.md) |
 
 **用途：个人、非商用（已确认，2026-11-03）。** 三个模型的许可证都不是 Apache/MIT，但都允许这个用途：
 
@@ -83,7 +84,7 @@ EC2 后端的做法（`server/app/gpu_ec2.py`，每个模块一份配置 `infra/
 - 没有实例时按配置的容量顺序启动一台（每个模块最多一台），实例空闲 15 分钟后自己关机。启动时设了“关机即终止”，所以闲置不花钱，也不留下磁盘。另有 4 小时硬上限。
 - 实例没有入站端口，不配密钥对，只用 IMDSv2。
 
-下面 SageMaker 的部分保留作记录和后备（g5/g4dn 这类老 GPU）。**2026-11-04 起三个 GPU 模块都跑在 EC2 上**：视频（MiniMax H3，ap-south-1，`modules/video.json`）、图像（Qwen-Image 2.1，us-east-1，`modules/image.json`）、音乐（YuE2-3B，us-east-1，`modules/music.json`）。图像和音乐的 SageMaker 端点已下线，代码保留。实测见 docs/VIDEO.md 第 8 节、docs/IMAGE.md 第 7a 节、docs/MUSIC.md 第 7a 节。worker 把结果里的 `*_b64` 字段和 `images` 列表存成 `out/<id>.<n>.<ext>`，结果 JSON 的 `files` 列出这些对象；容器名、docker 参数和输出扩展名都写在各模块配置里。
+下面 SageMaker 的部分保留作记录和后备（g5/g4dn 这类老 GPU）。**2026-11-04 起所有 GPU 模块都跑在 EC2 上**：视频（MiniMax H3，ap-south-1，`modules/video.json`）、图像（Qwen-Image 2.1，us-east-1，`modules/image.json`）、音乐（YuE2-3B，us-east-1，`modules/music.json`）、数字人（InfiniteTalk / LongCat，us-east-1，`modules/avatar.json`，见 [AVATAR.md](AVATAR.md)）。图像和音乐的 SageMaker 端点已下线，代码保留。实测见 docs/VIDEO.md 第 8 节、docs/IMAGE.md 第 7a 节、docs/MUSIC.md 第 7a 节。worker 把结果里的 `*_b64` 字段和 `images` 列表存成 `out/<id>.<n>.<ext>`，结果 JSON 的 `files` 列出这些对象；容器名、docker 参数和输出扩展名都写在各模块配置里。
 
 权限：图像和音乐的测试沿用实例配置文件 `evp-video-builder`，加了内联策略 `evp-gpu-us-east-1`（读 us-east-1 桶、读写 `jobs/image-ec2/*` 和 `jobs/music-ec2/*`、拉 `evp/qwen-image` 和 `evp/yue2`）。长期用 `infra/gpu_ec2/grant_worker_role.sh` 创建三个模块共用的最小权限角色 `evp-gpu-worker`。这个脚本由管理员在 CloudShell 里运行，agent 不运行；运行后把三个配置里的 `instance_profile` 改成 `evp-gpu-worker`。
 
@@ -186,10 +187,10 @@ ml.g7.2xlarge 在部分区域的按需价格约 $3.15/小时（来源：[cloudpr
 | 输入 | 文本、图片、音频、视频、参考资料（URL） |
 | AI Agent | 写词、写分镜、写图像提示词、写视频提示词、联网检索 |
 | 图像 | 生成、编辑、抠图（透明背景） |
-| 视频 | 文/图生视频、代码绘制（Remotion / HTML / Manim，即基础版 skill） |
+| 视频 | 文/图生视频、代码绘制（Remotion / HTML / Manim，即基础版 skill）、数字人口播（`avatar.infinitetalk`） |
 | 音乐 | 生成歌曲、生成纯音乐、合成垫乐（基础版） |
 | 文本 | 拼接、模板、翻译 |
-| 音频 | Polly 配音、Whisper 字幕、音效、混音 |
+| 音频 | Polly 配音（`tts.polly`）、Whisper 字幕、音效、混音 |
 | 审核与质检 | 人工审核（暂停等待确认）、自动质检（时长、分辨率、响度、字幕可读性） |
 | 输出 | 保存作品、导出 MP4、发布 |
 
@@ -251,7 +252,7 @@ ml.g7.2xlarge 在部分区域的按需价格约 $3.15/小时（来源：[cloudpr
 | 区域 | 页面 | 内容 |
 |---|---|---|
 | 创作 | 工作台 | 一个输入框 + Agent/图像/视频/音乐选择 + 联网开关 + 快捷开始 + 最近作品 |
-| 创作 | 图像 / 视频 / 音乐 | 单一模态的生成页，参数完整 |
+| 创作 | 图像 / 视频 / 音乐 / 数字人 | 单一模态的生成页，参数完整 |
 | 创作方式 | 对话创作、引导创作、工作流 | 见第 5–7 节 |
 | 资产与管理 | 作品集、素材库、任务中心、项目 | 作品浏览、上传素材、任务进度与人工审核、按项目分组 |
 | 设置 | AWS 与基础资源、模型部署、完成通知、模型缓存（S3）、外观、账号、用户管理 | 模型部署页每个模块一张卡片：状态（待命中 / 已缩到 0 / 运行中）、版本、机型、端点、重新部署、删除端点、部署日志、云端/演示切换 |

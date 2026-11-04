@@ -356,7 +356,10 @@ def test_failed_job_and_ids(isolate, media):
     assert s["status"] == "failed" and "no face found" in s["error"]
     assert s["notes"][-1]["text"].startswith("失败")
     assert collect.collect(["avatar"])[0]["status"] == "failed"
-    assert client.get("/api/avatars/../../etc").status_code == 404
+    # ids are checked against ID_RE (a "../" path is normalized by the client and, once
+    # web/dist is built, answered by the SPA fallback, so it says nothing about this route)
+    assert client.get("/api/avatars/..etc").status_code == 404
+    assert client.get("/api/avatars/20261104-000000-zzzzzz/video").status_code == 404
     assert client.get("/api/avatars/20261104-000000-zzzzzz").status_code == 404
     assert client.get(f"/api/avatars/{s['id']}/secret").status_code == 404
     assert client.get(f"/api/avatars/{s['id']}/video").status_code == 404  # not made
@@ -422,3 +425,37 @@ def test_node_runs(isolate, media, tmp_path):
     with pytest.raises(ValueError, match="只连一个"):
         NODES["avatar.infinitetalk"]["run"]({"audio": str(media["mp3"]), "portrait": str(media["png"]),
                                              "ref_video": str(media["mp4"])}, p, ctx)
+
+
+def test_merged_module_config_drives_status_and_agent_cost():
+    """The real infra/gpu_ec2/modules/avatar.json (feat/avatar-infra) feeds status(), the
+    page's cold-start figure and the workflow agent's GPU cost table."""
+    from app.workflows import agent
+    real = json.loads((avatar.MODULES / "avatar.json").read_text())
+    assert real["default_model"] == "infinitetalk" and real["cold_min"] == 13
+    assert agent.AVATAR_COLD_MIN == 13
+    assert agent.AVATAR_MIN == round(30 * real["render_s_per_s"]["infinitetalk"]["480_fast"] / 60 + 1)
+    assert "gpu:avatar" in agent.COST
+    wf = {"nodes": [{"id": "n1", "type": "avatar.infinitetalk", "params": {}},
+                    {"id": "n2", "type": "tts.polly", "params": {}}]}
+    assert agent.gpu_cost(wf, ["n1", "n2"]) == agent.AVATAR_MIN > 0
+
+
+def test_busy_heartbeat_stays_fresh_through_long_jobs():
+    """A busy heartbeat is written once per job; a 25-min avatar render must not read as
+    'booting' after heartbeat_stale_s."""
+    import datetime
+    from app import gpu_ec2
+    g = gpu_ec2.GpuEC2.__new__(gpu_ec2.GpuEC2)
+    g.cfg = {"heartbeat_stale_s": 180, "invoke_timeout_s": 5400}
+    inst = {"InstanceId": "i-1", "InstanceType": "g7e.4xlarge", "State": {"Name": "running"},
+            "Placement": {"AvailabilityZone": "us-east-1a"},
+            "LaunchTime": datetime.datetime(2026, 11, 4)}
+    g.instances = lambda *a: [inst]
+    hb = {"instance_id": "i-1", "state": "busy", "ts": time.time() - 1500}
+    g.heartbeat = lambda: hb
+    assert g.status()["state"] == "busy"
+    hb.update(state="ready")
+    assert g.status()["state"] == "booting"
+    hb.update(state="busy", ts=time.time() - 6000)
+    assert g.status()["state"] == "booting"

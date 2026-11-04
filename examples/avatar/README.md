@@ -10,6 +10,9 @@
 | `longcat_15s_480_fast.mp4` | LongCat-Video-Avatar-1.5，480P，distill 8 步，同一输入 |
 | `contact_15s_480_fast.jpg` | 两个模型同一时间点对比（上 InfiniteTalk，下 LongCat；0/4/7/11/14 秒） |
 | `metrics.json` | 口型相关、身份余弦、色差（`infra/avatar/bench/analyze.py`） |
+| `infinitetalk_promo45_480_fast.mp4`、`_sheet.jpg` | 集成验证 A：数字人页 API，45 秒超市促销口播（49.3 秒），640 宽 crf 31；六帧 0/20/40/60/80/99 % |
+| `infinitetalk_live90_480_fast.mp4`、`_sheet.jpg` | 集成验证 B：90 秒直播带货（89.5 秒），长片段身份 / 偏色检查 |
+| `traces/promo45.json`、`traces/live90.json` | 逐秒身份余弦和 ΔE（`infra/avatar/bench/trace.py`） |
 
 原始文件（未压缩）：`s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/examples/avatar/`。
 

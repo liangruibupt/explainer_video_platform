@@ -165,7 +165,7 @@ export default function AvatarPage() {
   return (
     <div className="page">
       <style>{CSS}</style>
-      <h1 className="h1-sm">数字人 <GpuPill module="avatar" cold={15} /></h1>
+      <h1 className="h1-sm">数字人 <GpuPill module="avatar" cold={opt?.cold_min || 13} /></h1>
       <p className="sub">一张人像（或一段参考视频）加一段口播语音，生成口型、表情和上半身动作同步的口播视频，用于电商口播、商超口播和直播间预录片段（离线生成，不是实时直播）。
         GPU 在 us-east-1 的 EC2 上按需启动，空闲 15 分钟自己关机。{opt && !opt.configured && <b> 数字人 GPU 模块还未部署，现在提交会失败。</b>}</p>
 

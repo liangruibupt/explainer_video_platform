@@ -68,7 +68,7 @@
   "default_model": "infinitetalk",
   "render_s_per_s": {
     "infinitetalk": {
-      "480_fast": 29.5,
+      "480_fast": 27,
       "720_fast": 68,
       "480_full": 290,
       "720_full": 670

@@ -11,8 +11,9 @@
 - **图像**：Qwen-Image 2.1 生成 1080p 图片（16:9、9:16、1:1，可选透明背景）。页面顶部显示 GPU 状态：已就绪、启动中、已缩到 0。设计和实测见 [IMAGE.md](IMAGE.md)。
 - **AI 视频**（`/video`）：MiniMax H3 生成 5 秒、768p、24 fps、带音轨的镜头（16:9 或 9:16，可设 seed），记录里直接播放。设计和实测见 [VIDEO.md](VIDEO.md)。
 - **音乐**（`/music`）：YuE2-3B 按风格和歌词生成 48 kHz 立体声 FLAC，附 ABC 乐谱。「纯音乐」开关把歌词换成 `[Intro] [Instrumental] [Outro]`，并在风格末尾补上 `ambient, no drums, instrumental, no vocals`；可选 cot（full / off）和 seed。纯音乐长度 4–5 分钟，不能指定。「编排说明」（可选，中英文都行）写乐器怎么进、段落怎么发展，由 Opus 转成英文风格词拼进风格里（纯音乐时 `instrumental, no vocals` 仍放在最后），不会进歌词，所以不会被唱出来；生成记录里显示实际发给模型的风格词。见 [MUSIC.md](MUSIC.md)。
-- 三个生成页顶部都有 GPU 状态（已就绪、启动中、未运行），GPU 是平台自己启停的 EC2 实例，空闲 15 分钟自己关机。
-- **工作流**（`/workflow`）：用节点图编排生成步骤。快捷开始有三个模板（一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图），也可以用一句话让 Agent 生成工作流，或在右侧「AI 助手」里用一句话改图。点节点改参数，运行时每个节点实时显示状态和用时；上游结果有缓存，改了下游参数重跑时上游不再调 GPU；人工审核节点暂停等批准或打回，失败的节点可以单独重跑。GPU 生成节点（图像、视频、音乐）可以设「候选数」2–4：按 seed、seed+1… 各生成一个，节点暂停等你选一个往下走。选过之后，重跑时如果这几个候选全都来自缓存、和上次选的是同一组（同样的候选缓存键、同样的顺序），就直接沿用上次选的那个，节点备注写「沿用上次的选择：候选 k（seed s）」，不再暂停，也不发「待审核」通知；只要有一个候选是新生成的（比如候选数从 2 改成 3），或者这一组还没人选过，照旧暂停等你选。想换一个：在节点上点「重新选候选」（就是单独重跑这个节点），它会先忘掉这一组的选择，候选都从缓存取，再暂停等你选。选择只在人工审核时记下，存在 `data/wf_cache/_choices/<候选缓存键的哈希>.json`。见 [WORKFLOW.md](WORKFLOW.md)。
+- **数字人**（`/avatar`）：一张人像（上传、素材库、或图像页的生成结果；也可以用一段参考视频）加一段口播，生成口型同步、带表情和上半身动作的口播视频，用于电商口播、商超口播和直播间预录片段（离线生成，不是实时直播）。声音可以写口播稿让 Polly 合成（默认 Zhiyu），也可以上传音频。场景（直播间带货、超市货架口播、门店促销、产品特写讲解）给出默认的英文场景描述。模型默认 InfiniteTalk（标「推荐」），可选 LongCat-Video-Avatar 1.5；清晰度 480p / 720p，快速模式（4 步）或完整质量。提交前页面按 `avatar.json` 的 `render_s_per_s`、`cold_min`（13 分钟）、`usd_per_hour` 估算生成时间和费用。只能用有权使用的人像，输出不加水印。设计和实测见 [AVATAR.md](AVATAR.md)。
+- 四个生成页顶部都有 GPU 状态（已就绪、启动中、未运行），GPU 是平台自己启停的 EC2 实例，空闲 15 分钟自己关机。
+- **工作流**（`/workflow`）：用节点图编排生成步骤。快捷开始有四个模板（一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图、商品口播（数字人）），也可以用一句话让 Agent 生成工作流，或在右侧「AI 助手」里用一句话改图。点节点改参数，运行时每个节点实时显示状态和用时；上游结果有缓存，改了下游参数重跑时上游不再调 GPU；人工审核节点暂停等批准或打回，失败的节点可以单独重跑。GPU 生成节点（图像、视频、音乐）可以设「候选数」2–4：按 seed、seed+1… 各生成一个，节点暂停等你选一个往下走。选过之后，重跑时如果这几个候选全都来自缓存、和上次选的是同一组（同样的候选缓存键、同样的顺序），就直接沿用上次选的那个，节点备注写「沿用上次的选择：候选 k（seed s）」，不再暂停，也不发「待审核」通知；只要有一个候选是新生成的（比如候选数从 2 改成 3），或者这一组还没人选过，照旧暂停等你选。想换一个：在节点上点「重新选候选」（就是单独重跑这个节点），它会先忘掉这一组的选择，候选都从缓存取，再暂停等你选。选择只在人工审核时记下，存在 `data/wf_cache/_choices/<候选缓存键的哈希>.json`。见 [WORKFLOW.md](WORKFLOW.md)。
 
 ## 一个任务做了什么
 
@@ -51,6 +52,10 @@
 视频页的接口：`GET /api/video/status`，`POST /api/videos`（`prompt`、`aspect`=`16:9`/`9:16`、`seed`），`GET /api/videos`、`GET /api/videos/{id}`、`GET /api/videos/{id}/0.mp4`，存在 `data/videos/`。音乐页的接口：`GET /api/music/status`，`POST /api/musics`（`style`、`lyrics`、`cot`=`full`/`off`、`seed`、可选 `arrangement`），`GET /api/musics`、`GET /api/musics/{id}`、`GET /api/musics/{id}/0.flac`（超过 40 MB 时是 `0.mp3`）和 `score.abc`，存在 `data/music/`。
 
 图像页用的接口：`GET /api/image/status`（端点状态），`POST /api/images`（`prompt`、`ratio`、`mode`=`t2i`/`rgba`、`seed`、`n`），`GET /api/images`、`GET /api/images/{id}`、`GET /api/images/{id}/0.png`。图片存在 `data/images/`。
+
+数字人页的接口：`GET /api/avatar/status`（GPU 状态，另带 `default_model`、`render_s_per_s`、`cold_min`、`usd_per_hour`），`GET /api/avatars/options`（模型、声音、场景、上限），`GET /api/avatars/estimate`（`script` 或 `seconds`、`model`、`size`、`fast`），`POST /api/avatars`（multipart 或 JSON：人像只选一个来源 `portrait` 文件 / `portrait_asset_id` / `image_id`+`image_index` / `ref_video` / `ref_video_asset_id`；声音只选一个 `script`+`voice` / `audio` / `audio_asset_id`；另有 `scene`、`prompt`、`model`（空 = 默认）、`size`=`480`/`720`、`fast`、`seed`、`title`），`GET /api/avatars`、`GET /api/avatars/{id}`、`GET /api/avatars/{id}/video.mp4`（还有 `poster.jpg`、`portrait.png`、`audio.wav`），`DELETE /api/avatars/{id}`。记录存在 `data/avatars/`，也会出现在任务中心。
+
+工作流节点：`tts.polly`（文本 → wav，参数 `voice`）和 `avatar.infinitetalk`（`audio` + `portrait` 或 `ref_video` → 视频，参数 `model`、`prompt`、`size`、`fast`、`seed`，runner `gpu:avatar`）。模板 `wf_product_pitch`「商品口播（数字人）」：商品介绍 → Agent 写 30–60 秒口播稿 → 人工审核 → Polly → 人像（默认 Qwen-Image 生成 9:16，可换成 `input.asset` 用素材库人像）→ 数字人 → 人工审核 → 保存。两个审核都可以在任务中心批准。
 
 工作流的接口：`GET /api/workflows/nodes`（节点声明）、`GET /api/workflows/templates`、`GET/POST /api/workflows`（保存的工作流，`data/workflows/`）、`POST /api/workflows/validate`、`POST /api/workflows/generate`（`prompt`）、`POST /api/workflows/edit`（`workflow`、`instruction`）、`POST /api/wf_runs`（`workflow`）、`GET /api/wf_runs[/{id}]`、`POST /api/wf_runs/{id}/review`（`node_id`、`decision`=`approve`/`reject`、`note`，有候选时批准要带 `choice`）、`POST /api/wf_runs/{id}/retry`（`node_id`）、`GET /api/wf_runs/{id}/file`。运行记录在 `data/wf_runs/`，节点缓存在 `data/wf_cache/`。完整说明见 [WORKFLOW.md](WORKFLOW.md)。
 
@@ -111,7 +116,8 @@ scripts/studio.sh stop
 | `server/app/main.py` | HTTP 接口：`/api/jobs` 的创建、列表、详情、删除，作品文件下载，前端页面 |
 | `server/app/pipeline.py` | 按步骤运行一个任务，状态写在 `data/jobs/<id>/job.json` |
 | `server/app/llm.py` | 调用 Opus 5.5 写分镜和每一段的绘制代码 |
-| `server/app/image.py`、`video.py`、`music.py` | 三个 GPU 模块的客户端（`status()`、`generate()`），共用 `gpu_client.py` 和 `gpu_ec2.py` |
+| `server/app/image.py`、`video.py`、`music.py`、`avatar.py` | 四个 GPU 模块的客户端（`status()`、`generate()`），共用 `gpu_client.py` 和 `gpu_ec2.py` |
+| `server/app/avatar_api.py`、`avatar_node.py` | 数字人页的接口和生成记录；`tts.polly`、`avatar.infinitetalk` 两个工作流节点 |
 | `server/app/images.py`、`media.py` | 图像页、视频页、音乐页的生成记录 |
 | `server/app/workflows/` | 工作流：`nodes.py` 节点库、`validate.py` 校验、`engine.py` 编排器（缓存、审核、重跑）、`agent.py` Agent 生成和改图、`store.py` 保存、`templates/` 模板 |
 | `server/tests/` | 校验和缓存键的单元测试（pytest，不调 GPU） |

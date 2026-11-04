@@ -138,8 +138,8 @@ def env(monkeypatch, tmp_path):
 def test_deploy_cards(env):
     c, gpus, _, tmp = env
     r = c.get("/api/settings/deploy").json()
-    assert [m["module"] for m in r["modules"]] == ["image", "music", "video"]
-    music = r["modules"][1]
+    assert [m["module"] for m in r["modules"]] == ["avatar", "image", "music", "video"]
+    music = next(m for m in r["modules"] if m["module"] == "music")
     assert music["status"]["state"] == "none"
     assert music["weights_model"] == "yue2-3b" and len(music["weights_sha"]) == 40
     assert music["idle_shutdown_min"] == 15 and music["hard_cap_min"] == 240
