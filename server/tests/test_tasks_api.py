@@ -125,6 +125,19 @@ def test_second_review_node_in_same_run_notifies_again():
     assert len(watcher.scan()) == 1
 
 
+def test_review_while_other_branch_still_running_notifies():
+    """A candidate review on one branch while a GPU node on another keeps the run 'running'."""
+    put_run("running", {"rev1": {"status": "pending"}, "b": {"status": "running"}})
+    watcher.scan()
+    put_run("running", {"rev1": {"status": "waiting_review", "review_input": "a"},
+                        "b": {"status": "running"}})
+    sent = watcher.scan()
+    assert len(sent) == 1 and "待审核" in sent[0]["title"]
+    assert watcher.scan() == []
+    put_run("done", {"rev1": {"status": "done"}, "b": {"status": "done"}})
+    assert len(watcher.scan()) == 1
+
+
 def test_notifications_endpoints(client):
     a = notify.notify("一", "b", "/x")
     notify.notify("二", "b", "/y", level="error")

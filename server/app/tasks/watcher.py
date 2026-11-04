@@ -73,6 +73,10 @@ def scan() -> list:
         seen = seen or {}
         sent = []
         for item in collect.collect():
+            if item["status"] == "running" and item.get("reviews"):
+                # the engine keeps a run "running" while other branches work; a node
+                # already waiting for review must still notify (review inbox shows it)
+                item = dict(item, status="waiting_review")
             k, sig = _key(item), _sig(item)
             if seen.get(k) == sig:
                 continue
