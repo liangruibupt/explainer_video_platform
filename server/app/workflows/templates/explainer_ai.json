@@ -1,0 +1,26 @@
+{
+  "id": "wf_explainer_ai",
+  "name": "科普讲解视频（AI 插图 + AI 背景音乐）",
+  "description": "主题 → 讲解视频（2 张 AI 插图，无音乐）；同一主题 → 纯音乐风格 → YuE2 纯音乐 → 质检无人声 → 垫在旁白下，人工审核后保存。",
+  "nodes": [
+    {"id": "n1", "type": "input.text", "params": {"text": "为什么天空是蓝色的：瑞利散射"}},
+    {"id": "n2", "type": "explainer.video", "params": {"seconds": 60, "ratio": "16:9", "illustrations": 2, "music": "none"}},
+    {"id": "n3", "type": "agent.music_style", "params": {"instrumental": true}},
+    {"id": "n4", "type": "music.yue2", "params": {"instrumental": true, "cot": "full"}},
+    {"id": "n5", "type": "qc.auto", "params": {"no_vocals": true, "min_seconds": 30}},
+    {"id": "n6", "type": "audio.mix", "params": {"mode": "bed", "fit": "cut_audio", "volume": 0.35, "max_seconds": 600}},
+    {"id": "n7", "type": "review.human", "params": {"note": "听音乐是否盖过旁白"}},
+    {"id": "n8", "type": "output.save", "params": {"title": "讲解视频"}}
+  ],
+  "edges": [
+    {"from": "n1.text", "to": "n2.topic"},
+    {"from": "n1.text", "to": "n3.idea"},
+    {"from": "n3.style", "to": "n4.style"},
+    {"from": "n3.lyrics", "to": "n4.lyrics"},
+    {"from": "n4.audio", "to": "n5.media"},
+    {"from": "n2.video", "to": "n6.video"},
+    {"from": "n5.output", "to": "n6.audio"},
+    {"from": "n6.video", "to": "n7.input"},
+    {"from": "n7.output", "to": "n8.work"}
+  ]
+}

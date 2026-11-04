@@ -1,0 +1,31 @@
+{
+  "id": "wf_mv_from_one_line",
+  "name": "一句话做 MV",
+  "description": "一句话 → 歌词和歌曲；同一句话 → 首帧图 → 视频镜头；镜头循环到歌曲长度后配上歌，人工审核后保存。",
+  "nodes": [
+    {"id": "n1", "type": "input.text", "params": {"text": "夏夜的海边，萤火虫和远处的灯塔"}},
+    {"id": "n2", "type": "agent.lyrics", "params": {"language": "中文"}},
+    {"id": "n3", "type": "music.yue2", "params": {"cot": "full", "seed": 831001}},
+    {"id": "n4", "type": "agent.image_prompt", "params": {"style": "电影感，写实摄影"}},
+    {"id": "n5", "type": "image.qwen", "params": {"ratio": "16:9", "seed": 42}},
+    {"id": "n6", "type": "agent.video_prompt", "params": {}},
+    {"id": "n7", "type": "video.h3", "params": {"aspect": "16:9", "seconds": 5, "seed": 7}},
+    {"id": "n8", "type": "audio.mix", "params": {"mode": "replace", "fit": "loop_video", "max_seconds": 90}},
+    {"id": "n9", "type": "review.human", "params": {"note": "看画面和歌是否搭配"}},
+    {"id": "n10", "type": "output.save", "params": {"title": "MV"}}
+  ],
+  "edges": [
+    {"from": "n1.text", "to": "n2.theme"},
+    {"from": "n2.lyrics", "to": "n3.lyrics"},
+    {"from": "n2.style", "to": "n3.style"},
+    {"from": "n1.text", "to": "n4.idea"},
+    {"from": "n4.prompt", "to": "n5.prompt"},
+    {"from": "n1.text", "to": "n6.idea"},
+    {"from": "n6.prompt", "to": "n7.prompt"},
+    {"from": "n5.image", "to": "n7.first_frame"},
+    {"from": "n7.video", "to": "n8.video"},
+    {"from": "n3.audio", "to": "n8.audio"},
+    {"from": "n8.video", "to": "n9.input"},
+    {"from": "n9.output", "to": "n10.work"}
+  ]
+}

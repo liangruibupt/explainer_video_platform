@@ -152,3 +152,43 @@ table.tasks { width: 100%; border-collapse: collapse; background: var(--card); b
   .page { padding: 24px 18px; }
   .job-grid { grid-template-columns: 1fr; }
 }
+
+/* workflow page */
+.wf-page { max-width: 1400px; }
+.chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.wf-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.wf-graph { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: auto;
+  max-height: 72vh; }
+.wf-graph svg { display: block; }
+.wf-edge { fill: none; stroke: var(--line2); stroke-width: 1.6; }
+.wf-port { font: 9.5px var(--mono); fill: var(--ink3); }
+.wf-node { cursor: pointer; }
+.wf-node rect { fill: #fff; stroke: var(--line2); stroke-width: 1.2; }
+.wf-node.sel rect { stroke: var(--accent); stroke-width: 2.2; }
+.wf-node.bad rect { stroke: var(--bad); stroke-dasharray: 4 3; }
+.wf-node.running rect { fill: #f8efdc; stroke: var(--warn); }
+.wf-node.waiting_review rect { fill: var(--accent-soft); stroke: var(--accent); }
+.wf-node.done rect { fill: #e6f1ea; stroke: var(--ok); }
+.wf-node.cached rect { fill: #e3ecf2; stroke: #5d84a0; }
+.wf-node.failed rect { fill: #f8e3df; stroke: var(--bad); }
+.wf-nid { font: 10.5px var(--mono); fill: var(--ink3); }
+.wf-nlabel { font: 600 13px var(--sans); fill: var(--ink); }
+.wf-nstate { font: 11px var(--sans); fill: var(--ink2); }
+.wf-side .panel { max-height: none; }
+.wf-field { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font-size: 12px; color: var(--ink2); }
+.wf-field input, .wf-field select, .wf-field textarea, .wf-note { border: 1px solid var(--line2); border-radius: 8px;
+  padding: 6px 8px; background: #fff; font-size: 13px; width: 100%; }
+.wf-check { flex-direction: row; align-items: center; justify-content: space-between; }
+.wf-check input { width: auto; }
+.wf-note { margin-top: 8px; resize: vertical; }
+.wf-result { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.wf-media { width: 100%; border-radius: 8px; background: #1c1916; display: block; margin-top: 6px; }
+.wf-text { background: #f3ede5; border-radius: 8px; padding: 8px; margin-top: 6px; max-height: 200px; }
+.wf-runs { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; }
+.wf-runs li { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line);
+  cursor: pointer; font-size: 13px; }
+.wf-runs li:first-child { border-top: 0; }
+.wf-runs li:hover, .wf-runs li.on { background: #f3ede5; }
+.pill.waiting_review { background: var(--accent-soft); color: var(--accent); }
+@media (max-width: 1100px) { .wf-grid { grid-template-columns: 1fr; } }
