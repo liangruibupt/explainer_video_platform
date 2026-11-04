@@ -12,7 +12,7 @@
 - **AI 视频**（`/video`）：MiniMax H3 生成 5 秒、768p、24 fps、带音轨的镜头（16:9 或 9:16，可设 seed），记录里直接播放。设计和实测见 [VIDEO.md](VIDEO.md)。
 - **音乐**（`/music`）：YuE2-3B 按风格和歌词生成 48 kHz 立体声 FLAC，附 ABC 乐谱。「纯音乐」开关把歌词换成 `[Intro] [Instrumental] [Outro]`，并在风格末尾补上 `ambient, no drums, instrumental, no vocals`；可选 cot（full / off）和 seed。纯音乐长度 4–5 分钟，不能指定。「编排说明」（可选，中英文都行）写乐器怎么进、段落怎么发展，由 Opus 转成英文风格词拼进风格里（纯音乐时 `instrumental, no vocals` 仍放在最后），不会进歌词，所以不会被唱出来；生成记录里显示实际发给模型的风格词。见 [MUSIC.md](MUSIC.md)。
 - 三个生成页顶部都有 GPU 状态（已就绪、启动中、未运行），GPU 是平台自己启停的 EC2 实例，空闲 15 分钟自己关机。
-- **工作流**（`/workflow`）：用节点图编排生成步骤。快捷开始有三个模板（一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图），也可以用一句话让 Agent 生成工作流，或在右侧「AI 助手」里用一句话改图。点节点改参数，运行时每个节点实时显示状态和用时；上游结果有缓存，改了下游参数重跑时上游不再调 GPU；人工审核节点暂停等批准或打回，失败的节点可以单独重跑。见 [WORKFLOW.md](WORKFLOW.md)。
+- **工作流**（`/workflow`）：用节点图编排生成步骤。快捷开始有三个模板（一句话做 MV、科普讲解视频（AI 插图 + AI 背景音乐）、封面图），也可以用一句话让 Agent 生成工作流，或在右侧「AI 助手」里用一句话改图。点节点改参数，运行时每个节点实时显示状态和用时；上游结果有缓存，改了下游参数重跑时上游不再调 GPU；人工审核节点暂停等批准或打回，失败的节点可以单独重跑。GPU 生成节点（图像、视频、音乐）可以设「候选数」2–4：按 seed、seed+1… 各生成一个，节点暂停等你选一个往下走。选过之后，重跑时如果这几个候选全都来自缓存、和上次选的是同一组（同样的候选缓存键、同样的顺序），就直接沿用上次选的那个，节点备注写「沿用上次的选择：候选 k（seed s）」，不再暂停，也不发「待审核」通知；只要有一个候选是新生成的（比如候选数从 2 改成 3），或者这一组还没人选过，照旧暂停等你选。想换一个：在节点上点「重新选候选」（就是单独重跑这个节点），它会先忘掉这一组的选择，候选都从缓存取，再暂停等你选。选择只在人工审核时记下，存在 `data/wf_cache/_choices/<候选缓存键的哈希>.json`。见 [WORKFLOW.md](WORKFLOW.md)。
 
 ## 一个任务做了什么
 
@@ -52,7 +52,7 @@
 
 图像页用的接口：`GET /api/image/status`（端点状态），`POST /api/images`（`prompt`、`ratio`、`mode`=`t2i`/`rgba`、`seed`、`n`），`GET /api/images`、`GET /api/images/{id}`、`GET /api/images/{id}/0.png`。图片存在 `data/images/`。
 
-工作流的接口：`GET /api/workflows/nodes`（节点声明）、`GET /api/workflows/templates`、`GET/POST /api/workflows`（保存的工作流，`data/workflows/`）、`POST /api/workflows/validate`、`POST /api/workflows/generate`（`prompt`）、`POST /api/workflows/edit`（`workflow`、`instruction`）、`POST /api/wf_runs`（`workflow`）、`GET /api/wf_runs[/{id}]`、`POST /api/wf_runs/{id}/review`（`node_id`、`decision`=`approve`/`reject`、`note`）、`POST /api/wf_runs/{id}/retry`（`node_id`）、`GET /api/wf_runs/{id}/file`。运行记录在 `data/wf_runs/`，节点缓存在 `data/wf_cache/`。完整说明见 [WORKFLOW.md](WORKFLOW.md)。
+工作流的接口：`GET /api/workflows/nodes`（节点声明）、`GET /api/workflows/templates`、`GET/POST /api/workflows`（保存的工作流，`data/workflows/`）、`POST /api/workflows/validate`、`POST /api/workflows/generate`（`prompt`）、`POST /api/workflows/edit`（`workflow`、`instruction`）、`POST /api/wf_runs`（`workflow`）、`GET /api/wf_runs[/{id}]`、`POST /api/wf_runs/{id}/review`（`node_id`、`decision`=`approve`/`reject`、`note`，有候选时批准要带 `choice`）、`POST /api/wf_runs/{id}/retry`（`node_id`）、`GET /api/wf_runs/{id}/file`。运行记录在 `data/wf_runs/`，节点缓存在 `data/wf_cache/`。完整说明见 [WORKFLOW.md](WORKFLOW.md)。
 
 `scripts/run_example.py examples/<名字>` 读取该目录的 `prompt.json` 提交任务，等它完成后把分镜、绘制代码、字幕、成片和日志复制到 `examples/<名字>/output/`。目录里有 `places.json` 时，它会先用 `song_map.py` 生成北宋地图作为背景。
 

@@ -179,6 +179,9 @@ function Inspector({ wf, nid, decl, run, onParam, onReview, onRetry }) {
             </>
           )}
           {rs.status === 'failed' && <div className="actions"><button className="btn" onClick={() => onRetry(nid)}>单独重跑这个节点</button></div>}
+          {rs.status === 'done' && rs.candidates?.length > 1 && (
+            <div className="actions"><button className="btn" onClick={() => onRetry(nid)}>重新选候选（{rs.candidates.length} 个，已选候选 {rs.choice + 1}）</button></div>
+          )}
           {rs.outputs && !(rs.status === 'waiting_review' && rs.candidates?.length) && Object.entries(rs.outputs).map(([p, v]) => (
             <div key={p}><div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{p}</div>
               <Value runId={run.id} nid={nid} port={p} v={v} /></div>

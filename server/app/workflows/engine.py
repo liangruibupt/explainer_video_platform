@@ -427,6 +427,10 @@ def _exec_candidates(run, run_id, nid, node, decl, hashes, n, t0):
         return decl["run"](inputs, params, ctx)
 
     cands = cand.generate(run_id, nid, node, hashes, n, call)
+    k = cand.remembered(cands)  # all cache hits + a person chose from this exact set
+    if k is not None:
+        update(run_id, lambda r: cand.mark_auto(r, nid, cands, k, t0, _event))
+        return
     update(run_id, lambda r: cand.mark_waiting(r, nid, cands, t0, _event))
 
 
@@ -447,6 +451,7 @@ def review(run_id: str, nid: str, decision: str, note: str = "", choice=None) ->
         n["ended"] = time.time()
         n["seconds"] = round(n["ended"] - n.get("started", n["ended"]), 2)
         if decision == "approve" and n.get("candidates"):
+            cand.remember(n["candidates"], choice)  # a later all-cached run reuses it
             n.update(status="done", outputs=outputs)
             n.pop("note", None)
             r["status"] = "running"
@@ -472,12 +477,16 @@ def review(run_id: str, nid: str, decision: str, note: str = "", choice=None) ->
 
 
 def retry(run_id: str, nid: str) -> dict:
-    """Rerun one node and everything downstream; upstream results are kept."""
+    """Rerun one node and everything downstream; upstream results are kept. Retrying a
+    node that has candidates forgets the remembered choice for its candidate set first
+    (candidates.py), so the rerun waits for a person to pick again."""
     def apply(r):
         if nid not in r["nodes"]:
             raise ValueError(f"no node {nid}")
         if any(n["status"] == "running" for n in r["nodes"].values()):
             raise ValueError("run still has running nodes")
+        if r["nodes"][nid].get("candidates"):
+            cand.forget(r["nodes"][nid]["candidates"])
         for k in [nid] + downstream(r["workflow"], nid):
             r["nodes"][k] = {"status": "pending", "type": r["nodes"][k]["type"]}
         r["works"] = [w for w in r["works"] if w.get("node") in r["nodes"]
