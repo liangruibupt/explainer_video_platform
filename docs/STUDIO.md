@@ -83,7 +83,7 @@
 
 ## 运行
 
-依赖和基础版 skill 相同（完整的静态 ffmpeg、Python venv、Polly 和 Bedrock 的 AWS 权限），另外需要 Node 22 和 venv 里的 `fastapi`、`uvicorn`。
+依赖和基础版 skill 相同（完整的静态 ffmpeg、Python venv、Polly 和 Bedrock 的 AWS 权限），另外需要 Node 22 和 venv 里的 `fastapi`、`uvicorn`、`python-multipart`（素材库上传）；跑测试还要 `pytest`、`httpx`。
 
 曲库里的录音不放进仓库，第一次使用前运行 `scripts/fetch_music.sh` 下载到 `~/.cache/explainer-video/music/`。没下载的曲目不会出现在「音乐」选项里。
 

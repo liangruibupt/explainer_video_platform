@@ -222,6 +222,7 @@ class ReviewIn(BaseModel):
     node_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
     decision: str = Field(pattern=r"^(approve|reject)$")
     note: str = Field(default="", max_length=500)
+    choice: int | None = Field(default=None, ge=0, le=3)
 
 
 class RetryIn(BaseModel):
@@ -326,7 +327,7 @@ def wf_review(run_id: str, body: ReviewIn):
     if not wf_engine.read_run(_run_id(run_id)):
         raise HTTPException(404, "no such run")
     try:
-        return wf_engine.review(run_id, body.node_id, body.decision, body.note)
+        return wf_engine.review(run_id, body.node_id, body.decision, body.note, body.choice)
     except ValueError as e:
         raise HTTPException(409, str(e))
 
@@ -399,6 +400,20 @@ def file(job_id: str, name: str):
     if name in ("pipeline.log", "captions.ass", "index.html"):
         return PlainTextResponse(p.read_text(errors="replace"))
     return FileResponse(p)
+
+
+# Phase 4 parts (docs/PHASE4_CONTRACTS.md): each is a package with api.router; a part that is
+# not built yet is skipped, so the parts can be developed and tested independently.
+import importlib as _importlib
+import logging as _logging
+
+for _part in ("chat", "assets", "tasks", "settings"):
+    try:
+        app.include_router(_importlib.import_module(f"app.{_part}.api").router)
+    except ModuleNotFoundError as _e:
+        if _e.name not in (f"app.{_part}", f"app.{_part}.api"):
+            raise
+        _logging.getLogger(__name__).info("phase 4 part %s not present", _part)
 
 
 if WEB.exists():
