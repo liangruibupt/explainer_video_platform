@@ -97,17 +97,26 @@ SageMaker 和 sglang 服务对接的方式：
 
 ## 8. 成本和耗时（2026-11-03 部署实测，ap-south-1）
 
-部署代码、镜像、IAM、权重、端点配置全部就绪并验证通过，但**端点没能跑到 InService：
-ap-south-1 当天 g7e 没有容量**。两次 `deploy.py up` 都在约 16 分钟后以
-`InsufficientInstanceCapacity` 失败（先试首选 ml.g7e.4xlarge、再试 ml.g7e.8xlarge，两种都没容量）。
+部署代码、镜像、IAM、权重、端点配置全部就绪并验证通过，但**端点始终没能跑到 InService：
+ap-south-1 的 g7e 持续没有容量**。至今共 5 次 `deploy.py up` 全部在约 16–17 分钟后以
+`InsufficientInstanceCapacity` 失败（先试首选 ml.g7e.4xlarge、再试 ml.g7e.8xlarge，两种都没容量）：
+
+- 2026-11-03：2 次（首轮）。
+- 2026-11-04（Spot 容量评分 9/10 时重试，每次失败后退避 20 分钟）：
+  - 尝试 1：00:22:20Z 起，00:39:26Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
+  - 尝试 2：00:53:24Z 起，01:10:44Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
+  - 尝试 3：01:30:05Z 起，01:47:02Z 报 `InsufficientInstanceCapacity`（约 17 分钟）。
+
+Spot 容量评分（9/10）只是提示、并不保证按需（on-demand）能拿到容量，实测依旧全程拿不到。
 这是 AWS 侧的瞬时容量问题，不是代码/镜像/权限/配置的问题，设计第 4 节已预计到这种情况。
+失败的端点从没到过 InService，也没产生实例计费；每次失败后都 `deploy.py down`，确认端点/配置/模型全部清空。
 所以下表里和生成速度、缩容、单次创作成本相关的行仍是**估算**，要等有容量跑通后再填实测值。
 
 | 项目 | 状态 | 实测 / 估算 |
 |---|---|---|
 | 容器镜像构建 + 推 ECR | ✅ 实测 | 临时 EC2（m7i.2xlarge，ap-south-1）上约 7 分钟：拉 14 GB 基础镜像（约 160 s 解包）+ 装 fastapi/uvicorn + 推 v2 manifest。镜像 `evp/minimax-h3:adapter-20261103-150557` |
 | IAM 角色校验 | ✅ 实测 | 首次用带 `s3:prefix` 条件的 ListBucket，被 SageMaker 角色预校验拒；去掉条件（Get 全桶 + Put 限 `jobs/`+ List 全桶）后通过 |
-| 实例起不来到报错 | ✅ 实测 | 每次约 16 分钟，然后 `InsufficientInstanceCapacity`。整个过程没出现日志组，说明容量始终没拿到，不是下载/加载阶段的问题 |
+| 实例起不来到报错 | ✅ 实测 | 每次约 16–17 分钟，然后 `InsufficientInstanceCapacity`（至今 5 次全是如此）。整个过程没出现日志组，说明容量始终没拿到，不是下载/加载阶段的问题 |
 | 首次部署到 InService | ⏳ 未测 | 预计 15–25 分钟：实例启动、拉 14 GB 镜像、下载约 90 GB 权重、加载、预热（只热 768p 16:9） |
 | 从 0 冷启动到第一条片 | ⏳ 未测 | 同上冷启动 + 约 36 秒生成 |
 | 单条 768p、5 秒（8 步，Turbo + Cache-DiT） | ⏳ 未测（估算） | 约 36 秒生成，加约 10 秒排队和传输。参考仓库 c380891 在 g7e 上的实测是 36 秒 |
@@ -123,7 +132,8 @@ EC2 按需价并标注来源：ml.g7e.4xlarge **$6.53/小时**（首选）、ml.
 **重跑说明**：代码已就绪，有容量时 `cd infra/video && python3 deploy.py up --weights
 s3://evp-models-747411437379-ap-south-1/weights/minimax-h3/42ed227ee7df40d41602854ae760620d6eb651fe/`
 即可（镜像和权重都在），跑通后 `deploy.py smoke` 做一条 768p t2va，再把上表的估算行换成实测。
-若长期没容量，可考虑东京 ap-northeast-1（设计第 2 节列为备选区）。
+ap-south-1 的 g7e 已连续 5 次（2026-11-03 两次、2026-11-04 三次）都没拿到容量，建议下一步直接改到
+东京 ap-northeast-1（设计第 2 节列为备选区）重试——需先把镜像和权重跨区复制过去。
 
 ## 9. 验收
 
