@@ -22,7 +22,7 @@
   "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
   "min_driver_major": 570,
   "root_gb": 80,
-  "instance_profile": "evp-video-builder",
+  "instance_profile": "evp-gpu-worker",
   "security_group": "evp-gpu-worker",
   "name": "evp-image-worker",
   "tags": {
