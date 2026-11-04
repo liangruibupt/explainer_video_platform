@@ -10,7 +10,7 @@
 - **任务中心**：所有任务，包括正在制作和失败的。
 - **图像**：Qwen-Image 2.1 生成 1080p 图片（16:9、9:16、1:1，可选透明背景）。页面顶部显示 GPU 状态：已就绪、启动中、已缩到 0。设计和实测见 [IMAGE.md](IMAGE.md)。
 - **AI 视频**（`/video`）：MiniMax H3 生成 5 秒、768p、24 fps、带音轨的镜头（16:9 或 9:16，可设 seed），记录里直接播放。设计和实测见 [VIDEO.md](VIDEO.md)。
-- **音乐**（`/music`）：YuE2-3B 按风格和歌词生成 48 kHz 立体声 FLAC，附 ABC 乐谱。「纯音乐」开关把歌词换成 `[Intro] [Instrumental] [Outro]`，并在风格末尾补上 `ambient, no drums, instrumental, no vocals`；可选 cot（full / off）和 seed。纯音乐长度 4–5 分钟，不能指定。见 [MUSIC.md](MUSIC.md)。
+- **音乐**（`/music`）：YuE2-3B 按风格和歌词生成 48 kHz 立体声 FLAC，附 ABC 乐谱。「纯音乐」开关把歌词换成 `[Intro] [Instrumental] [Outro]`，并在风格末尾补上 `ambient, no drums, instrumental, no vocals`；可选 cot（full / off）和 seed。纯音乐长度 4–5 分钟，不能指定。「编排说明」（可选，中英文都行）写乐器怎么进、段落怎么发展，由 Opus 转成英文风格词拼进风格里（纯音乐时 `instrumental, no vocals` 仍放在最后），不会进歌词，所以不会被唱出来；生成记录里显示实际发给模型的风格词。见 [MUSIC.md](MUSIC.md)。
 - 三个生成页顶部都有 GPU 状态（已就绪、启动中、未运行），GPU 是平台自己启停的 EC2 实例，空闲 15 分钟自己关机。
 - **进阶（规划中）**：工作流，只显示设计说明。
 
@@ -48,7 +48,7 @@
 
 分镜接口的格式：Opus 返回 `{"scenes": [...], "music_style": "..."}`；旧的纯数组格式仍然接受。
 
-视频页的接口：`GET /api/video/status`，`POST /api/videos`（`prompt`、`aspect`=`16:9`/`9:16`、`seed`），`GET /api/videos`、`GET /api/videos/{id}`、`GET /api/videos/{id}/0.mp4`，存在 `data/videos/`。音乐页的接口：`GET /api/music/status`，`POST /api/musics`（`style`、`lyrics`、`cot`=`full`/`off`、`seed`），`GET /api/musics`、`GET /api/musics/{id}`、`GET /api/musics/{id}/0.flac`（超过 40 MB 时是 `0.mp3`）和 `score.abc`，存在 `data/music/`。
+视频页的接口：`GET /api/video/status`，`POST /api/videos`（`prompt`、`aspect`=`16:9`/`9:16`、`seed`），`GET /api/videos`、`GET /api/videos/{id}`、`GET /api/videos/{id}/0.mp4`，存在 `data/videos/`。音乐页的接口：`GET /api/music/status`，`POST /api/musics`（`style`、`lyrics`、`cot`=`full`/`off`、`seed`、可选 `arrangement`），`GET /api/musics`、`GET /api/musics/{id}`、`GET /api/musics/{id}/0.flac`（超过 40 MB 时是 `0.mp3`）和 `score.abc`，存在 `data/music/`。
 
 图像页用的接口：`GET /api/image/status`（端点状态），`POST /api/images`（`prompt`、`ratio`、`mode`=`t2i`/`rgba`、`seed`、`n`），`GET /api/images`、`GET /api/images/{id}`、`GET /api/images/{id}/0.png`。图片存在 `data/images/`。
 

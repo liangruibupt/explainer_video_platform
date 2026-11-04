@@ -64,15 +64,37 @@ def _video(req, on_wait):
     return [("0.mp4", mp4)], {}
 
 
+TAIL = "ambient, no drums, instrumental, no vocals"
+INSTRUMENTAL = "[Intro]\n\n[Instrumental]\n\n[Outro]"
+
+
+def _style_with_arrangement(req):
+    """Style sent to YuE2: the user's style plus English tags made from the arrangement note.
+    For instrumentals the no-vocals tail stays at the very end."""
+    style, note = req["style"].strip(), (req.get("arrangement") or "").strip()
+    if not note:
+        return style, ""
+    from . import llm
+    tags = llm.arrangement_tags(note)
+    instrumental = req["lyrics"].strip() == INSTRUMENTAL or style.lower().endswith(TAIL)
+    base = style[: -len(TAIL)].rstrip(" ,") if style.lower().endswith(TAIL) else style
+    final = f"{base}, {tags}" if base else tags
+    if instrumental:
+        final = f"{final}, {TAIL}"
+    return final, tags
+
+
 def _music(req, on_wait):
     from . import music
-    r = music.generate(req["style"], req["lyrics"], cot=req["cot"], seed=req["seed"],
+    style, tags = _style_with_arrangement(req)
+    r = music.generate(style, req["lyrics"], cot=req["cot"], seed=req["seed"],
                        on_wait=on_wait)
     ext = "mp3" if r.get("format") == "mp3" else "flac"
     files = [(f"0.{ext}", r["flac"])]
     if r.get("abc"):
         files.append(("score.abc", str(r["abc"]).encode()))
-    return files, {"audio_seconds": r.get("seconds")}
+    return files, {"audio_seconds": r.get("seconds"), "sent_style": style,
+                   "arrangement_tags": tags}
 
 
 videos = Store("videos", _video)

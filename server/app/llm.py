@@ -334,6 +334,23 @@ def scene_html(scenes: list, frames: list, width: int, height: int, log=None,
                 .replace("__DUR__", json.dumps(frames)).replace("__SCENES__", ",\n".join(blocks)))
 
 
+ARRANGE_SYSTEM = """You turn a short arrangement note for an instrumental music piece into style
+tags for the YuE2 music model. Input may be in any language. Output ONE line of concise English
+tags separated by commas: instruments, how the piece develops section by section (e.g. "solo
+guqin intro, xiao flute joins, soft strings in the middle, slow fade out"), tempo, mood. At most
+40 words. No sentences, no quotes, no lyrics, no singing or vocal words. Output only the line."""
+
+
+def arrangement_tags(note: str) -> str:
+    """English style tags for an arrangement note; never empty on success."""
+    line = ask(ARRANGE_SYSTEM, note.strip(), max_tokens=200).strip().splitlines()[0]
+    line = re.sub(r"\b(vocals?|singing|sung|lyrics?|choir|voice)\b", "", line, flags=re.I)
+    line = re.sub(r"\s*,\s*(,\s*)+", ", ", line).strip(" ,.\"'")
+    if not line:
+        raise ValueError("empty arrangement tags")
+    return line
+
+
 def _extract(text: str, start: str, lower: bool = False) -> str:
     t = text.strip()
     t = re.sub(r"^```[a-zA-Z]*\n", "", t)
