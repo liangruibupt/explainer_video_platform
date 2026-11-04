@@ -1,0 +1,32 @@
+{
+ "infinitetalk_15s_480_fast": {
+  "frames": 356,
+  "video_s": 14.24,
+  "face_found": 1.0,
+  "lipsync_corr": 0.163,
+  "lipsync_lag_ms": 80,
+  "id_cos_start": 0.954,
+  "id_cos_end": 0.794,
+  "id_cos_min": 0.676,
+  "color_dE_first_last": 0.03,
+  "size": [
+   896,
+   448
+  ]
+ },
+ "longcat_15s_480_fast": {
+  "frames": 356,
+  "video_s": 14.24,
+  "face_found": 1.0,
+  "lipsync_corr": 0.195,
+  "lipsync_lag_ms": 240,
+  "id_cos_start": 0.935,
+  "id_cos_end": 0.596,
+  "id_cos_min": 0.432,
+  "color_dE_first_last": 0.58,
+  "size": [
+   832,
+   480
+  ]
+ }
+}

@@ -74,10 +74,10 @@
       "720_full": 670
     },
     "longcat": {
-      "480_fast": 24,
-      "720_fast": 55,
-      "480_full": 24,
-      "720_full": 55
+      "480_fast": 31,
+      "720_fast": 71,
+      "480_full": 31,
+      "720_full": 71
     }
   },
   "render_note": "480_fast for both models measured warm on g7e.4xlarge 2026-11-04; other cells estimated (docs/AVATAR.md). longcat fast/full are the same path (8-step distill is required).",
