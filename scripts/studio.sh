@@ -17,7 +17,9 @@ case "${1:-status}" in
     if running; then echo "already running (pid $(cat "$PIDFILE")) on http://127.0.0.1:$PORT"; exit 0; fi
     [ -d "$ROOT/web/dist" ] || (cd "$ROOT/web" && npm install --no-audit --no-fund && npm run build)
     cd "$ROOT/server"
-    nohup "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" > "$DATA/server.log" 2>&1 &
+    # setsid: own session, so the server survives the shell (or agent session) that started it.
+    setsid nohup "$PY" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
+      >> "$DATA/server.log" 2>&1 < /dev/null &
     echo $! > "$PIDFILE"
     for _ in $(seq 1 20); do
       curl -fs -m 2 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break
