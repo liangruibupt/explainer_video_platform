@@ -1,0 +1,19 @@
+{
+  "_doc": "Music endpoint config. deploy.py fetches each candidate's GPU memory, host memory and on-demand price for the region, keeps those with enough of both, and orders the pool cheapest first.",
+  "region": "us-east-1",
+  "endpoint": "evp-music",
+  "weights": "s3://evp-models-747411437379-us-east-1/weights/yue2-3b/8f24312f187763b9854adeec87e437e2b03bbff1/",
+  "candidates": ["ml.g6.2xlarge", "ml.g5.2xlarge", "ml.g6e.2xlarge",
+                 "ml.g6e.xlarge", "ml.g6.4xlarge", "ml.g5.4xlarge"],
+  "gpu_gib_needed": 22,
+  "host_gib_needed": 30,
+  "inference_ami": "al2023-ami-sagemaker-inference-gpu-4-1",
+  "volume_gb": 60,
+  "provision_timeout_s": 900,
+  "download_timeout_s": 1800,
+  "startup_timeout_s": 1800,
+  "max_instances": 1,
+  "scale_in_idle_s": 900,
+  "max_concurrent_per_instance": 1,
+  "tags": {"project": "explainer-video", "module": "music"}
+}
