@@ -6,7 +6,7 @@ then video continuation (generate_avc, 80 new frames each) until the audio is co
 nothing here. `int8` picks the INT8 DiT (`--use_int8`); default bf16 on a >=60 GB GPU,
 INT8 below that (L40S 48 GB).
 """
-import math, os, sys, time
+import math, os, subprocess, sys, time
 from pathlib import Path
 
 sys.path.insert(0, "/opt/longcat")
@@ -88,7 +88,10 @@ class LongCat:
         from diffusers.utils import load_image
         from PIL import Image
         if video_path:
-            raise ValueError("longcat: reference video input is not wired in this adapter; send image_b64")
+            # Reference video: LongCat's ai2v takes an image, so condition on the first frame.
+            image_path = str(Path(tmp) / "ref_frame0.png")
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", video_path, "-frames:v", "1",
+                            image_path], check=True)
         load_s = self._load(int8=(gpu_gb < 60) if int8 is None else bool(int8))
         # Vocal extraction (the reference pipeline always runs it; clean TTS passes through).
         outs = self.sep.separate(str(wav16k))

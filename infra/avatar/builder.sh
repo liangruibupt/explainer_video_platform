@@ -16,8 +16,15 @@ push_log() { aws s3 cp --only-show-errors $LOG "$P/build.log" || true; }
 finish() { log "finish: $1"; echo "{\"result\": \"$1\", \"tag\": \"$TAG\", \"ts\": $(date +%s)}" > /tmp/status.json
   aws s3 cp --only-show-errors /tmp/status.json "$P/status.json"; push_log; sleep 5; shutdown -h now; exit 0; }
 
-# Work disk: the large gp3 data volume (/dev/sdf -> nvme1n1 on Nitro).
-DEV=$(lsblk -dpno NAME,SIZE | awk '$2 ~ /G$/ && $1 != "/dev/nvme0n1" {print $1}' | head -1)
+# Work disk: the large gp3 data volume (/dev/sdf). It can attach a few seconds after boot,
+# so wait for a second disk of >= 300 GB rather than racing the first lsblk.
+DEV=""
+for _ in $(seq 1 30); do
+  DEV=$(lsblk -dpnbo NAME,SIZE | awk '$2 >= 300*1024^3 {print $1}' | head -1)
+  [ -n "$DEV" ] && break; sleep 5
+done
+log "lsblk: $(lsblk -dpno NAME,SIZE | tr '\n' ';') -> $DEV"
+[ -n "$DEV" ] || finish "no data disk"
 mkfs.xfs -f "$DEV" && mkdir -p /work && mount "$DEV" /work || finish "mount failed"
 log "work disk $DEV $(df -h /work | tail -1)"
 

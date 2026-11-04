@@ -18,14 +18,16 @@ from app.gpu_ec2 import GpuEC2  # noqa: E402
 PROMPT = ("A young woman shop presenter in a bright supermarket aisle talks to the camera, "
           "smiling, natural hand gestures, steady camera")
 MATRIX = []
+# Order matters (one GPU, FIFO): each model's runs are grouped so the model loads once,
+# and the most important runs (15 s fast, 90 s long-video) come first.
 for m in ("infinitetalk", "longcat"):
     MATRIX += [
         (f"{m}_15s_480_fast", m, "p169", "pitch15", "480", True),
-        (f"{m}_15s_720_fast", m, "p169", "pitch15", "720", True),
-        (f"{m}_15s_480_full", m, "p169", "pitch15", "480", False),
+        (f"{m}_90s_480_fast", m, "p169", "live90", "480", True),
         (f"{m}_15s_480_fast_916", m, "p916", "pitch15", "480", True),
         (f"{m}_45s_480_fast", m, "p169", "promo45", "480", True),
-        (f"{m}_90s_480_fast", m, "p169", "live90", "480", True),
+        (f"{m}_15s_720_fast", m, "p169", "pitch15", "720", True),
+        (f"{m}_15s_480_full", m, "p169", "pitch15", "480", False),
     ]
 
 
