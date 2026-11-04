@@ -1,0 +1,11 @@
+# Exact pins required by yue2_infer-0.1.5 (torch==2.10.0 is installed from the cu128 index first).
+transformers==4.57.6
+huggingface-hub==0.36.2
+safetensors==0.7.0
+tiktoken==0.12.0
+numpy==2.2.6
+soundfile==0.13.1
+accelerate==1.13.0
+# Adapter only (versions from the wheel's "serve" extra).
+fastapi==0.136.1
+uvicorn==0.46.0
