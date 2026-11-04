@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import image, images, pipeline
+from . import image, images, media, pipeline
 
 app = FastAPI(title="explainer_video_platform")
 WEB = Path(__file__).resolve().parents[2] / "web" / "dist"
@@ -31,6 +31,7 @@ class JobIn(BaseModel):
     scene_context: str = Field(default="", max_length=8000)
     background_png_b64: str = Field(default="", max_length=12_000_000)
     illustrations: int = Field(default=0, ge=0, le=4)
+    clips: int = Field(default=0, ge=0, le=2)
 
 
 @app.get("/api/health")
@@ -64,7 +65,8 @@ def create(body: JobIn):
     return pipeline.create_job(job_id, body.topic.strip(), body.language, body.seconds,
                                body.ratio, body.captions, body.music, body.voice,
                                brief=body.brief.strip(), scene_context=body.scene_context.strip(),
-                               background_png=bg, illustrations=body.illustrations)
+                               background_png=bg, illustrations=body.illustrations,
+                               clips=body.clips)
 
 
 class ImageIn(BaseModel):
@@ -122,6 +124,72 @@ def _id(job_id: str) -> str:
     if not re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}", job_id):
         raise HTTPException(404, "no such job")
     return job_id
+
+
+class VideoIn(BaseModel):
+    prompt: str = Field(min_length=2, max_length=1500)
+    aspect: str = Field(default="16:9", pattern=r"^(16:9|9:16)$")
+    seed: int = Field(default=7, ge=0, le=2**31 - 1)
+
+
+class MusicIn(BaseModel):
+    style: str = Field(min_length=2, max_length=600)
+    lyrics: str = Field(default="[Intro]\n\n[Instrumental]\n\n[Outro]", min_length=2,
+                        max_length=4000)
+    cot: str = Field(default="full", pattern=r"^(full|off)$")
+    seed: int = Field(default=831001, ge=0, le=2**31 - 1)
+
+
+def _gpu_status(mod):
+    try:
+        return mod.status()
+    except Exception as e:  # noqa: BLE001 - e.g. no AWS credentials
+        return {"deployed": False, "state": "unavailable", "error": str(e)[:200]}
+
+
+@app.get("/api/video/status")
+def video_status():
+    from . import video
+    return _gpu_status(video)
+
+
+@app.get("/api/music/status")
+def music_status():
+    from . import music as music_mod
+    return _gpu_status(music_mod)
+
+
+def _media_routes(path: str, store, model, files: dict):
+    def lst():
+        return store.list_all()
+
+    def create_item(body: model):
+        item_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+        return store.create(item_id, body.model_dump())
+
+    def get_item(item_id: str):
+        s = store.get(_img_id(item_id))
+        if not s:
+            raise HTTPException(404, "no such item")
+        return s
+
+    def get_file(item_id: str, name: str):
+        if name not in files:
+            raise HTTPException(404, "no such file")
+        p = store.root / _img_id(item_id) / name
+        if not p.exists():
+            raise HTTPException(404, "not ready")
+        return FileResponse(p, media_type=files[name])
+
+    app.get(f"/api/{path}")(lst)
+    app.post(f"/api/{path}", status_code=201)(create_item)
+    app.get(f"/api/{path}/{{item_id}}")(get_item)
+    app.get(f"/api/{path}/{{item_id}}/{{name}}")(get_file)
+
+
+_media_routes("videos", media.videos, VideoIn, {"0.mp4": "video/mp4"})
+_media_routes("musics", media.musics, MusicIn, {"0.flac": "audio/flac", "0.mp3": "audio/mpeg",
+                                                "score.abc": "text/plain"})
 
 
 @app.get("/api/jobs/{job_id}")

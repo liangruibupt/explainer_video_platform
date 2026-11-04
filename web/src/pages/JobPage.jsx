@@ -26,7 +26,8 @@ export default function JobPage() {
     const j = await api('/jobs', {
       method: 'POST',
       body: JSON.stringify({ topic: job.topic, seconds: job.seconds, ratio: job.ratio,
-                             captions: job.captions, music: job.music }),
+                             captions: job.captions, music: job.music,
+                             illustrations: job.illustrations || 0, clips: job.clips || 0 }),
     })
     nav(`/jobs/${j.id}`)
   }
@@ -39,9 +40,12 @@ export default function JobPage() {
         <span className={`pill ${job.status}`}>{STATUS[job.status]}</span>
       </div>
       <p className="sub">
-        {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {({ synth: '合成垫乐', none: '无音乐', guqin: '古琴' })[job.music] || job.music}
+        {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {({ synth: '合成垫乐', none: '无音乐', guqin: '古琴', ai: 'AI 音乐' })[job.music] || job.music}
         {job.duration ? ` · 成片 ${job.duration} 秒` : ''}
       </p>
+      {job.music === 'ai' && (job.music_source || job.music_style) && (
+        <p className="muted">音乐：{job.music_source || '生成中'}{job.music_style ? ` · 风格「${job.music_style}」` : ''}</p>
+      )}
 
       <div className="job-grid">
         <div>
@@ -78,6 +82,7 @@ export default function JobPage() {
                 <li key={s.id}>
                   <b>{i + 1}. {s.title || s.id}</b>
                   {s.illustration && <span className="pill soon">AI 插图</span>}
+                  {s.clip && <span className="pill soon">AI 镜头</span>}
                   {s.frames && <span className="frames">{(s.frames / 30).toFixed(1)}s</span>}
                   <p>{s.narration}</p>
                 </li>
