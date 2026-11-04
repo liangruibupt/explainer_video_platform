@@ -272,9 +272,10 @@ class FakeCtx:
 
 
 def test_node_registers_into_a_copy_and_runs(media_files, tmp_path):
-    table = dict(NODES)
+    table = {k: v for k, v in NODES.items() if k != "input.asset"}
     decl = asset_node.register(table)
-    assert "input.asset" in table and "input.asset" not in NODES
+    # Registered into the copy; integration also registers it in the real NODES (nodes.py).
+    assert "input.asset" in table and "input.asset" in NODES
     assert set(decl["outputs"]) == {"image", "audio", "video"}
     assert set(decl) >= set(next(iter(NODES.values())))  # same keys as library nodes
     for fmt in ("png", "wav", "mp4"):
