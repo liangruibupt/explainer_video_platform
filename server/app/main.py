@@ -138,6 +138,7 @@ class MusicIn(BaseModel):
                         max_length=4000)
     cot: str = Field(default="full", pattern=r"^(full|off)$")
     seed: int = Field(default=831001, ge=0, le=2**31 - 1)
+    arrangement: str = Field(default="", max_length=500)
 
 
 def _gpu_status(mod):

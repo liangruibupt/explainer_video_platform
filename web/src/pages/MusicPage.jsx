@@ -25,6 +25,9 @@ function Result({ it }) {
           {it.seconds ? ` · 用时 ${it.seconds} 秒` : ''}
           {f && <> · <a href={`/api/musics/${it.id}/${f}`} download>下载</a></>}</div>
         <div className="clamp">{it.style}</div>
+        {it.arrangement && <div className="clamp muted">编排：{it.arrangement}</div>}
+        {it.sent_style && it.sent_style !== it.style &&
+          <div className="clamp muted" title={it.sent_style}>实际风格词：{it.sent_style}</div>}
         {it.lyrics !== INSTRUMENTAL && <div className="clamp muted">{it.lyrics}</div>}
         {it.error && <div className="error">{it.error}</div>}
       </div>
@@ -35,6 +38,7 @@ function Result({ it }) {
 export default function MusicPage() {
   const [style, setStyle] = useState('')
   const [lyrics, setLyrics] = useState(INSTRUMENTAL)
+  const [arrangement, setArrangement] = useState('')
   const [instrumental, setInstrumental] = useState(true)
   const [cot, setCot] = useState('full')
   const [seed, setSeed] = useState(831001)
@@ -54,7 +58,7 @@ export default function MusicPage() {
     if (style.trim().length < 2) { setErr('先写风格'); return }
     setBusy(true); setErr(null)
     try {
-      await api('/musics', { method: 'POST', body: JSON.stringify({ style, lyrics, cot, seed }) })
+      await api('/musics', { method: 'POST', body: JSON.stringify({ style, lyrics, cot, seed, arrangement }) })
       setTick((t) => t + 1)
     } catch (e) { setErr(e.message) }
     setBusy(false)
@@ -68,6 +72,9 @@ export default function MusicPage() {
       <div className="composer">
         <textarea value={style} onChange={(e) => setStyle(e.target.value)} style={{ minHeight: 70 }}
                   placeholder="风格（英文）：流派、乐器、速度、情绪。纯音乐以 ambient, no drums, instrumental, no vocals 结尾" />
+        <textarea value={arrangement} onChange={(e) => setArrangement(e.target.value)}
+                  style={{ minHeight: 56 }} maxLength={500}
+                  placeholder="编排说明（可选，中英文都行）：乐器怎么进、段落怎么发展。例如：先古琴独奏引入，箫随后加入，中段加一点轻柔弦乐，最后慢慢淡出。会转成英文风格词加进风格里，不会被唱出来" />
         <textarea value={lyrics} onChange={(e) => setLyrics(e.target.value)} disabled={instrumental}
                   style={{ minHeight: 90 }} placeholder="歌词，用 [Verse] [Chorus] 等段落标签分段" />
         <div className="row">
