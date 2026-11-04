@@ -80,8 +80,15 @@ class GpuEC2:
             return dict(json.loads(fail), ok=False)
         return None
 
+    def fetch(self, res, key="video_b64"):
+        """List of bytes for one output key of a result (see worker.store_outputs)."""
+        keys = (res.get("files") or {}).get(key)
+        if not keys and key == "video_b64" and res.get("video_key"):
+            keys = [res["video_key"]]  # results written by the first video worker
+        return [self._get(k) for k in keys or []]
+
     def fetch_video(self, res, path):
-        Path(path).write_bytes(self._get(res["video_key"]))
+        Path(path).write_bytes(self.fetch(res, "video_b64")[0])
         return path
 
     def heartbeat(self):

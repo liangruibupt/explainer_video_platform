@@ -1,0 +1,187 @@
+{
+  "_doc": "EC2 GPU worker config for the music module (YuE2-3B, infra/music/container). Needs >=22 GiB GPU and ~30 GiB host memory. Capacity: on-demand cheapest first, then the same as Spot; only AZs that offer the type, at most 3 per type.",
+  "module": "music",
+  "region": "us-east-1",
+  "bucket": "evp-models-747411437379-us-east-1",
+  "jobs_prefix": "jobs/music-ec2/",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/yue2:20261104-013851-amd64",
+  "weights": "s3://evp-models-747411437379-us-east-1/weights/yue2-3b/8f24312f187763b9854adeec87e437e2b03bbff1/",
+  "model_mount": "/opt/ml/model",
+  "container_port": 8080,
+  "container_name": "yue2",
+  "docker_args": [
+    "--ipc",
+    "host"
+  ],
+  "env": {},
+  "outputs": {
+    "audio_b64": "flac"
+  },
+  "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
+  "min_driver_major": 570,
+  "root_gb": 80,
+  "instance_profile": "evp-gpu-worker",
+  "security_group": "evp-gpu-worker",
+  "name": "evp-music-worker",
+  "tags": {
+    "project": "explainer-video",
+    "module": "music"
+  },
+  "capacity": [
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1c",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g6.2xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g5.2xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g6.4xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g5.4xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.xlarge",
+      "az": "us-east-1c",
+      "market": "spot"
+    }
+  ],
+  "idle_shutdown_s": 900,
+  "hard_cap_s": 14400,
+  "ready_timeout_s": 2400,
+  "invoke_timeout_s": 1800,
+  "heartbeat_stale_s": 180
+}

@@ -83,7 +83,7 @@ H3 生成的视频自带声音，混音时去掉这条音轨，只保留旁白�
 **队列放在 S3**（单用户，不需要新的 IAM 权限），都在 `jobs/video/` 下：
 - `in/<id>.json`：请求。控制器写入后，如果没有实例就启动一台。
 - `claimed/<id>.json`：认领标记。worker 用 S3 条件写入（`If-None-Match`）认领，两台机器不会同时拿到同一个任务。
-- `out/<id>.json` 和 `out/<id>.mp4`：结果；`fail/<id>.json`：失败原因。
+- `out/<id>.json` 和 `out/<id>.0.mp4`：结果（结果 JSON 的 `files` 列出输出文件，`video_key` 为兼容旧版保留）；`fail/<id>.json`：失败原因。
 - `heartbeat.json`：实例 id、状态（booting / loading / ready / busy）、时间、机型、可用区、按需还是 Spot。超过 3 分钟没更新就算过期。
 - `logs/<实例 id>.log`：实例日志（实例没有入站端口，日志随心跳传到 S3）。
 
@@ -100,7 +100,7 @@ H3 生成的视频自带声音，混音时去掉这条音轨，只保留旁白�
 6. 等 `/ping` 返回 200，然后每 5 秒查一次队列，一次跑一个任务。
 7. 连续 15 分钟没有任务就 `shutdown -h now`，实例随即终止。
 
-**权限**：这次测试用现有的 `evp-video-builder` 实例配置文件（它能读写整个桶、能推 ECR，但没有 S3 删除权限，所以由控制器清理 `in/` 和 `claimed/`）。**建议改用** `infra/gpu_ec2/grant_worker_role.sh` 创建的最小权限角色 `evp-video-worker`：只读权重，读写 `jobs/video/*`，只能拉镜像，加 SSM。这个脚本要由管理员在 CloudShell 里运行，运行后把配置里的 `instance_profile` 改成 `evp-video-worker`。
+**权限**：这次测试用现有的 `evp-video-builder` 实例配置文件（它能读写整个桶、能推 ECR，但没有 S3 删除权限，所以由控制器清理 `in/` 和 `claimed/`）。**建议改用** `infra/gpu_ec2/grant_worker_role.sh` 创建的最小权限角色 `evp-gpu-worker`（图像、视频、音乐三个模块共用）：只读权重，读写 `jobs/video/*`，只能拉镜像，加 SSM。这个脚本要由管理员在 CloudShell 里运行，运行后把三个模块配置里的 `instance_profile` 都改成 `evp-gpu-worker`。
 
 控制面（工作室、编排、作品存储）仍在 us-east-1，输入输出走孟买的 S3。一条片子 1–2 MB，跨区域传输费可以忽略。
 
@@ -154,4 +154,4 @@ H3 生成的视频自带声音，混音时去掉这条音轨，只保留旁白�
 
 - 默认分辨率：768p 还是 480p。480p 快 3 倍，但放大到 1080p 后会比较软。
 - 是否需要 ref2va（参考图生视频，人物或物品保持一致）。需要的话要再部署一个端点，权重再加约 90 GB。
-�是把镜像和权重复制到东京 ap-northeast-1，在容量顺序里加上东京。
+- 孟买 g7e 长期拿不到容量时，备选是把镜像和权重复制到东京 ap-northeast-1，在容量顺序里加上东京。
