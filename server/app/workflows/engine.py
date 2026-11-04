@@ -29,6 +29,7 @@ import uuid
 from pathlib import Path
 
 from ..pipeline import DATA
+from . import candidates as cand
 from .nodes import FILE_TYPES, NODES, effective_params
 from .validate import parse_port, topo_order, validate
 
@@ -73,8 +74,10 @@ def value_hash(value, port_type: str) -> str:
 def cache_key(node_type: str, params: dict, input_hashes: dict) -> str:
     """sha256 of type + version + effective params + {port: input hash}."""
     d = NODES[node_type]
+    eff = effective_params(node_type, params)
+    eff.pop("candidates", None)  # each candidate is keyed by its own seed instead
     blob = json.dumps({"type": node_type, "version": d["version"],
-                       "params": effective_params(node_type, params),
+                       "params": eff,
                        "inputs": dict(sorted(input_hashes.items()))},
                       sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode()).hexdigest()
@@ -345,6 +348,10 @@ def _exec(run_id: str, nid: str) -> None:
         params = effective_params(node["type"], node.get("params") or {})
         hashes = {p: value_hash(v, decl["inputs"][p]) for p, v in inputs.items()}
         key = cache_key(node["type"], node.get("params") or {}, hashes)
+        n_cand = cand.count(node["type"], node.get("params") or {})
+        if n_cand > 1:
+            _exec_candidates(run, run_id, nid, node, decl, hashes, n_cand, t0)
+            return
         hit = cache_get(key) if decl["cache"] else None
         if hit:
             def done_cached(r):
@@ -399,17 +406,52 @@ def _exec(run_id: str, nid: str) -> None:
         update(run_id, failed)
 
 
+def _exec_candidates(run, run_id, nid, node, decl, hashes, n, t0):
+    """N candidates with seeds seed..seed+N-1 (candidates.py); the node then waits for a
+    review that picks one. Exceptions propagate to _exec, which marks the node failed."""
+    inputs = _inputs(run, nid)
+    runner = decl["runner"]
+    params = node.get("params") or {}
+    base = effective_params(node["type"], params)["seed"]
+    keys = [cache_key(node["type"], {**params, "seed": s}, hashes) for s in cand.seeds(base, n)]
+    if not decl["cache"] or not all(cache_get(k) for k in keys):
+        _warm_downstream(run, nid)  # only on a miss, as in _exec
+
+    def call(params, ctx):
+        if runner.startswith("gpu:"):
+            lock = _gpu_lock(runner[4:])
+            if lock.locked():
+                ctx.note("排队：同一 GPU 模块上一个节点还没完成")
+            with lock:
+                return decl["run"](inputs, params, ctx)
+        return decl["run"](inputs, params, ctx)
+
+    cands = cand.generate(run_id, nid, node, hashes, n, call)
+    update(run_id, lambda r: cand.mark_waiting(r, nid, cands, t0, _event))
+
+
 # ---------------------------------------------------------------- review / retry
 
-def review(run_id: str, nid: str, decision: str, note: str = "") -> dict:
+def review(run_id: str, nid: str, decision: str, note: str = "", choice=None) -> dict:
+    """Approve or reject a waiting node. A node waiting with candidates (candidates.py)
+    needs choice=k on approve; candidate k's outputs then flow downstream."""
     def apply(r):
         n = r["nodes"].get(nid)
         if not n or n["status"] != "waiting_review":
             raise ValueError(f"{nid} is not waiting for review")
+        if decision == "approve" and n.get("candidates"):
+            outputs = cand.choose(n, choice)  # raises before anything is changed
         n["review"] = {"decision": decision, "note": note, "t": time.time()}
+        if n.get("candidates") and decision == "approve":
+            n["review"]["choice"] = choice
         n["ended"] = time.time()
         n["seconds"] = round(n["ended"] - n.get("started", n["ended"]), 2)
-        if decision == "approve":
+        if decision == "approve" and n.get("candidates"):
+            n.update(status="done", outputs=outputs)
+            n.pop("note", None)
+            r["status"] = "running"
+            _event(r, f"{nid} approved candidate {choice}" + (f": {note}" if note else ""))
+        elif decision == "approve":
             outputs = {"output": n.pop("review_input")}
             if NODES["review.human"]["cache"]:
                 outputs = cache_put(n["cache_key"], "review.human", outputs,
