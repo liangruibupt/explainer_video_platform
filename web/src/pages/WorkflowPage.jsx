@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, usePoll, ago } from '../api.js'
 
 // Workflow page (DESIGN.md sections 5-6): templates, one-sentence generation, a graph view
@@ -151,7 +152,23 @@ function Inspector({ wf, nid, decl, run, onParam, onReview, onRetry }) {
             {rs.seconds != null && <span className="muted"> 用时 {rs.seconds} 秒</span>}
             {rs.note && <span className="muted"> · {rs.note}</span>}</div>
           {rs.error && <div className="error">{rs.error}</div>}
-          {rs.status === 'waiting_review' && (
+          {rs.status === 'waiting_review' && rs.candidates?.length > 0 && (
+            <>
+              <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{rs.candidates.length} 个候选，选一个往下走</div>
+              <input className="wf-note" placeholder="审核意见（可空）" value={note} onChange={(e) => setNote(e.target.value)} />
+              {rs.candidates.map((c) => (
+                <div key={c.k} className="wf-cand">
+                  <div className="muted" style={{ fontSize: 12 }}>候选 {c.k + 1} · seed {c.seed}{c.cached ? ' · 缓存' : ''}</div>
+                  {Object.keys(c.outputs).map((p) => (
+                    <Value key={p} runId={run.id} nid={nid} port={`c${c.k}.${p}`} v={c.outputs[p]} />
+                  ))}
+                  <div className="actions"><button className="btn" onClick={() => onReview(nid, 'approve', note, c.k)}>选这个</button></div>
+                </div>
+              ))}
+              <div className="actions"><button className="btn danger" onClick={() => onReview(nid, 'reject', note)}>都不要（打回）</button></div>
+            </>
+          )}
+          {rs.status === 'waiting_review' && !rs.candidates?.length && (
             <>
               <Value runId={run.id} nid={nid} port="input" v={rs.review_input} />
               <input className="wf-note" placeholder="审核意见（可空）" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -162,7 +179,7 @@ function Inspector({ wf, nid, decl, run, onParam, onReview, onRetry }) {
             </>
           )}
           {rs.status === 'failed' && <div className="actions"><button className="btn" onClick={() => onRetry(nid)}>单独重跑这个节点</button></div>}
-          {rs.outputs && Object.entries(rs.outputs).map(([p, v]) => (
+          {rs.outputs && !(rs.status === 'waiting_review' && rs.candidates?.length) && Object.entries(rs.outputs).map(([p, v]) => (
             <div key={p}><div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{p}</div>
               <Value runId={run.id} nid={nid} port={p} v={v} /></div>
           ))}
@@ -190,8 +207,12 @@ export default function WorkflowPage() {
   const [run] = usePoll(() => (runId ? api(`/wf_runs/${runId}`) : Promise.resolve(null)), 2500,
     liveRun, [runId, tick])
   const [runs] = usePoll(() => api('/wf_runs'), 8000, () => true, [tick])
+  const [saved] = usePoll(() => api('/workflows'), 0, () => false, [tick])
+  const nav = useNavigate()
+  const [search] = useSearchParams()
+  const linkedRun = search.get('run')
 
-  useEffect(() => { if (!wf && templates?.length) setWf(templates.find((t) => t.id === 'wf_mv_from_one_line') || templates[0]) }, [templates]) // eslint-disable-line
+  useEffect(() => { if (!wf && !linkedRun && templates?.length) setWf(templates.find((t) => t.id === 'wf_mv_from_one_line') || templates[0]) }, [templates]) // eslint-disable-line
   useEffect(() => {
     if (!wf) return
     const t = setTimeout(() => api('/workflows/validate', { method: 'POST', body: JSON.stringify({ workflow: wf }) })
@@ -220,9 +241,9 @@ export default function WorkflowPage() {
     const r = await api('/wf_runs', { method: 'POST', body: JSON.stringify({ workflow: wf }) })
     setRunId(r.id); setTick((t) => t + 1)
   })
-  const save = () => act('save', async () => { await api('/workflows', { method: 'POST', body: JSON.stringify({ workflow: wf }) }) })
-  const review = (nid, decision, note) => act('review', async () => {
-    await api(`/wf_runs/${runId}/review`, { method: 'POST', body: JSON.stringify({ node_id: nid, decision, note }) })
+  const save = () => act('save', async () => { await api('/workflows', { method: 'POST', body: JSON.stringify({ workflow: wf }) }); setTick((t) => t + 1) })
+  const review = (nid, decision, note, choice) => act('review', async () => {
+    await api(`/wf_runs/${runId}/review`, { method: 'POST', body: JSON.stringify({ node_id: nid, decision, note, ...(choice != null ? { choice } : {}) }) })
     setTick((t) => t + 1)
   })
   const retry = (nid) => act('retry', async () => {
@@ -232,6 +253,15 @@ export default function WorkflowPage() {
   const openRun = (id) => act('open', async () => {
     const r = await api(`/wf_runs/${id}`)
     setWf(r.workflow); setRunId(id); setSel(null); setProposal(null)
+  })
+  useEffect(() => { if (linkedRun) openRun(linkedRun) }, [linkedRun]) // eslint-disable-line
+  // Open the current workflow in the drag-and-drop editor: templates and saved workflows
+  // by id; anything else (generated, edited here, opened from a run) is saved first.
+  const editCurrent = () => act('edit-open', async () => {
+    const isTemplate = (templates || []).some((t) => t.id === wf.id && JSON.stringify(t) === JSON.stringify(wf))
+    if (isTemplate) { nav(`/workflow/edit/${wf.id}`); return }
+    const r = await api('/workflows', { method: 'POST', body: JSON.stringify({ workflow: wf }) })
+    nav(`/workflow/edit/${r.id}`)
   })
 
   const waiting = run ? Object.entries(run.nodes).filter(([, n]) => n.status === 'waiting_review').map(([k]) => k) : []
@@ -244,8 +274,25 @@ export default function WorkflowPage() {
         人工审核节点会暂停运行，等你批准或打回。</p>
 
       <div className="quick"><span>快捷开始</span>
-        {(templates || []).map((t) => <button key={t.id} className={`chip ${wf?.id === t.id ? 'on' : ''}`} onClick={() => pick(t)}>{t.name}</button>)}
+        {(templates || []).map((t) => (
+          <span key={t.id} className="wf-tpl">
+            <button className={`chip ${wf?.id === t.id ? 'on' : ''}`} onClick={() => pick(t)}>{t.name}</button>
+            <button className="chip wf-edit" title="在拖拽编辑器里打开（另存为新工作流）" onClick={() => nav(`/workflow/edit/${t.id}`)}>编辑</button>
+          </span>
+        ))}
+        <button className="chip" onClick={() => nav('/workflow/edit/new')}>＋ 新建空白工作流</button>
       </div>
+      {(saved || []).length > 0 && (
+        <div className="quick" style={{ marginTop: 8 }}><span>已保存</span>
+          {saved.map((s) => (
+            <span key={s.id} className="wf-tpl">
+              <button className={`chip ${wf?.id === s.id ? 'on' : ''}`} onClick={() => pick(s)}>{s.name || s.id}</button>
+              <button className="chip wf-edit" onClick={() => nav(`/workflow/edit/${s.id}`)}>编辑</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <style>{'.wf-tpl { display: inline-flex; gap: 2px; } .chip.wf-edit { padding-left: 8px; padding-right: 8px; font-size: 12px; color: var(--ink3); } .wf-cand { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 6px; }'}</style>
 
       <div className="composer" style={{ marginTop: 16 }}>
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} style={{ minHeight: 48 }}
@@ -263,6 +310,7 @@ export default function WorkflowPage() {
           <div className="section-head">
             <h2>{wf.name} {check.errors?.length ? <span className="pill failed">{check.errors.length} 个校验错误</span> : <span className="pill done">校验通过</span>}</h2>
             <div className="actions" style={{ marginTop: 0 }}>
+              <button className="btn" onClick={editCurrent} disabled={!!busy}>在编辑器里打开</button>
               <button className="btn" onClick={save} disabled={!!busy}>保存</button>
               <button className="primary" style={{ marginLeft: 0 }} disabled={!!busy || !!check.errors?.length || liveRun(run)} onClick={start}>
                 {busy === 'run' ? '提交中…' : runId ? '重新运行（用缓存）' : '运行'}</button>
