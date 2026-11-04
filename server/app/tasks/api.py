@@ -40,7 +40,7 @@ def reviews():
 class ReviewIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|reject)$")
     note: str = Field(default="", max_length=500)
-    choice: int | None = Field(default=None, ge=0, le=63)
+    choice: int | None = Field(default=None, ge=0, le=3)
 
 
 def _check(run_id: str, node_id: str):

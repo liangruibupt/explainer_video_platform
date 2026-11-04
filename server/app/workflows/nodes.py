@@ -448,3 +448,13 @@ def _output_save(inputs, p, ctx):
         item["value"] = w
     ctx.save_work(item)
     return {}
+
+
+# Phase 4 part C: the library's input.asset node (server/app/assets/node.py).
+try:
+    from ..assets.node import register as _register_asset_node
+except ModuleNotFoundError as _e:  # the assets package is optional
+    if _e.name not in ("app.assets", "app.assets.node"):
+        raise
+else:
+    _register_asset_node(NODES)

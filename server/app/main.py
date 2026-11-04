@@ -222,6 +222,7 @@ class ReviewIn(BaseModel):
     node_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
     decision: str = Field(pattern=r"^(approve|reject)$")
     note: str = Field(default="", max_length=500)
+    choice: int | None = Field(default=None, ge=0, le=3)
 
 
 class RetryIn(BaseModel):
@@ -326,7 +327,7 @@ def wf_review(run_id: str, body: ReviewIn):
     if not wf_engine.read_run(_run_id(run_id)):
         raise HTTPException(404, "no such run")
     try:
-        return wf_engine.review(run_id, body.node_id, body.decision, body.note)
+        return wf_engine.review(run_id, body.node_id, body.decision, body.note, body.choice)
     except ValueError as e:
         raise HTTPException(409, str(e))
 

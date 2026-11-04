@@ -116,15 +116,33 @@ def node_reviews(run: dict) -> list:
         cands = n.get("candidates")
         if isinstance(cands, list):
             for i, c in enumerate(cands):
-                path = c if isinstance(c, str) else (c or {}).get("path") or (c or {}).get("value")
+                path = _cand_value(c)
                 k = _file_kind(path)
+                seed = c.get("seed") if isinstance(c, dict) else None
                 rv["candidates"].append({
                     "index": i, "kind": k,
                     "url": f"/api/tasks/reviews/{run['id']}/{nid}/candidates/{i}" if k else None,
                     "text": path if isinstance(path, str) and not k else None,
-                    "label": (c.get("label") if isinstance(c, dict) else None) or f"候选 {i + 1}"})
+                    "label": (c.get("label") if isinstance(c, dict) else None)
+                    or (f"候选 {i + 1}（seed {seed}）" if seed is not None else f"候选 {i + 1}")})
         out.append(rv)
     return out
+
+
+def _cand_value(c):
+    """The previewable value of one candidate. Accepts a path string, {path|value, label},
+    or the engine's shape {k, seed, outputs: {port: value}} (workflows/candidates.py),
+    where the first output that is a media file wins."""
+    if isinstance(c, str):
+        return c
+    c = c or {}
+    if c.get("path") or c.get("value"):
+        return c.get("path") or c.get("value")
+    outs = c.get("outputs") or {}
+    for v in outs.values():
+        if _file_kind(v):
+            return v
+    return next(iter(outs.values()), None)
 
 
 def candidate_path(run: dict, nid: str, index: int):
@@ -135,7 +153,7 @@ def candidate_path(run: dict, nid: str, index: int):
     if not isinstance(cands, list) or not 0 <= index < len(cands):
         return None
     c = cands[index]
-    v = c if isinstance(c, str) else (c or {}).get("path") or (c or {}).get("value")
+    v = _cand_value(c)
     if not _file_kind(v):
         return None
     p = Path(v).resolve()
