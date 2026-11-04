@@ -202,7 +202,11 @@ from .workflows import store as wf_store  # noqa: E402
 from .workflows.validate import levels as wf_levels  # noqa: E402
 from .workflows.validate import validate as wf_validate  # noqa: E402
 
-wf_engine.recover()
+@app.on_event("startup")
+def _recover_workflows() -> None:
+    # Only the serving process may mark 'running' nodes as interrupted: a script or test
+    # that imports app.main against the same data dir must not fail a live run.
+    wf_engine.recover()
 
 
 class WorkflowIn(BaseModel):
