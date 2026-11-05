@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from app import pipeline
+from app import feedback, pipeline
 from app.feedback import qc
 from app.pipeline import DATA
 
@@ -152,7 +152,7 @@ def test_workflow_run_with_explainer_job_and_errors():
     assert m["node_errors"] == {"mx": "boom"}
     assert "voice_minus_music_db" in m and m["scene_count"] == 2
     snap = qc.snapshot({"kind": "workflow", "id": RUN})
-    assert snap["record"]["id"] == RUN and snap["skill_version"] == "1.0.0"
+    assert snap["record"]["id"] == RUN and snap["skill_version"] == feedback.skill_version()
     assert snap["files"]["job_video"] == f"jobs/{JOB}/final.mp4"
 
 
