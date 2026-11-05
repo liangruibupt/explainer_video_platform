@@ -294,7 +294,10 @@ def generate(audio: bytes, image: bytes = None, video: bytes = None, prompt: str
     if not files or not files[0]:
         raise RuntimeError("avatar worker returned no video")
     if meta_out is not None:
-        meta_out.update(res.get("meta") or {})
+        # the worker returns render_s, frames, width, height, peak_vram_gb ... at the top level
+        meta_out.update(res.get("meta") or {k: v for k, v in res.items()
+                                             if k not in ("files", "video_b64", "ok", "instance")
+                                             and isinstance(v, (int, float, str, bool))})
     return files[0]
 
 

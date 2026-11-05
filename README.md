@@ -62,7 +62,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 图像 | us-east-1 | Spot g7.2xlarge | 8.4 分钟 | 一张 71 秒 |
 | 视频 | ap-south-1（按 MiniMax H3 许可证的地区限制） | Spot g7e.4xlarge | 12.5 分钟 | 一条约 52 秒 |
 | 音乐 | us-east-1 | 按需 g5.2xlarge | 9 分钟 | 4 分钟纯音乐约 3 分钟 |
-| 数字人 | us-east-1 | Spot g7e.4xlarge | 13 分钟 | 480P 快速每秒视频约 27 秒（90 秒口播约 39 分钟） |
+| 数字人 | us-east-1 | Spot g7e.4xlarge | 13 分钟 | 480P 快速每秒视频约 27 秒（90 秒口播自动分 2 段，约 40 分钟）；竖屏 9:16 480P 约 24 秒 |
 
 ## 示例
 
