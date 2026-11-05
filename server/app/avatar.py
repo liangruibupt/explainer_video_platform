@@ -235,17 +235,21 @@ COLD_MIN = 13  # measured cold start, docs/AVATAR.md
 USD_PER_HOUR = 3.0
 
 
-def estimate(seconds: float, model: str = "", size: str = "480", fast: bool = True) -> dict:
+def estimate(seconds: float, model: str = "", size: str = "480", fast: bool = True,
+             segment_s: int = 0, script: str = "") -> dict:
     cfg = config()
     model = model or default_model()
     over = (cfg.get("render_s_per_s") or {}).get(model) or {}
     factor = over.get(f"{size}_{'fast' if fast else 'full'}") or RENDER.get(
         (model, size, bool(fast)), 10)
-    render_min = max(1.0, seconds * float(factor) / 60 + 1)
+    segments = segment_count(seconds, segment_s, script)
+    # each extra segment pays the per-job fixed overhead again (~1 min)
+    render_min = max(1.0, seconds * float(factor) / 60 + segments)
     cold = float(cfg.get("cold_min") or COLD_MIN)
     rate = float(cfg.get("usd_per_hour") or USD_PER_HOUR)
     return {"seconds": round(seconds, 1), "model": model, "render_min": round(render_min, 1),
-            "cold_min": cold, "usd_per_hour": rate,
+            "cold_min": cold, "usd_per_hour": rate, "segments": segments,
+            "segment_s": int(segment_s or 0),
             "usd_warm": round(render_min / 60 * rate, 2),
             "usd_cold": round((render_min + cold) / 60 * rate, 2), "rough": True}
 
@@ -290,5 +294,292 @@ def generate(audio: bytes, image: bytes = None, video: bytes = None, prompt: str
     if not files or not files[0]:
         raise RuntimeError("avatar worker returned no video")
     if meta_out is not None:
-        meta_out.update(res.get("meta") or {})
+        # the worker returns render_s, frames, width, height, peak_vram_gb ... at the top level
+        meta_out.update(res.get("meta") or {k: v for k, v in res.items()
+                                             if k not in ("files", "video_b64", "ok", "instance")
+                                             and isinstance(v, (int, float, str, bool))})
     return files[0]
+
+
+# ---------------------------------------------------------------- long clips: segments
+#
+# Identity holds about 60 s and then drifts slowly (docs/AVATAR.md section 5). Speech longer
+# than segment_s is split into segments that are each generated from the ORIGINAL portrait
+# and joined into one mp4 with the full, continuous audio:
+#   split_text()   script -> chunks at sentence ends (TTS path; each chunk synthesized alone)
+#   split_audio()  16 kHz wav -> pieces cut at silences (ffmpeg silencedetect), else hard cut
+#   generate_long  pieces -> one generate() per piece (cached by hash) -> join()
+#   join()         per-segment video trimmed/padded to its audio, 0.3 s video crossfade at
+#                  each seam, full audio muxed; total length = audio length.
+
+SEGMENT_S = 55              # default limit per segment, seconds
+SEGMENT_MAX_S = 60          # identity is measured stable up to ~60 s
+SEGMENT_MIN_S = 15          # smallest accepted limit (0 = off)
+XFADE_S = 0.3
+SILENCE_DB, SILENCE_MIN_S = -35, 0.25
+_SENT_END = "。！？；!?;"
+_SOFT_END = "，、,："
+
+
+def check_segment_s(v) -> int:
+    """0 (off) or SEGMENT_MIN_S..SEGMENT_MAX_S; None/'' means the default."""
+    if v is None or v == "":
+        return SEGMENT_S
+    try:
+        v = int(float(v))
+    except (TypeError, ValueError):
+        raise AvatarError("segment_s 必须是整数秒（0 = 不分段）") from None
+    if v != 0 and not SEGMENT_MIN_S <= v <= SEGMENT_MAX_S:
+        raise AvatarError(f"segment_s 只能是 0（不分段）或 {SEGMENT_MIN_S}–{SEGMENT_MAX_S} 秒")
+    return v
+
+
+def _pieces(text: str, ends: str) -> list:
+    out, cur = [], ""
+    for ch in text:
+        cur += ch
+        if ch in ends:
+            out.append(cur)
+            cur = ""
+    if cur.strip():
+        out.append(cur)
+    return [p for p in out if p.strip()]
+
+
+def _sentences(text: str, limit: float) -> list:
+    """Sentences, each of estimated speech <= limit (long ones split at commas, then hard)."""
+    out = []
+    for s in _pieces(text, _SENT_END):
+        if speech_seconds(s) <= limit:
+            out.append(s)
+            continue
+        for c in _pieces(s, _SOFT_END):
+            n = max(1, int((limit - 0.7) * 4.5))
+            out += [c[i:i + n] for i in range(0, len(c), n)] if speech_seconds(c) > limit else [c]
+    return out
+
+
+def _pack(sents: list, limit: float) -> list:
+    chunks, cur = [], ""
+    for s in sents:
+        if cur and speech_seconds(cur + s) > limit:
+            chunks.append(cur)
+            cur = ""
+        cur += s
+    return chunks + ([cur] if cur else [])
+
+
+def split_text(script: str, segment_s: int = SEGMENT_S) -> list:
+    """Script -> chunks split at sentence ends (。！？；) whose estimated speech is <= segment_s,
+    balanced in length. One chunk when segment_s is 0 or the script is short enough."""
+    s = (script or "").strip()
+    if not segment_s or speech_seconds(s) <= segment_s:
+        return [s] if s else []
+    sents = _sentences(s, segment_s)
+    best = _pack(sents, segment_s)
+    # balance: the smallest limit that still needs no more chunks than the greedy fill
+    lim = speech_seconds(s) / len(best)
+    while lim < segment_s:
+        c = _pack(sents, lim)
+        if len(c) <= len(best):
+            return c
+        lim += 0.5
+    return best
+
+
+def _wav_parts(wav: bytes) -> tuple:
+    import wave
+    with wave.open(io.BytesIO(wav)) as w:
+        return w.getparams(), w.readframes(w.getnframes())
+
+
+def _wav_bytes(params, frames: bytes) -> bytes:
+    import wave
+    b = io.BytesIO()
+    with wave.open(b, "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
+    return b.getvalue()
+
+
+def wav_seconds(wav: bytes) -> float:
+    p, fr = _wav_parts(wav)
+    return len(fr) / (p.sampwidth * p.nchannels) / p.framerate
+
+
+def concat_wavs(wavs: list) -> bytes:
+    """Concatenate 16 kHz mono wavs (same params) without re-encoding."""
+    params, frames = None, b""
+    for w in wavs:
+        p, fr = _wav_parts(w)
+        params = params or p
+        frames += fr
+    return _wav_bytes(params, frames)
+
+
+def silences(wav: bytes, noise_db: int = SILENCE_DB, min_s: float = SILENCE_MIN_S) -> list:
+    """[(start, end)] silent stretches of a wav (ffmpeg silencedetect)."""
+    import re
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "a.wav"
+        p.write_bytes(wav)
+        r = subprocess.run([pipeline.FFMPEG, "-hide_banner", "-nostats", "-i", str(p), "-af",
+                            f"silencedetect=noise={noise_db}dB:d={min_s}", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=300)
+    out, start = [], None
+    for line in r.stderr.splitlines():
+        m = re.search(r"silence_start: (-?[\d.]+)", line)
+        if m:
+            start = max(0.0, float(m.group(1)))
+        m = re.search(r"silence_end: ([\d.]+)", line)
+        if m and start is not None:
+            out.append((start, float(m.group(1))))
+            start = None
+    return out
+
+
+def cut_points(total: float, segment_s: float, quiet: list) -> list:
+    """Cut times (seconds) so every piece is <= segment_s: each cut is the middle of the silence
+    nearest to an even split, never past the limit and not in the first 30 % of the piece;
+    a hard cut at the even split when no silence fits."""
+    cuts, start = [], 0.0
+    mids = [(a + b) / 2 for a, b in quiet]
+    while total - start > segment_s:
+        n_left = -(-(total - start) // segment_s)          # pieces still needed
+        target = start + (total - start) / n_left
+        ok = [m for m in mids if start + 0.3 * segment_s <= m <= start + segment_s
+              and total - m >= 0.3 * segment_s]      # never leave a short tail piece
+        cut = min(ok, key=lambda m: abs(m - target)) if ok else target
+        cuts.append(round(cut, 3))
+        start = cut
+    return cuts
+
+
+def split_audio(wav: bytes, segment_s: int = SEGMENT_S) -> list:
+    """16 kHz wav -> list of wav pieces, each <= segment_s, cut at silences when possible."""
+    if not segment_s:
+        return [wav]
+    total = wav_seconds(wav)
+    if total <= segment_s:
+        return [wav]
+    cuts = cut_points(total, segment_s, silences(wav))
+    p, fr = _wav_parts(wav)
+    bpf = p.sampwidth * p.nchannels
+    edges = [0] + [int(c * p.framerate) * bpf for c in cuts] + [len(fr)]
+    return [_wav_bytes(p, fr[a:b]) for a, b in zip(edges, edges[1:])]
+
+
+def segment_count(seconds: float, segment_s: int = SEGMENT_S, script: str = "") -> int:
+    if not segment_s:
+        return 1
+    if script:
+        return max(1, len(split_text(script, segment_s)))
+    return max(1, int(-(-seconds // segment_s)))
+
+
+def segment_key(wav: bytes, image: bytes, params: dict) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    for part in (wav, image or b"", json.dumps(params, sort_keys=True).encode()):
+        h.update(hashlib.sha256(part).digest())
+    return h.hexdigest()[:20]
+
+
+def join(videos: list, durations: list, audio_wav: Path, out: Path, xfade: float = XFADE_S):
+    """Join segment videos into one mp4 carrying audio_wav. Segment k is trimmed or padded
+    (last frame held) to exactly durations[k] (its audio length), so audio sync is exact;
+    each seam gets a video-only crossfade of `xfade` s that starts where segment k's audio
+    ends (segment k is held `xfade` s longer underneath the next one)."""
+    from fractions import Fraction
+    if len(videos) != len(durations) or not videos:
+        raise ValueError("join: one duration per video")
+    probe = subprocess.run([pipeline.FFPROBE, "-v", "error", "-select_streams", "v:0",
+                            "-show_entries", "stream=width,height,r_frame_rate", "-of", "json",
+                            str(videos[0])], capture_output=True, text=True, timeout=60)
+    st = json.loads(probe.stdout)["streams"][0]
+    w, h = st["width"] // 2 * 2, st["height"] // 2 * 2
+    fps = float(Fraction(st["r_frame_rate"])) or 25.0
+    n, chains = len(videos), []
+    for k in range(n):
+        keep = durations[k] + (xfade if k < n - 1 and xfade > 0 else 0)
+        chains.append(f"[{k}:v]fps={fps:g},scale={w}:{h},setsar=1,format=yuv420p,"
+                      f"tpad=stop_mode=clone:stop_duration={keep + 1:.3f},"
+                      f"trim=duration={keep:.3f},setpts=PTS-STARTPTS,fps={fps:g}[v{k}]")
+    last, t = "v0", 0.0
+    for k in range(1, n):
+        t += durations[k - 1]
+        tag = f"x{k}"
+        if xfade > 0:
+            chains.append(f"[{last}][v{k}]xfade=transition=fade:duration={xfade:.3f}:"
+                          f"offset={t:.3f}[{tag}]")
+        else:
+            chains.append(f"[{last}][v{k}]concat=n=2:v=1:a=0[{tag}]")
+        last = tag
+    args = [pipeline.FFMPEG, "-v", "error", "-y"]
+    for v in videos:
+        args += ["-i", str(v)]
+    args += ["-i", str(audio_wav), "-filter_complex", ";".join(chains), "-map", f"[{last}]",
+             "-map", f"{n}:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-t", f"{sum(durations):.3f}",
+             "-movflags", "+faststart", str(out)]
+    _ff(args, timeout=1800)
+    return out
+
+
+def generate_long(segments: list, work_dir: Path, image: bytes = None, video: bytes = None,
+                  prompt: str = "", model: str = "", size: str = "480", fast: bool = True,
+                  seed: int = 42, timeout: int = TIMEOUT_S, on_wait=None, on_segment=None,
+                  meta_out: dict = None, xfade: float = XFADE_S) -> bytes:
+    """Segments (16 kHz wav bytes each) -> one MP4 with their concatenated audio.
+
+    Every segment is a generate() call from the same portrait with the same seed, prompt,
+    size and model, one after another. Done segments are kept in work_dir/segments/ as
+    <k>-<hash>.mp4 (hash of segment audio + portrait + params) and reused on a retry.
+    on_segment(k, n) is called before segment k (1-based); a failure raises RuntimeError
+    naming the segment. A single segment is just generate() (still cached)."""
+    if video and len(segments) > 1:
+        raise AvatarError("参考视频（v2v）不分段：请把 segment_s 设为 0")
+    img = portrait_png(image) if image else None
+    params = {"model": model or default_model(), "prompt": (prompt or "").strip(),
+              "size": str(size), "fast": bool(fast), "seed": int(seed)}
+    seg_dir = Path(work_dir) / "segments"
+    seg_dir.mkdir(parents=True, exist_ok=True)
+    n, paths, durs, metas = len(segments), [], [], []
+    for k, wav in enumerate(segments, 1):
+        key = segment_key(wav, img if img else video, params)
+        p = seg_dir / f"{k:02d}-{key}.mp4"
+        durs.append(round(wav_seconds(wav), 3))
+        if on_segment:
+            on_segment(k, n, p.is_file())
+        if not p.is_file():
+            meta = {}
+            try:
+                mp4 = generate(wav, image=img, video=video, timeout=timeout, on_wait=on_wait,
+                               meta_out=meta, **params)
+            except AvatarError:
+                raise
+            except Exception as e:  # noqa: BLE001 - name the segment
+                raise RuntimeError(f"第 {k}/{n} 段失败：{e}") from e
+            tmp = p.with_suffix(".part")
+            tmp.write_bytes(mp4)
+            tmp.replace(p)
+            (seg_dir / f"{k:02d}-{key}.json").write_text(json.dumps(meta, default=str))
+        else:
+            mf = seg_dir / f"{k:02d}-{key}.json"
+            meta = json.loads(mf.read_text()) if mf.is_file() else {}
+            meta["reused"] = True
+        metas.append(meta)
+        paths.append(p)
+    if meta_out is not None:
+        meta_out.update(metas[0] if n == 1 else {
+            "segments": n, "segment_seconds": durs, "seams": [round(sum(durs[:i]), 3)
+                                                              for i in range(1, n)],
+            "render_s": sum(float(m.get("render_s") or 0) for m in metas),
+            "reused": sum(1 for m in metas if m.get("reused")), "per_segment": metas})
+    if n == 1:
+        return paths[0].read_bytes()
+    audio = seg_dir / "joined_audio.wav"
+    audio.write_bytes(concat_wavs(segments))
+    out = seg_dir / "joined.mp4"
+    join(paths, durs, audio, out, xfade)
+    return out.read_bytes()
