@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, usePoll, ago } from '../api.js'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 const STATE = {
   ready: ['GPU 已就绪', 'done'],
@@ -30,6 +31,7 @@ function Result({ it }) {
           {it.seconds ? ` · ${it.seconds} 秒` : ''}</div>
         <div className="clamp">{it.prompt}</div>
         {it.error && <div className="error">{it.error}</div>}
+        {it.status === 'done' && <FeedbackButton target={{ kind: 'image', id: it.id }} />}
       </div>
     </div>
   )

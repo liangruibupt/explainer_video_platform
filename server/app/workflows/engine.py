@@ -183,6 +183,8 @@ def start(workflow: dict, parent: str = "") -> dict:
            "parent": parent or None, "works": [], "events": [],
            "nodes": {n["id"]: {"status": "pending", "type": n["type"]}
                      for n in workflow["nodes"]}}
+    from ..feedback import skill_info  # phase 5: skill_version + skill_commit
+    run.update(skill_info())
     _event(run, "run created" + (f" (rerun of {parent})" if parent else ""))
     _write(run)
     drive(run_id)
