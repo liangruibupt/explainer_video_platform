@@ -4,7 +4,7 @@
   "region": "us-east-1",
   "bucket": "evp-models-747411437379-us-east-1",
   "jobs_prefix": "jobs/avatar-ec2/",
-  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261104-190851",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261105-014747",
   "weights": "s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/weights-index/",
   "model_mount": "/opt/ml/model",
   "container_port": 8080,
