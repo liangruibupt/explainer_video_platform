@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, usePoll, ago } from '../api.js'
 import GpuPill from '../components/GpuPill.jsx'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 const QUICK = [
   'Early morning at West Lake in Hangzhou, thin mist over calm water, a stone arch bridge and willows on the shore, slow dolly forward, soft golden light, no text',
@@ -20,6 +21,7 @@ function Result({ it }) {
           {it.seconds ? ` · 用时 ${it.seconds} 秒` : ''}</div>
         <div className="clamp">{it.prompt}</div>
         {it.error && <div className="error">{it.error}</div>}
+        {it.status === 'done' && <FeedbackButton target={{ kind: 'video', id: it.id }} />}
       </div>
     </div>
   )
