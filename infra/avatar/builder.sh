@@ -44,6 +44,11 @@ build() {
   DOCKER_BUILDKIT=0 docker build -t "$REPO:$TAG" . > /work/build.out 2>&1 || { tail -80 /work/build.out; return 1; }
   docker push -q "$REPO:$TAG" >> /work/build.out 2>&1 || return 1
   docker image inspect "$REPO:$TAG" --format '{{.Size}}' >> /work/build.out
+  # Echo the build-time import check result and key versions into the tail of the log.
+  grep -E '^(ok  |SKIP|FAIL|imports ok)' /work/build.out | tail -30 >> /work/build.out
+  docker run --rm --entrypoint python "$REPO:$TAG" -c \
+    "import PIL, torch, sys; print('versions: python', sys.version.split()[0], 'PIL', PIL.__version__, 'torch', torch.__version__)" \
+    >> /work/build.out 2>&1
 }
 log "start: weights + image build in parallel (ONLY=$ONLY)"
 if [ "$ONLY" = image ]; then echo 0 > /work/stage_infinitetalk.rc; echo 0 > /work/stage_longcat.rc; S1=; S2=

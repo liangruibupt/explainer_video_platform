@@ -39,7 +39,11 @@
 
 ### 镜像
 
-`747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261104-190851`：CUDA 12.8.1、Ubuntu 22.04、Python 3.10（InfiniteTalk 用了 3.11 删掉的 `inspect.ArgSpec`）、torch 2.7.1+cu128、xformers 0.0.31.post1、flash-attn 2.8.0.post2（xformers 0.0.31 只接受 ≤2.8.0）、xfuser 0.4.4 + yunchang 0.6.3.post1，其余版本全部固定在 `requirements.txt`。
+`747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261105-014747`：CUDA 12.8.1、Ubuntu 22.04、Python 3.10（InfiniteTalk 用了 3.11 删掉的 `inspect.ArgSpec`）、torch 2.7.1+cu128、xformers 0.0.31.post1、flash-attn 2.8.0.post2（xformers 0.0.31 只接受 ≤2.8.0）、xfuser 0.4.4 + yunchang 0.6.3.post1、pillow 12.3.0，其余版本全部固定在 `requirements.txt`。
+
+pillow 从 11.2.1 升到 12.3.0（修掉 12.3.0 之前的漏洞）。没升到 13.0.0：它要求 Python ≥ 3.11，而这个镜像只能用 3.10。worker 只收工作室重新编码过的 PNG（工作室用 pillow 13.0.0 解码），剩下的风险可以接受。上一个镜像是 `20261104-190851`（pillow 11.2.1）。
+
+`20261105-014747` 的验证（2026-11-05，g7e.4xlarge Spot，`portrait_16x9.jpg` 经 `avatar.portrait_png`，Polly Zhiyu `pitch15` 14.96 秒，480 快速，seed 42）：镜像里 `PIL.__version__` = 12.3.0，构建时 `check_imports.py` 通过；InfiniteTalk 896×448、14.92 秒、373 帧，worker 用时 1020 秒（含冷启动加载模型 526 秒，生成约 494 秒），峰值显存 64.0 GB；LongCat 832×480、14.96 秒、374 帧，渲染 448 秒（加载 14 秒），峰值显存 66.9 GB。两条都带完整音轨，中间帧和第 5 节的样片是同一个人、同一场景，没有花屏。
 
 构建和上线过程中修过的问题：
 - xformers 0.0.31 对 compute capability ≥ 9.0 都启用它自带的 FlashAttention-3（Hopper 内核），在 Blackwell sm_120 上报 `flash_fwd_launch_template.h: invalid argument`。适配层在 sm ≥ 10 上关掉 FA3（`dispatch._set_use_fa3(False)`）。
