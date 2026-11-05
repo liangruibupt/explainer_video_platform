@@ -13,6 +13,7 @@ const ico = {
   guide: 'M9 4h11M9 12h11M9 20h11M4 4h.01M4 12h.01M4 20h.01',
   library: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   projects: 'M3 7h7l2 2h9v10H3z',
+  feedback: 'M4 5h16v11H9l-5 4zM12 8v3M12 13.5h.01',
   settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
 }
 const I = ({ d }) => (
@@ -45,6 +46,7 @@ export default function Layout() {
         <Item to="/library" icon="library" label="素材库" />
         <Item to="/projects" icon="projects" label="项目" />
         <Item to="/tasks" icon="tasks" label="任务中心" />
+        <Item to="/feedback" icon="feedback" label="反馈与改进" />
         <div className="group">生成</div>
         <Item to="/image" icon="image" label="图像" />
         <Item to="/video" icon="video" label="AI 视频" />

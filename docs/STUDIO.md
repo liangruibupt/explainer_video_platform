@@ -33,6 +33,63 @@
 
 某一段的绘制代码生成失败时，那一段换成标题卡，其余照常出片，并在日志里记一条。
 
+## 反馈与改进（`/feedback`）
+
+设计见 [DESIGN.md](DESIGN.md) 第 8 节，数据格式见 [PHASE5_CONTRACTS.md](PHASE5_CONTRACTS.md)。
+
+页面有四个标签：**反馈**（每条的状态、分析结论和解释，按钮 重跑 / 立即起草 / 忽略）、**聚类**（每类的条数和起草门槛 3）、**改进提案**（diff、改前改后质检表、PR 链接、状态、合并后验证结果；按钮 重新对比 / 开 PR / 仍然开 PR / 关闭提案 / 同步状态）、**skill 版本**（当前版本、commit、已合并的提案）。
+
+### 流程
+
+1. 作品、工作流节点、图像、视频、音乐、数字人记录上点「不满意」，选原因、写一句话。系统在 `data/feedback/items/` 保存反馈和快照：运行记录、`qc.measure` 的质检指标（时长比、响度、人声比音乐高多少 dB、字幕每秒字数、失败步骤等）、skill 版本。
+2. 后台立刻分析：先做确定性检查（`voice_minus_music_db < 6`、`duration_ratio > 1.15`、`caption_max_cps > 9`、失败步骤等），再让 Opus 给出结论 `one_off` / `rule` / `unclear`、所在层、症状和动作。模型输出不合格时用确定性检查的结论。
+3. `one_off`：点「重跑」，用新 seed 或新提示词重跑那一步（作品重跑一个新任务，工作流重跑那个节点）。`unclear`：页面显示追问。
+4. `rule`：反馈进入聚类 `<层>:<症状>`。同一聚类累计 3 条（已忽略、已解决的不算）时自动起草；也可以在一条反馈上点「立即起草」。
+5. 起草：Opus 读聚类里的反馈、分析和目标文件，给出最小改动。系统先检查路径和行数，再在 `data/feedback/worktrees/<提案id>` 新建分支 `skillfix/<提案id>`（从当前 `origin/master` 开），应用改动，把 `skills/explainer-video-pipeline/VERSION` 的补丁号加 1，提交一次。
+6. 对比：用投诉任务自己的输入（多个任务时取目标时长最短的）在修改前（master）和修改后（提案分支）的代码上各跑一次，每边用单独的 `EVP_DATA`（`data/feedback/checks/<提案id>/`），比较目标指标。目标指标改善了就推送分支并用 `gh api` 开 PR，没改善就留作草稿并显示数字。
+7. 有人在 GitHub 上审查并合并后，点「同步状态」：系统发现 PR 已合并，等线上 checkout 包含合并提交（由人或 agent 快进），再用同一个输入重跑一次，结果附到原来的每条反馈上。
+
+### 复现模式
+
+| 模式 | 做什么 | 能看出的问题 | 什么时候用 |
+|---|---|---|---|
+| `cheap`（默认） | 沿用快照里的分镜；跳过插图、镜头、AI 音乐、绘制代码，画面换成纯色；Polly 旁白、音效、混音、Whisper 字幕、FFmpeg 合成照常跑 | 混音、字幕、旁白读音、失败步骤 | 混音、字幕、读音类问题 |
+| `storyboard` | 真跑分镜（Opus，用那一边的 `llm.py`）和 Polly 旁白，不渲染画面；时长 = 旁白帧数 / 30 | 分镜写得过长或过短（`duration_ratio`） | 聚类是 `storyboard:*` 且目标指标是 `duration_ratio` 时自动用 |
+| `full` | 完整任务，可能用 GPU | 全部 | 只在手动指定时用 |
+
+LLM 每次输出不同，`EVP_FEEDBACK_REPEATS`（1–4，默认 1）设每边跑几次，目标指标取平均，逐次数值也写进提案和 PR。分镜输出被截断时，同一次运行重试一次（两边规则相同）。
+
+### 安全规则
+
+- 只开 PR，从不合并，从不推 master，从不改线上 checkout 的文件。分支名是固定格式 `skillfix/<提案id>`，推送时写明分支名。
+- 规则级修改至少要 3 条同类反馈（`RULE_MIN = 3`），除非用户在一条上点「立即起草」。
+- 只能改这几个地方，别的在建工作区之前就拒绝：`skills/explainer-video-pipeline/SKILL.md`、`skills/explainer-video-pipeline/scripts/*.py`（只能改 argparse 默认值和大写常量）、`scripts/pronounce.json`、`server/app/workflows/nodes.py`（只能改节点参数默认值）、`server/app/pipeline.py`（只能改大写常量）、`server/app/llm.py`（只能改提示词字符串，`MODEL_ID`、`REGION` 不能改）。最多 40 行。应用后再用语法树检查一遍，确认没有改到别的代码。
+- 改前改后对比没有改善就不开 PR。「仍然开 PR」按钮只在没改善时出现，要二次确认，调用 `open?force=true`。
+- 反馈文字是不可信的用户数据：以 JSON 形式放进提示词，PR 里只作为引用（转义 `@` 和 `<`），从不进命令行。
+- 「关闭提案」删除提案的工作区、本地分支和 `data/feedback/checks/<提案id>/`。起草新提案时顺便关闭 14 天前的草稿（每小时最多一次，只动 `data/feedback/` 下的东西）。已开 PR 的提案要在 GitHub 上关闭再同步。
+
+### 接口（前缀 `/api/feedback`）
+
+| 方法和路径 | 作用 |
+|---|---|
+| `POST /api/feedback` `{target: {kind, id, node_id?}, reasons, text}` | 记录反馈并在后台分析；聚类达到 3 条时接着起草 |
+| `GET /api/feedback?status=`、`GET /api/feedback/{id}` | 列表；单条（含分析和提案） |
+| `POST /api/feedback/{id}/analyze` | 重新分析 |
+| `POST /api/feedback/{id}/act` | 执行分析给出的动作（重跑 / 起草 / 追问） |
+| `POST /api/feedback/{id}/draft` | 立即起草（不满 3 条也起草；分析结论必须是规则问题） |
+| `POST /api/feedback/{id}/dismiss` | 忽略 |
+| `GET /api/feedback/clusters` | `[{cluster, count, rule_min, feedback_ids, proposal_id}]` |
+| `GET /api/feedback/proposals`、`GET /api/feedback/proposals/{id}` | 提案列表、详情 |
+| `POST /api/feedback/proposals/{id}/check` | 重新对比 |
+| `POST /api/feedback/proposals/{id}/open[?force=true]` | 推送分支、开 PR（不合并） |
+| `POST /api/feedback/proposals/{id}/close` | 关闭没开 PR 的提案 |
+| `POST /api/feedback/proposals/{id}/sync` | 读 PR 状态；合并后做验证 |
+| `GET /api/feedback/skill` | skill 版本、commit、已合并的提案 |
+
+环境变量：`EVP_FEEDBACK_REPO`（起草用的 git checkout，默认服务所在仓库）、`EVP_FEEDBACK_REPRO_MODE`（默认 `cheap`）、`EVP_FEEDBACK_REPEATS`（默认 1）、`EVP_FEEDBACK_AUTOCHECK=0`（起草后不自动对比）、`EVP_FEEDBACK_AUTO_OPEN=0`（改善了也不自动开 PR）、`EVP_FEEDBACK_REPRO_TIMEOUT`（秒，默认 3 小时）。
+
+**VERSION**：master 在阶段 5 合并前没有 `VERSION` 文件，那时起草的提案按 `1.0.0` 起算，写成 `1.0.1`。阶段 5 合并后 master 是 `1.0.0`，下一个合并的提案写 `1.0.1`；两个提案改的是同一行，后合并的那个需要 rebase。
+
 ## 接口里的可选字段
 
 `POST /api/jobs` 除了界面上的选项，还接受三个可选字段（界面暂不提供，用脚本提交）：

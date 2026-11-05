@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api, usePoll, isLive, fileUrl, STATUS } from '../api.js'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 const secs = (s) => (s.started && s.ended ? `${Math.round(s.ended - s.started)}s` : '')
 
@@ -61,6 +62,7 @@ export default function JobPage() {
             {!isLive(job) && <button className="btn" onClick={remake}>用同一主题重做</button>}
             <button className="btn" onClick={showLog}>查看日志</button>
             {!isLive(job) && <button className="btn danger" onClick={remove}>删除</button>}
+            {job.status === 'done' && <FeedbackButton target={{ kind: 'job', id }} />}
           </div>
           {log && <pre className="log">{log}</pre>}
         </div>
