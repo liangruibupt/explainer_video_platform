@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, usePoll, ago } from '../api.js'
 import GpuPill from '../components/GpuPill.jsx'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 const INSTRUMENTAL = '[Intro]\n\n[Instrumental]\n\n[Outro]'
 const TAIL = 'ambient, no drums, instrumental, no vocals'
@@ -30,6 +31,7 @@ function Result({ it }) {
           <div className="clamp muted" title={it.sent_style}>实际风格词：{it.sent_style}</div>}
         {it.lyrics !== INSTRUMENTAL && <div className="clamp muted">{it.lyrics}</div>}
         {it.error && <div className="error">{it.error}</div>}
+        {it.status === 'done' && <FeedbackButton target={{ kind: 'music', id: it.id }} />}
       </div>
     </div>
   )

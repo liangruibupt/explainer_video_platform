@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, usePoll, ago } from '../api.js'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 // Workflow page (DESIGN.md sections 5-6): templates, one-sentence generation, a graph view
 // (nodes in topological columns), a param inspector built from the node declarations,
@@ -325,6 +326,7 @@ export default function WorkflowPage() {
             <div className="muted" style={{ margin: '8px 0' }}>
               运行 {run.id} · <span className={`pill ${run.status}`}>{RUN_STATUS[run.status]}</span>
               {hits > 0 && ` · ${hits} 个节点缓存命中`}
+              {(run.status === 'done' || run.status === 'failed') && <> · <FeedbackButton key={run.id} target={{ kind: 'workflow', id: run.id }} /></>}
               {waiting.length > 0 && <> · <button className="btn" onClick={() => setSel(waiting[0])}>去审核 {waiting[0]}</button></>}
             </div>
           )}
@@ -362,7 +364,7 @@ export default function WorkflowPage() {
               <div className="card" key={w.node}>
                 {w.file ? <Media kind={mediaKind(w.file)} src={`/api/wf_runs/${run.id}/file?node=${w.node}&work=${w.file}`} />
                   : <div className="pre wf-text">{JSON.stringify(w.value)}</div>}
-                <div className="card-body"><div className="title">{w.title}</div></div>
+                <div className="card-body"><div className="title">{w.title}</div><FeedbackButton key={`${run.id}.${w.node}`} target={{ kind: 'workflow', id: run.id, node_id: w.node }} /></div>
               </div>
             ))}
           </div>

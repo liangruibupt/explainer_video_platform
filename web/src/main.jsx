@@ -13,6 +13,7 @@ import VideoPage from './pages/VideoPage.jsx'
 import MusicPage from './pages/MusicPage.jsx'
 import WorkflowPage from './pages/WorkflowPage.jsx'
 import AvatarPage from './pages/AvatarPage.jsx'
+import FeedbackPage from './pages/FeedbackPage.jsx'
 
 // Phase 4 pages (docs/PHASE4_CONTRACTS.md). Each part adds its own file; until it exists the
 // route shows a placeholder, so the parts build and run independently.
@@ -37,6 +38,7 @@ createRoot(document.getElementById('root')).render(
           <Route index element={<Workbench />} />
           <Route path="works" element={<Works />} />
           <Route path="tasks" element={<Tasks />} />
+          <Route path="feedback" element={<FeedbackPage />} />
           <Route path="jobs/:id" element={<JobPage />} />
           <Route path="image" element={<ImagePage />} />
           <Route path="video" element={<VideoPage />} />

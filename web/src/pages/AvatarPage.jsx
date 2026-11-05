@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, usePoll, ago } from '../api.js'
 import GpuPill from '../components/GpuPill.jsx'
+import FeedbackButton from '../components/FeedbackButton.jsx'
 
 // 数字人 page (docs/AVATAR_CONTRACT.md): portrait + script/audio -> lip-synced presenter video.
 const live = (x) => x.status === 'queued' || x.status === 'running'
@@ -64,6 +65,7 @@ function Result({ it, onDelete, onRetry }) {
           {it.status === 'failed' && <><a href="#" onClick={(e) => { e.preventDefault(); onRetry(it.id) }}>重试{it.segments > 1 ? '（已完成的段直接复用）' : ''}</a> · </>}
           {!live(it) && <a href="#" onClick={(e) => { e.preventDefault(); onDelete(it.id) }}>删除</a>}
         </div>
+        {it.status === 'done' && <FeedbackButton target={{ kind: 'avatar', id: it.id }} />}
       </div>
     </div>
   )
