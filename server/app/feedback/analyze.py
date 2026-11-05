@@ -434,10 +434,12 @@ def _unclear(reason: str) -> dict:
 # ---------------------------------------------------------------- clustering
 
 def cluster_count(cluster: str, exclude_fb: str = "") -> int:
-    """Feedback items (other than exclude_fb) whose current analysis is in `cluster`."""
+    """Open feedback items (other than exclude_fb) whose current analysis is in `cluster`;
+    dismissed / resolved items do not count (same rule as proposals.cluster_members)."""
     st, n = _store(), 0
     for it in st.list_items(limit=100000):
-        if it.get("id") == exclude_fb or not it.get("analysis_id"):
+        if it.get("id") == exclude_fb or not it.get("analysis_id") \
+                or it.get("status") in ("dismissed", "resolved"):
             continue
         an = st.get_analysis(it["analysis_id"])
         if an and an.get("cluster") == cluster:

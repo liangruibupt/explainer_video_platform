@@ -142,7 +142,9 @@ def test_api_starts_analysis_and_clusters(client, monkeypatch):
                                  "cluster": "captions:too_fast"})
         store.update(fb_id, lambda it: it.update(analysis_id=a["id"], status="clustered"))
         ran.set()
-    mod = types.SimpleNamespace(analyze=analyze)
+    from app.feedback import analyze as real_analyze
+    mod = types.SimpleNamespace(analyze=analyze, cluster_count=real_analyze.cluster_count,
+                                RULE_MIN=real_analyze.RULE_MIN)
     monkeypatch.setattr(fb_api, "_mod", lambda name, required=True: mod)
     ids = []
     for _ in range(2):
@@ -154,7 +156,7 @@ def test_api_starts_analysis_and_clusters(client, monkeypatch):
         ids.append(r.json()["id"])
     cl = client.get("/api/feedback/clusters").json()
     assert len(cl) == 1 and cl[0]["cluster"] == "captions:too_fast"
-    assert cl[0]["count"] == 2 and cl[0]["proposal_id"] is None
+    assert cl[0]["count"] == 2 and cl[0]["proposal_id"] is None and cl[0]["rule_min"] == 3
     assert set(cl[0]["feedback_ids"]) == set(ids)
 
 

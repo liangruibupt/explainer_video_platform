@@ -411,7 +411,7 @@ def file(job_id: str, name: str):
 import importlib as _importlib
 import logging as _logging
 
-for _part in ("chat", "assets", "tasks", "settings"):
+for _part in ("chat", "assets", "tasks", "settings", "feedback"):  # feedback = phase 5
     try:
         app.include_router(_importlib.import_module(f"app.{_part}.api").router)
     except ModuleNotFoundError as _e:

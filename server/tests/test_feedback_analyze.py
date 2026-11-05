@@ -1,5 +1,5 @@
 """Phase 5 part B: feedback analysis + one-off reruns. llm.ask, engine and proposals are
-stubbed; part A's store is stubbed here (in memory) when it does not exist yet."""
+stubbed; part A's real on-disk store is used (temp EVP_DATA)."""
 import copy
 import importlib
 import json
@@ -11,46 +11,21 @@ import pytest
 from app import llm, pipeline
 
 
-# ---------------------------------------------------------------- store stub (test only)
-
-def _make_store_stub():
-    m = types.ModuleType("app.feedback.store")
-    m.ITEMS, m.ANALYSES, m.PROPOSALS = {}, {}, {}
-    m.N = [0]
-
-    def create(target, reasons, text, snapshot=None):
-        m.N[0] += 1
-        fid = f"fb_20261105-0000{m.N[0]:02d}-abcdef"
-        m.ITEMS[fid] = {"id": fid, "created": 0, "target": target, "reasons": reasons,
-                        "text": text, "snapshot": snapshot or {}, "status": "new",
-                        "analysis_id": None, "proposal_id": None, "resolution": None,
-                        "history": []}
-        return m.ITEMS[fid]
-
-    def update(fid, fn):
-        fn(m.ITEMS[fid])
-        return m.ITEMS[fid]
-
-    m.create, m.update = create, update
-    m.get = lambda fid: copy.deepcopy(m.ITEMS.get(fid))
-    m.list_items = lambda status="", limit=200: [copy.deepcopy(i) for i in m.ITEMS.values()
-                                                  if not status or i["status"] == status][:limit]
-    m.add_history = lambda fid, ev, d: m.ITEMS[fid]["history"].append(
-        {"ts": 0, "event": ev, "detail": d})
-    m.save_analysis = lambda a: m.ANALYSES.__setitem__(a["id"], copy.deepcopy(a)) or a
-    m.get_analysis = lambda aid: copy.deepcopy(m.ANALYSES.get(aid))
-    m.save_proposal = lambda p: m.PROPOSALS.__setitem__(p["id"], p) or p
-    m.get_proposal = lambda pid: m.PROPOSALS.get(pid)
-    m.list_proposals = lambda: list(m.PROPOSALS.values())
-    return m
-
+# ---------------------------------------------------------------- store (part A, real)
 
 @pytest.fixture
-def st(monkeypatch):
-    """Always the in-memory stub, so tests are independent of part A's on-disk store."""
-    stub = _make_store_stub()
-    monkeypatch.setitem(sys.modules, "app.feedback.store", stub)
-    return stub
+def st():
+    """Part A's real on-disk store, emptied before and after each test (EVP_DATA is a temp
+    dir from conftest)."""
+    import shutil
+    from app.feedback import store
+    shutil.rmtree(store.ROOT, ignore_errors=True)
+    yield store
+    shutil.rmtree(store.ROOT, ignore_errors=True)
+
+
+def _set_record(st, fb_id, fn):
+    st.update(fb_id, lambda it: fn(it["snapshot"]["record"]))
 
 
 @pytest.fixture
@@ -139,7 +114,7 @@ def test_precheck_thresholds_and_node_errors(an_mod, st):
 
 def test_failed_record_step_without_qc(an_mod, st):
     item = job_item(st, {})
-    st.ITEMS[item["id"]]["snapshot"]["record"]["steps"][4]["status"] = "failed"  # narrate
+    _set_record(st, item["id"], lambda r: r["steps"][4].update(status="failed"))  # narrate
     h = an_mod.prechecks(st.get(item["id"]))[0]
     assert h["symptom"] == "failed_narrate" and h["action"] == {
         "type": "rerun", "step": "narrate", "changes": {}}
@@ -155,7 +130,7 @@ def test_llm_one_off_is_validated_and_stored(an_mod, st, notes, monkeypatch):
     assert an["verdict"] == "one_off" and an["cluster"] == "image:extra_fingers"
     assert an["action"] == {"type": "rerun", "node_id": "n3", "changes": {"seed": 77}}
     assert an["source"] == "llm" and an["cluster_count"] == 1
-    assert st.ANALYSES[an["id"]]["feedback_id"] == item["id"]
+    assert st.get_analysis(an["id"])["feedback_id"] == item["id"]
     it = st.get(item["id"])
     assert it["analysis_id"] == an["id"] and it["history"][-1]["event"] == "analysis"
     assert notes and notes[-1][2] == f"/feedback?item={item['id']}"
@@ -311,7 +286,7 @@ def test_act_rerun_failure_is_reported(an_mod, st, notes, monkeypatch):
     monkeypatch.setattr(llm, "ask", Ask(ONE_OFF_IMG))
     item = wf_item(st)
     an = an_mod.analyze(item["id"])
-    st.ITEMS[item["id"]]["snapshot"]["record"].pop("workflow")  # run deleted since
+    _set_record(st, item["id"], lambda r: r.pop("workflow"))  # run deleted since
     res = an_mod.act(an["id"])
     assert res["status"] == "failed" and notes[-1][3] == "error"
     assert st.get(item["id"])["history"][-1]["event"] == "rerun_failed"

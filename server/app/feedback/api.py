@@ -107,9 +107,13 @@ def clusters():
         g = groups.get(p.get("cluster"))
         if g and not g["proposal_id"]:
             g["proposal_id"] = p["id"]
+    analyze_mod = _mod("analyze", required=False)
     out = []
     for g in groups.values():
         g["count"] = len(g["feedback_ids"])
+        if analyze_mod is not None:  # the same count analyze.act() decides on
+            g["count"] = analyze_mod.cluster_count(g["cluster"])
+            g["rule_min"] = analyze_mod.RULE_MIN
         if g["count"]:
             out.append(g)
     return sorted(out, key=lambda g: g["count"], reverse=True)
@@ -144,11 +148,24 @@ def proposal_check(pr_id: str):
 
 
 @router.post("/proposals/{pr_id}/open")
-def proposal_open(pr_id: str):
+def proposal_open(pr_id: str, force: bool = False):
+    """Push skillfix/<id> and open the PR (never merges). force=true only from the explicit
+    仍然开 PR button, for a proposal whose target metric did not improve."""
     _proposal(pr_id)
     mod = _mod("proposals")
     try:
-        return mod.open_pr(pr_id)
+        return mod.open_pr(pr_id, force=force)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/proposals/{pr_id}/close")
+def proposal_close(pr_id: str):
+    """Drop a proposal that has no PR: worktrees and its check data are removed."""
+    _proposal(pr_id)
+    mod = _mod("proposals")
+    try:
+        return mod.close(pr_id)
     except ValueError as e:
         raise HTTPException(409, str(e))
 
@@ -193,14 +210,18 @@ def act(fb_id: str):
 
 @router.post("/{fb_id}/draft")
 def draft(fb_id: str):
+    """立即起草: analyze.act(force=True), so status, history and notify happen as for act."""
     it = _item(fb_id)
-    mod = _mod("proposals")
+    mod = _mod("analyze")
+    _mod("proposals")
     an = store.get_analysis(it["analysis_id"]) if it.get("analysis_id") else None
     if not an or not an.get("cluster"):
         raise HTTPException(409, "这条反馈还没有分析出问题类别，无法起草")
+    if (an.get("action") or {}).get("type") != "propose":
+        raise HTTPException(409, "这条反馈的分析结论不是规则问题，不能起草提案")
     try:
-        return mod.draft(an["cluster"], force=True)
-    except ValueError as e:
+        return mod.act(an["id"], force=True)
+    except (ValueError, LookupError) as e:
         raise HTTPException(409, str(e))
 
 

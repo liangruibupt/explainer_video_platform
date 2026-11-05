@@ -295,6 +295,14 @@ function ProposalDetail({ id, onChanged }) {
         <button className="btn" disabled={!!busy || livePr(p.state)} onClick={act('check', 'check')}>{busy === 'check' ? '对比中…' : '重新对比'}</button>
         <button className="btn" disabled={!!busy || p.state !== 'draft' || !p.improved} onClick={act('open', 'open')}
                 title={p.improved ? '推送分支并开 PR（不会合并）' : '目标指标没改善，不能开 PR'}>{busy === 'open' ? '开 PR 中…' : '开 PR'}</button>
+        {p.state === 'draft' && hasAfter && !p.improved && !p.pr_url &&
+          <button className="btn" disabled={!!busy}
+                  onClick={() => window.confirm('修改后目标指标没有改善。仍然推送分支并开 PR 吗？（不会合并）') && act('force', 'open?force=true')()}
+                  title="目标指标没改善；只在你确认要人工审查时使用">{busy === 'force' ? '开 PR 中…' : '仍然开 PR'}</button>}
+        {!p.pr_url && !['closed', 'merged', 'drafting', 'checking'].includes(p.state) &&
+          <button className="btn" disabled={!!busy}
+                  onClick={() => window.confirm('关闭这个提案？会删除它的工作区和对比数据，不会影响线上代码。') && act('close', 'close')()}>
+            {busy === 'close' ? '关闭中…' : '关闭提案'}</button>}
         <button className="btn" disabled={!!busy || !p.pr_url} onClick={act('sync', 'sync')}>{busy === 'sync' ? '同步中…' : '同步状态'}</button>
       </div>
     </div>

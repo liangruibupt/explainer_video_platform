@@ -58,6 +58,24 @@ SYMPTOM_METRIC = (("music", "voice_minus_music_db"), ("caption", "caption_max_cp
                   ("fail", "failed_steps"), ("identity", "avatar_identity_min"))
 JOB_KEYS = ("topic", "language", "seconds", "ratio", "captions", "music", "voice", "brief",
             "illustrations", "clips")
+# Repro modes: cheap (fixed scenes, deterministic steps), storyboard (real storyboard +
+# Polly narration only: the mode that can see a storyboard-prompt change), full (real job).
+MODES = ("cheap", "storyboard", "full")
+REPEATS = max(1, min(4, int(os.environ.get("EVP_FEEDBACK_REPEATS", "1"))))
+
+
+MODE_NOTE = {"cheap": "固定分镜、不用 GPU 的确定性步骤",
+             "storyboard": "真实分镜 + Polly 旁白，按旁白长度量时长；不渲染画面、不用 GPU",
+             "full": "完整任务"}
+
+
+def default_mode(p: dict) -> str:
+    """storyboard for storyboard-layer clusters on duration / pacing (cheap mode replays the
+    snapshot's scenes, so a storyboard-prompt change cannot show there), else ''."""
+    layer, _, symptom = (p.get("cluster") or "").partition(":")
+    if layer == "storyboard" and metric_for(symptom) == "duration_ratio":
+        return "storyboard"
+    return ""
 _threads = {}
 
 
@@ -302,6 +320,7 @@ def draft(cluster: str, force: bool = False, run_check: bool | None = None) -> d
         return old
     if run_check is None:
         run_check = os.environ.get("EVP_FEEDBACK_AUTOCHECK", "1") != "0"
+    maybe_cleanup()
 
     pr_id = store.new_id("pr")
     symptom = cluster.split(":", 1)[1]
@@ -418,6 +437,44 @@ def cheap(scenes):
         return orig(args, cwd, log)
     pipeline._sh = sh
 
+def storyboard_only(inp):
+    """'storyboard' mode: the real storyboard (this tree's llm.py) + Polly narration only,
+    synchronously; job.json gets the narration length as its duration. No GPU, no scene
+    code, no capture, no music, no captions."""
+    job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    d = pipeline.job_dir(job_id)
+    d.mkdir(parents=True)
+    log = d / "pipeline.log"
+    job = {"id": job_id, **inp, "music": "none", "captions": False, "illustrations": 0,
+           "clips": 0, "status": "running", "created": time.time(), "repro_mode": "storyboard",
+           "steps": [{"key": k, "label": l, "status": "skipped"} for k, l in pipeline.STEPS],
+           "error": None, "video": None, "scenes": []}
+    steps = {s["key"]: s for s in job["steps"]}
+    save = lambda: (d / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1))
+    save()
+    try:
+        steps["storyboard"]["status"] = "running"
+        scenes = llm.storyboard(inp["topic"], inp["language"], inp["seconds"],
+                                brief=inp.get("brief", ""))
+        (d / "scenes.json").write_text(json.dumps(scenes, ensure_ascii=False, indent=1))
+        job["scenes"] = scenes
+        steps["storyboard"]["status"] = "done"
+        steps["narrate"]["status"] = "running"
+        pipeline._sh([pipeline.PY, pipeline.SCRIPTS / "narrate.py", "scenes.json", ".",
+                      "--tts", "polly", "--voice", inp.get("voice") or "Zhiyu"], d, log)
+        frames = json.loads((d / "durations.json").read_text())
+        steps["narrate"]["status"] = "done"
+        job["duration"] = round(sum(frames) / 30, 2)
+        job["narration_chars"] = sum(len(s["narration"]) for s in scenes)
+        job["status"] = "done"
+    except Exception as e:
+        for s in job["steps"]:
+            if s["status"] == "running":
+                s["status"] = "failed"
+        job["status"], job["error"] = "failed", "%s: %s" % (type(e).__name__, e)
+    save()
+    return job_id, job["status"], job["error"]
+
 def wait(read, key, timeout):
     t0 = time.time()
     while True:
@@ -431,7 +488,9 @@ def wait(read, key, timeout):
 
 out = {}
 try:
-    if spec["kind"] == "job":
+    if spec["kind"] == "job" and spec["mode"] == "storyboard":
+        out["job_id"], out["status"], out["error"] = storyboard_only(dict(spec["input"]))
+    elif spec["kind"] == "job":
         inp = dict(spec["input"])
         if spec["mode"] == "cheap":
             cheap(spec.get("scenes") or [])
@@ -477,7 +536,7 @@ def run_repro(tree: Path, data_dir: Path, repro: dict, mode: str) -> dict:
     (data_dir / "runner.py").write_text(RUNNER)
     with (data_dir / "runner.log").open("w") as log:
         r = subprocess.run([PY, str(data_dir / "runner.py"), str(data_dir / "spec.json")],
-                           cwd=str(Path(tree) / "server"), env=_child_env(data_dir, mode == "cheap"),
+                           cwd=str(Path(tree) / "server"), env=_child_env(data_dir, mode != "full"),
                            stdout=subprocess.PIPE, stderr=log, text=True,
                            timeout=REPRO_TIMEOUT + 600)
     lines = [x for x in (r.stdout or "").splitlines() if x.startswith("{")]
@@ -542,9 +601,9 @@ def check(pr_id: str, mode: str = "", auto_open: bool | None = None) -> dict:
     p = _get(pr_id)
     if p["state"] not in ("checking", "draft", "failed") or not p.get("commit"):
         raise ValueError(f"提案状态 {p['state']}，不能检查")
-    mode = mode or (p.get("repro") or {}).get("mode") or os.environ.get(
+    mode = mode or (p.get("repro") or {}).get("mode") or default_mode(p) or os.environ.get(
         "EVP_FEEDBACK_REPRO_MODE", "cheap")
-    if mode not in ("cheap", "full"):
+    if mode not in MODES:
         raise ValueError(f"bad repro mode {mode!r}")
     if auto_open is None:
         auto_open = os.environ.get("EVP_FEEDBACK_AUTO_OPEN", "1") != "0"
@@ -552,46 +611,65 @@ def check(pr_id: str, mode: str = "", auto_open: bool | None = None) -> dict:
                                                                       "started": time.time()}),
                                   _event(x, f"check started ({mode})")))
     try:
-        repro = _cheap_repro(p["repro"]) if mode == "cheap" else p["repro"]
+        repro = _cheap_repro(p["repro"]) if mode in ("cheap", "storyboard") else p["repro"]
         root = gitops.repo_root()
         before_tree = gitops.create_base_tree(pr_id, p["base_sha"], root)
         after_tree = Path(p["worktree"])
         if not (after_tree / ".git").exists():
             raise ValueError("提案工作区不存在")
         d = CHECKS / pr_id
-        for side in ("before", "after"):
-            sd = d / side
+        reps = REPEATS
+        dirs = {(side, r): d / (side if r == 0 else f"{side}-{r + 1}")
+                for side in ("before", "after") for r in range(reps)}
+        for sd in dirs.values():
             if sd.exists():
                 import shutil
                 shutil.rmtree(sd)
-        res = {}
+        runs = {}
 
-        def one(side, tree):
+        def one(key, tree):
             try:
-                res[side] = run_repro(tree, d / side, repro, mode)
+                runs[key] = run_repro(tree, dirs[key], repro, mode)
             except Exception as e:  # noqa: BLE001
-                res[side] = {"status": "failed", "error": str(e)[:500]}
-        ts = [threading.Thread(target=one, args=(s, t)) for s, t in
-              (("before", before_tree), ("after", after_tree))]
+                runs[key] = {"status": "failed", "error": str(e)[:500]}
+        ts = [threading.Thread(target=one, args=(k, before_tree if k[0] == "before"
+                                                 else after_tree)) for k in dirs]
         for t in ts:
             t.start()
         for t in ts:
             t.join()
-        qb = measure(d / "before", res["before"].get("target"))
-        qa = measure(d / "after", res["after"].get("target"))
-        bad = [s for s in ("before", "after") if res[s].get("status") != "done"]
-        improved = not bad and is_improved(p["target_metric"], qb, qa)
+        qcs = {k: measure(dirs[k], runs[k].get("target")) for k in dirs}
+        m = p["target_metric"]
+
+        def merged(side):
+            """QC of the first run; the target metric is the mean over the repeats."""
+            q = dict(qcs[(side, 0)])
+            vals = [_num(m, qcs[(side, r)].get(m)) for r in range(reps)]
+            vals = [v for v in vals if v is not None]
+            if reps > 1 and vals and METRICS.get(m, ("",))[0] != "fewer":
+                q[m] = round(sum(vals) / len(vals), 3)
+                q[m + "_runs"] = [qcs[(side, r)].get(m) for r in range(reps)]
+            return q
+        res = {"before": runs[("before", 0)], "after": runs[("after", 0)]}
+        bad = sorted({f"{k[0]}#{k[1] + 1}" for k in dirs if runs[k].get("status") != "done"})
+        qb, qa = merged("before"), merged("after")
+        improved = not bad and is_improved(m, qb, qa)
 
         def fin(x):
             x.update(qc_before=qb, qc_after=qa, improved=improved,
                      state="failed" if bad else "draft")
-            x["check"].update(ended=time.time(), before=res["before"], after=res["after"])
+            x["check"].update(ended=time.time(), before=res["before"], after=res["after"],
+                              repeats=reps,
+                              runs=[{"side": k[0], "repeat": k[1] + 1,
+                                     "job_id": runs[k].get("job_id") or runs[k].get("run_id"),
+                                     "status": runs[k].get("status"), m: qcs[k].get(m)}
+                                    for k in sorted(dirs)])
             if bad:
-                x["error"] = "; ".join(f"{s}: {res[s].get('status')} {res[s].get('error') or ''}"
-                                       for s in bad)[:800]
-            _event(x, f"check {'failed' if bad else 'done'}: {x['target_metric']} "
-                      f"{qb.get(x['target_metric'])} -> {qa.get(x['target_metric'])}"
-                      f"{' improved' if improved else ''}")
+                x["error"] = "; ".join(f"{b}: {runs[(b.split('#')[0], int(b.split('#')[1]) - 1)].get('status')} "
+                                       f"{runs[(b.split('#')[0], int(b.split('#')[1]) - 1)].get('error') or ''}"
+                                       for b in bad)[:800]
+            _event(x, f"check {'failed' if bad else 'done'} ({mode}, x{reps}): {m} "
+                      f"{qb.get(m)} -> {qa.get(m)}{' improved' if improved else ''}")
         p = _update(pr_id, fin)
     except Exception as e:  # noqa: BLE001
         def fail(x):
@@ -669,7 +747,11 @@ def pr_body(p: dict) -> str:
         "", "</details>", "",
         f"### 修改前后质检（目标指标 `{m}`：{_fmt((p.get('qc_before') or {}).get(m))} → "
         f"{_fmt((p.get('qc_after') or {}).get(m))}）", "", qc_table(p), "",
-        f"复现模式：{chk.get('mode', '?')}（cheap = 固定分镜、不用 GPU 的确定性步骤）", "",
+        f"复现模式：{chk.get('mode', '?')}（{MODE_NOTE.get(chk.get('mode'), '')}），"
+        f"每边 {chk.get('repeats', 1)} 次" + (
+            "；逐次 " + "，".join(f"{r['side']}#{r['repeat']} `{r.get('job_id')}` = "
+                                f"{_fmt(r.get(m))}" for r in chk.get("runs") or [])
+            if (chk.get("repeats") or 1) > 1 else ""), "",
         "### 复现输入", "", "```json", json.dumps(repro, ensure_ascii=False, indent=1), "```",
         "", "### 运行记录", "", *runs,
         f"- 原始反馈对应的运行：" + "、".join(
@@ -775,7 +857,7 @@ def verify(pr_id: str, mode: str = "") -> dict:
                 f"{(sha or '?')[:10]}，更新后再点同步完成验证", _url(pr_id), "info")
         return p
     mode = mode or (p.get("check") or {}).get("mode") or "cheap"
-    repro = _cheap_repro(p["repro"]) if mode == "cheap" else p["repro"]
+    repro = _cheap_repro(p["repro"]) if mode in ("cheap", "storyboard") else p["repro"]
     d = CHECKS / pr_id / f"verify-{time.strftime('%Y%m%d-%H%M%S')}"
     res = run_repro(root, d, repro, mode)
     q = measure(d, res.get("target"))
@@ -796,10 +878,66 @@ def verify(pr_id: str, mode: str = "") -> dict:
     return p
 
 
+def _remove_checks(pr_id: str) -> bool:
+    """Delete data/feedback/checks/<pr_id>/ (only that folder, only under CHECKS)."""
+    import shutil
+    d = (CHECKS / pr_id).resolve()
+    if not gitops.valid_id(pr_id) or d.parent != CHECKS.resolve() or not d.exists():
+        return False
+    shutil.rmtree(d, ignore_errors=True)
+    return True
+
+
 def close(pr_id: str) -> dict:
-    """Drop a local draft (no PR): remove its worktrees, state closed."""
+    """Drop a local draft (no PR): remove its worktrees and check data, state closed."""
     p = _get(pr_id)
     if p.get("pr_number"):
         raise ValueError("已开 PR 的提案要在 GitHub 上关闭，然后同步")
+    if p["state"] in ("drafting", "checking"):
+        raise ValueError(f"提案状态 {p['state']}，等它结束后再关闭")
     gitops.remove_worktrees(pr_id)
-    return _update(pr_id, lambda x: (x.update(state="closed"), _event(x, "closed locally")))
+    _remove_checks(pr_id)
+    p = _update(pr_id, lambda x: (x.update(state="closed", worktree=None),
+                                  _event(x, "closed locally")))
+    for fid in p["feedback_ids"]:
+        try:
+            store.add_history(fid, "proposal_closed", pr_id)
+        except (KeyError, ValueError):
+            pass
+    return p
+
+
+STALE_DAYS = 14
+
+
+def cleanup_stale(days: int = STALE_DAYS, now: float | None = None) -> list:
+    """Close drafts (state draft / failed, no PR) older than `days`; closed ones lose their
+    leftover worktrees and check data too. Touches only data/feedback/. Returns closed ids."""
+    now, out = now or time.time(), []
+    for p in store.list_proposals(limit=100000):
+        if now - float(p.get("created") or now) < days * 86400 or p.get("pr_number"):
+            continue
+        try:
+            if p.get("state") in ("draft", "failed"):
+                close(p["id"])
+                out.append(p["id"])
+            elif p.get("state") == "closed":
+                gitops.remove_worktrees(p["id"])
+                _remove_checks(p["id"])
+        except Exception:  # noqa: BLE001 - best effort
+            pass
+    return out
+
+
+_last_cleanup = [0.0]
+
+
+def maybe_cleanup() -> None:
+    """Opportunistic cleanup, at most once an hour (called when a proposal is drafted)."""
+    if time.time() - _last_cleanup[0] < 3600:
+        return
+    _last_cleanup[0] = time.time()
+    try:
+        cleanup_stale()
+    except Exception:  # noqa: BLE001
+        pass
