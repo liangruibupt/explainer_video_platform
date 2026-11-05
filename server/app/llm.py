@@ -46,7 +46,14 @@ Return ONLY a JSON array, no prose, no code fence. Each item:
  "narration": "one or two spoken sentences",
  "visual": "what is drawn: diagrams, labels, arrows, charts, step-by-step build-up",
  "sfx": [{"at": FRAME_IN_SCENE, "kind": "whoosh|pop|rise|thud|hiss"}]}
-Rules: 5-8 scenes; first scene is a title card, last is a short recap.
+Rules: 5-8 scenes (5-6 when the target is 60 seconds or less); first scene is a title card,
+last is a short recap.
+Length budget: the video is exactly as long as its narration plus a short pause per scene,
+so the narration must fit the target length. Total narration across all scenes must stay
+within: Chinese about target_seconds x 3.8 characters (45 s ~ 170, 60 s ~ 230, 90 s ~ 340);
+English about target_seconds x 2.2 words. Split this budget across the scenes; the title card
+and the recap get the least. Before answering, count the total. If it is over budget, cut
+words or merge scenes. Never exceed the budget; being 10% short is fine.
 One idea per scene. Narration in the requested language; ids in English.
 "sfx" is optional, at most 2 per scene, "at" between 10 and 60.
 Check facts; do not invent numbers you are unsure of."""

@@ -46,7 +46,7 @@ def test_ids_and_create_get_list():
     assert it["reasons"] == ["字幕"] and len(it["text"]) == 500
     assert it["status"] == "new" and it["analysis_id"] is None
     snap = it["snapshot"]
-    assert snap["skill_version"] == "1.0.0" and snap["skill_commit"]
+    assert snap["skill_version"] == feedback.skill_version() and snap["skill_commit"]
     assert snap["record"]["id"] == JOB
     assert snap["qc"]["failed_steps"] == ["captions"]
     assert (DATA / "feedback" / "items" / f"{it['id']}.json").is_file()
@@ -130,7 +130,7 @@ def test_api_flow_without_analyze(client, monkeypatch):
     d = client.post(f"/api/feedback/{fb['id']}/dismiss").json()
     assert d["status"] == "dismissed"
     s = client.get("/api/feedback/skill").json()
-    assert s["version"] == "1.0.0" and s["commit"] and s["history"] == []
+    assert s["version"] == feedback.skill_version() and s["commit"] and s["history"] == []
 
 
 def test_api_starts_analysis_and_clusters(client, monkeypatch):
@@ -163,9 +163,9 @@ def test_api_starts_analysis_and_clusters(client, monkeypatch):
 def test_skill_version_on_job_and_run(monkeypatch):
     monkeypatch.setattr(pipeline, "_run", lambda job_id: None)
     job = pipeline.create_job(JOB, "t", "中文", 30, "16:9", True, "synth", "Zhiyu")
-    assert job["skill_version"] == "1.0.0" and job["skill_commit"] == feedback.skill_commit()
+    assert job["skill_version"] == feedback.skill_version() and job["skill_commit"] == feedback.skill_commit()
     saved = json.loads((DATA / "jobs" / JOB / "job.json").read_text())
-    assert saved["skill_version"] == "1.0.0" and saved["skill_commit"]
+    assert saved["skill_version"] == feedback.skill_version() and saved["skill_commit"]
 
     from app.workflows import engine
     monkeypatch.setattr(engine, "drive", lambda run_id: None)
@@ -173,7 +173,7 @@ def test_skill_version_on_job_and_run(monkeypatch):
           "edges": []}
     run = engine.start(wf)
     rj = engine.read_run(run["id"])
-    assert rj["skill_version"] == "1.0.0" and rj["skill_commit"] == feedback.skill_commit()
+    assert rj["skill_version"] == feedback.skill_version() and rj["skill_commit"] == feedback.skill_commit()
 
 
 def test_skill_commit_unknown_outside_git(monkeypatch, tmp_path):
