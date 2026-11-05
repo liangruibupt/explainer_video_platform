@@ -177,6 +177,7 @@ def test_close_removes_worktrees_and_checks_and_stale_cleanup(repo, client, monk
     p = client.post(f"/api/feedback/proposals/{pid}/close").json()
     assert p["state"] == "closed" and not wt.exists()
     assert not (proposals.CHECKS / pid).exists()
+    assert g(repo, "branch", "--list", f"skillfix/{pid}") == ""  # unpushed branch dropped
     assert store.get(ids[0])["history"][-1]["event"] == "proposal_closed"
     # stale cleanup: a 15-day-old draft is closed, a fresh one is kept
     old = store.save_proposal({"id": store.new_id("pr"), "created": time.time() - 15 * 86400,

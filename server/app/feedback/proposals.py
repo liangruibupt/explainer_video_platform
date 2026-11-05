@@ -286,14 +286,17 @@ def _pick_target(analyses) -> str:
 
 
 def _repro_from(items, suggestion) -> dict:
-    """{kind, input, scenes, source}: the model's job input over the first job snapshot."""
+    """{kind, input, scenes, source}: the input of one complaining job (the shortest target
+    length, the cheapest to rerun); the model's suggestion only when no job snapshot exists."""
+    items = sorted(items, key=lambda it: (((it.get("snapshot") or {}).get("record") or {})
+                                          .get("seconds") or 10 ** 6))
     for it in items:
         rec = (it.get("snapshot") or {}).get("record") or {}
         tgt = it.get("target") or {}
         if tgt.get("kind") == "job" and rec.get("topic"):
-            sug = (suggestion or {}).get("input") if (suggestion or {}).get("kind") == "job" \
-                else None
-            return {"kind": "job", "input": clean_job_input(sug or {}, rec),
+            # the complaining run's own input, verbatim: a model-suggested topic would be
+            # mixed with this run's brief and seconds and no longer reproduce anything
+            return {"kind": "job", "input": clean_job_input({}, rec),
                     "scenes": _clean_scenes(rec.get("scenes")), "source": it["id"]}
         if tgt.get("kind") == "workflow" and isinstance(rec.get("workflow"), dict):
             return {"kind": "workflow", "input": rec["workflow"], "scenes": [],
@@ -454,8 +457,15 @@ def storyboard_only(inp):
     save()
     try:
         steps["storyboard"]["status"] = "running"
-        scenes = llm.storyboard(inp["topic"], inp["language"], inp["seconds"],
-                                brief=inp.get("brief", ""))
+        for attempt in (1, 2):  # same rule on both sides: one retry on a cut-off answer
+            try:
+                scenes = llm.storyboard(inp["topic"], inp["language"], inp["seconds"],
+                                        brief=inp.get("brief", ""))
+                break
+            except ValueError as e:
+                if attempt == 2 or "cut off" not in str(e):
+                    raise
+                job["storyboard_retry"] = str(e)[:200]
         (d / "scenes.json").write_text(json.dumps(scenes, ensure_ascii=False, indent=1))
         job["scenes"] = scenes
         steps["storyboard"]["status"] = "done"
@@ -897,6 +907,9 @@ def close(pr_id: str) -> dict:
         raise ValueError(f"提案状态 {p['state']}，等它结束后再关闭")
     gitops.remove_worktrees(pr_id)
     _remove_checks(pr_id)
+    # the branch was never pushed (no PR): drop the local skillfix/<id> ref too
+    gitops._run(["git", "branch", "-D", gitops.branch_name(pr_id)], gitops.repo_root(),
+                check=False)
     p = _update(pr_id, lambda x: (x.update(state="closed", worktree=None),
                                   _event(x, "closed locally")))
     for fid in p["feedback_ids"]:

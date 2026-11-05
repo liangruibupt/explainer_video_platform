@@ -76,9 +76,19 @@ def create(body: FeedbackIn):
         raise HTTPException(422, str(e))
     analyze = _mod("analyze", required=False)
     if analyze is not None and hasattr(analyze, "analyze"):
-        _bg("analysis", item["id"], analyze.analyze, item["id"])
+        _bg("analysis", item["id"], _analyze_then_draft, analyze, item["id"])
         item["analysis_started"] = True
     return item
+
+
+def _analyze_then_draft(analyze, fb_id: str) -> None:
+    """Analysis; a rule-level 'propose' whose cluster has reached RULE_MIN goes straight to
+    act() (draft + check). Reruns and questions stay manual (they cost GPU / need a person)."""
+    an = analyze.analyze(fb_id)
+    if isinstance(an, dict) and (an.get("action") or {}).get("type") == "propose" \
+            and an.get("verdict") == "rule" \
+            and analyze.cluster_count(an["cluster"]) >= analyze.RULE_MIN:
+        analyze.act(an["id"])
 
 
 @router.get("")
