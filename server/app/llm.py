@@ -50,7 +50,7 @@ Rules: 5-8 scenes (5-6 when the target is 60 seconds or less); first scene is a 
 last is a short recap.
 Length budget: the video is exactly as long as its narration plus a short pause per scene,
 so the narration must fit the target length. Total narration across all scenes must stay
-within: Chinese about target_seconds x 3.5 characters (45 s ~ 155, 60 s ~ 210, 90 s ~ 315);
+within: Chinese about target_seconds x 3.8 characters (45 s ~ 170, 60 s ~ 230, 90 s ~ 340);
 English about target_seconds x 2.2 words. Split this budget across the scenes; the title card
 and the recap get the least. Before answering, count the total. If it is over budget, cut
 words or merge scenes. Never exceed the budget; being 10% short is fine.
