@@ -115,6 +115,8 @@ def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
            "status": "queued", "created": time.time(), "updated": time.time(),
            "steps": [{"key": k, "label": l, "status": "pending"} for k, l in STEPS],
            "error": None, "video": None, "scenes": []}
+    from .feedback import skill_info  # phase 5: skill_version + skill_commit
+    job.update(skill_info())
     _save(job)
     threading.Thread(target=_run, args=(job_id,), daemon=True).start()
     return job
