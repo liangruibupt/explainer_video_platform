@@ -6,6 +6,19 @@
 - **基础版**：一个 agent skill 加一个本地网页工作室。Opus 5.5 写分镜和绘制代码，代码逐帧画出画面，配上 Polly 旁白、逐字字幕、背景音乐和音效，用 FFmpeg 合成 MP4。
 - **生成模块**：图像、视频、音乐、数字人四个自部署的开源模型，跑在平台自己启停的 EC2 GPU 上，闲置 15 分钟自动终止。可以单独用，也可以在讲解视频里配插图、实拍镜头和背景音乐，或在工作流里做商品口播。
 
+## 界面一览
+
+![工作室界面演示](docs/media/demo.gif)
+
+约 70 秒的界面浏览，用的是以前真实跑出来的结果：工作台和成片、对话创作、工作流和编辑器、任务中心、素材库、图像 / 视频 / 音乐、数字人、反馈与改进、设置。
+
+| | |
+|---|---|
+| ![工作台](docs/media/screens/workbench.png)<br>工作台：一句话主题，选时长、画幅、音乐和 AI 素材 | ![成片](docs/media/screens/job.png)<br>成片页：视频、制作步骤和每段分镜 |
+| ![对话创作](docs/media/screens/chat.png)<br>对话创作：说一句话生成插画，再说「改成夜景」只重跑需要的节点 | ![工作流](docs/media/screens/workflow_candidates.png)<br>工作流运行：节点状态、缓存命中和图像候选 |
+| ![编辑器](docs/media/screens/editor.png)<br>拖拽编辑器：节点库、连线和参数面板 | ![数字人](docs/media/screens/avatar.png)<br>数字人：场景预设、模型选择和生成记录 |
+| ![反馈与改进](docs/media/screens/feedback_proposal.png)<br>改进提案：diff、改前改后 QC 对比和 PR 链接 | ![设置](docs/media/screens/settings.png)<br>设置：各 GPU 模块的实例状态和自动关机 |
+
 ## 快速开始
 
 ```bash
