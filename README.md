@@ -41,6 +41,12 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
    - **AI 视频镜头**（最多 2 段）：5 秒实拍感镜头，循环到整段长度，作为背景，上面叠文字和图表。
    - **AI 背景音乐**：按主题写英文风格词生成纯音乐。生成后用 Whisper 检查，有人声就重试，再不行退回古琴或合成垫乐。
 7. 音乐也可以选合成垫乐、公有领域古琴录音（《秋风词》）或不要音乐。
+8. 可选渲染方式「Remotion 动效卡」（见 [docs/REMOTION_CONTRACT.md](docs/REMOTION_CONTRACT.md)）：
+   - Opus 从 [video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) 的 122 张镜头配方卡里给每段挑一张，再参考卡片的 Remotion 实现写成 React 组件。写坏的段落重写一次，再不行退回标题卡。
+   - 字幕、配音、音效都在 Remotion 里渲染，每个作品留下一个完整的 Remotion 工程。
+   - 作品页点「在动效编辑器中打开」，进入 shotcraft 的剪映式动效编辑器（多轨时间线、属性面板、实时预览）：可以改字幕和每段的文案、颜色、字号，挪动、裁剪、变速镜头，换成别的动效卡。
+   - 「保存为新版本」渲染出 v2、v3……，原片保留。配音轨锁定：保存时总是恢复原配音；镜头和配音偏离超过 0.5 秒会提示。
+   - 编辑器经 studio 的 `/motion/` 路径访问，同一条端口转发即可。每台机器先运行一次 `infra/motion/setup.sh`。
 
 ### 单独生成
 
