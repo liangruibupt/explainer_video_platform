@@ -34,6 +34,12 @@ def layout_enabled() -> bool:
     return os.environ.get("EVP_LAYOUT_CHECK", "1").strip().lower() not in ("0", "false", "off", "no")
 
 
+def rewrite_all() -> bool:
+    """EVP_LAYOUT_REWRITE=all: rewrite on every reported issue (the rule before this change);
+    default: only on clear defects (generate.blocking)."""
+    return os.environ.get("EVP_LAYOUT_REWRITE", "").strip().lower() == "all"
+
+
 EARLY_MIN = 12  # first frames are a fade-in; nothing is judged before this
 
 
@@ -398,10 +404,16 @@ class _Gen:
                 if r.get("error"):
                     rec["note"] = r["error"][:300]
                 self.layout[st] = rec
-                if r["issues"]:
+                if any(generate.blocking(x) for x in r["issues"]) or (
+                        r["issues"] and rewrite_all()):
                     bad.append(i)
                     self.log(f"remotion: layout {self.scenes[i]['id']}: {len(r['issues'])} "
                              "issue(s), rewriting once: " + "; ".join(
+                                 f"[{x['kind']}] {x['where']}" for x in r["issues"])[:400])
+                elif r["issues"]:
+                    rec["status"] = "noted"
+                    self.log(f"remotion: layout {self.scenes[i]['id']}: noted only (no clear "
+                             "defect): " + "; ".join(
                                  f"[{x['kind']}] {x['where']}" for x in r["issues"])[:400])
             if bad:
                 self._layout_rewrite(bad, first)
@@ -434,7 +446,7 @@ class _Gen:
         reverted = set(worse)
         for i in bad:
             st, sid = self.sts[i], self.scenes[i]["id"]
-            rec, n1 = self.layout[st], len(first[i]["issues"])
+            rec = self.layout[st]
             if i in worse:
                 rec.update(status="issues_left", rewrite="reverted", note=worse[i])
             elif second[i].get("skipped") or second[i].get("error"):
@@ -446,18 +458,22 @@ class _Gen:
             else:
                 r2 = second[i]["issues"]
                 rec["rewrite_issues"] = r2
-                if not r2:
-                    rec.update(status="fixed", after=[], rewrite="kept")
-                elif len(r2) < n1:
+                # judged on clear defects only (rewrite_all: on every issue, the old rule)
+                count = (len if rewrite_all() else
+                         (lambda xs: sum(1 for x in xs if generate.blocking(x))))
+                b1, b2 = count(first[i]["issues"]), count(r2)
+                if b2 == 0:
+                    rec.update(status="fixed", after=r2, rewrite="kept")
+                elif b2 < b1:
                     rec.update(status="improved", after=r2, rewrite="kept")
                 else:
                     self._restore(i, old[i])
                     reverted.add(i)
                     rec.update(status="issues_left", rewrite="reverted",
-                               note=f"rewrite not better ({len(r2)} vs {n1} issues)")
+                               note=f"rewrite not better ({b2} vs {b1} issues)")
             self.log(f"remotion: layout {sid}: {rec['status']} (rewrite {rec['rewrite']}"
                      f"{', ' + rec['note'][:200] if rec.get('note') else ''})")
-            if rec["status"] in ("issues_left", "improved"):
+            if rec["status"] in ("issues_left", "improved", "fixed") and rec.get("after"):
                 self.log(f"remotion: layout {sid} remaining: " + "; ".join(
                     f"[{x['kind']}] {x['where']}" for x in rec["after"])[:400])
         # .check/<stem>.png must show the module that is kept, not the rejected rewrite.
@@ -535,7 +551,8 @@ class _Gen:
             s["card"] = self.card_of(i)
             lay = self.layout.get(st, {})
             s["layout"] = lay.get("status", "skipped")
-            if s["layout"] in ("issues_left", "improved"):
+            if s["layout"] in ("issues_left", "improved", "noted") or (
+                    s["layout"] == "fixed" and lay.get("after")):
                 s["layout_issues"] = [f"{x['kind']}: {x['where']}" for x in lay.get("after", [])][:6]
             else:
                 s.pop("layout_issues", None)
