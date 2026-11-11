@@ -1,0 +1,59 @@
+diff --git a/workbench/src/preview/PreviewPanel.tsx b/workbench/src/preview/PreviewPanel.tsx
+index 389467c..e02f45a 100644
+--- a/workbench/src/preview/PreviewPanel.tsx
++++ b/workbench/src/preview/PreviewPanel.tsx
+@@ -18,6 +18,11 @@ const ItemPreview: React.FC<{ item: NonNullable<PreviewItem>; onClose: () => voi
+ }) => {
+   const themeId = useStore(s => s.project.themeId);
+   const themeColors = useStore(s => s.project.themeColors);
++  // A film-unit card previews with the props of its clip on the timeline (what the film shows),
++  // not the code defaults; other cards keep their defaults.
++  const clipProps = useStore(s => item.kind === "card"
++    ? s.project.tracks.flatMap((tr) => tr.clips).find((c) => c.cardId === item.cardId)?.props
++    : undefined);
+   const t = useT();
+   let body: React.ReactNode = null;
+   let title = "";
+@@ -29,7 +34,7 @@ const ItemPreview: React.FC<{ item: NonNullable<PreviewItem>; onClose: () => voi
+       body = (
+         <Player
+           component={card.component}
+-          inputProps={themedProps(MANIFEST, card, themeId, {}, themeColors)}
++          inputProps={themedProps(MANIFEST, card, themeId, clipProps ?? {}, themeColors)}
+           durationInFrames={Math.max(2, card.durationInFrames)}
+           compositionWidth={width}
+           compositionHeight={height}
+diff --git a/workbench/src/store.ts b/workbench/src/store.ts
+index 3d30249..6737eff 100644
+--- a/workbench/src/store.ts
++++ b/workbench/src/store.ts
+@@ -9,6 +9,7 @@ import { manifestKey } from "./cards/manifest";
+ import { buildProjectFromManifest } from "./projectImport";
+ import { upgradeLegacyTheme } from './theme';
+ import { t } from "./i18n";
++import { seekTo } from "./playerRef";
+ 
+ export { projectDuration } from "./types";
+ 
+@@ -160,7 +161,20 @@ export const useStore = create<WorkbenchState>((set, get) => ({
+   },
+   setThemeColors: (themeColors) =>
+     set((s) => ({ project: { ...s.project, themeColors }, previewItem: null })),
+-  select: (id) => set({ selectedClipId: id }),
++  // Selecting a timeline clip leaves the library preview (which shows the card's code defaults,
++  // not this clip's props) and moves the playhead into the clip, so the player shows the clip.
++  select: (id) => {
++    if (id === null) return set({ selectedClipId: null });
++    const s = get();
++    const clip = s.project.tracks.flatMap((tr) => tr.clips).find((c) => c.id === id);
++    const patch: Partial<WorkbenchState> = { selectedClipId: id, previewItem: null };
++    if (clip && (s.playhead < clip.start || s.playhead >= clip.start + clip.duration)) {
++      patch.playhead = clip.start + Math.floor(clip.duration / 2);
++      const f = patch.playhead;
++      setTimeout(() => seekTo(f), 0); // after the project player is shown again
++    }
++    set(patch);
++  },
+   setPlayhead: (f) => set({ playhead: Math.max(0, Math.round(f)) }),
+   setPlaying: (b) => set({ playing: b }),
+   setZoom: (pxPerFrame) =>
