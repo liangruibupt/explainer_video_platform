@@ -227,7 +227,24 @@ def scene_module(s: dict, idx: int, total: int, frames: int, w: int, h: int, car
 
 # ---- layout review (vision) ---------------------------------------------------------------
 
-LAYOUT_KINDS = ("clipped", "overlap", "empty", "covered_title", "too_small", "other")
+LAYOUT_KINDS = ("clipped", "overlap", "empty", "covered_title", "too_small", "caption_band",
+                "other")
+# Kinds that trigger the one rewrite (§3.9). The others are recorded only ("noted"), except
+# too_small text whose reported height is below TOO_SMALL_REWRITE_PCT of the frame height.
+REWRITE_KINDS = ("clipped", "overlap", "covered_title", "caption_band")
+# Unreadable-text thresholds in % of frame height. Portrait is stricter: in the 9:16 runs,
+# labels at 1.4-1.6 % stayed visibly smaller than a rewrite would make them (PR #31).
+TOO_SMALL_REWRITE_PCT = 1.2
+TOO_SMALL_REWRITE_PCT_PORTRAIT = 1.5
+
+
+def blocking(issue: dict, portrait: bool = False) -> bool:
+    """True for a clear defect worth a rewrite; False for issues that are only recorded."""
+    if issue["kind"] in REWRITE_KINDS:
+        return True
+    pct = issue.get("height_pct")
+    limit = TOO_SMALL_REWRITE_PCT_PORTRAIT if portrait else TOO_SMALL_REWRITE_PCT
+    return issue["kind"] == "too_small" and pct is not None and pct < limit
 
 LAYOUT_SYSTEM = """You are the layout checker of a narrated explainer video. You get several stills
 of ONE scene in time order (the scene frame of each is given): the first one or two are taken
@@ -253,10 +270,11 @@ Go through EVERY still and check each of these explicitly; checkers before you m
 5. Text height (kind too_small): measure the glyph height of every text that must be read
    (labels, axis ticks, list lines, notes, annotations, legends). Too small = under 2.2% of
    frame height in landscape 16:9 (24 px of 1080; 12 px in a 960x540 still) or under 1.8% in
-   portrait 9:16 (35 px of 1920; 17 px in a 540x960 still). Name the elements.
-6. Caption band: the bottom 15% of the frame is reserved for burned-in captions. Subtitle text
-   there is expected; any OTHER text or key visual inside that band is a defect (kind other,
-   where = "bottom caption band").
+   portrait 9:16 (35 px of 1920; 17 px in a 540x960 still). Name the elements, and give
+   "height_pct": the glyph height of the SMALLEST of them in % of frame height (a number).
+6. Caption band (kind caption_band): the bottom 15% of the frame is reserved for burned-in
+   captions. Subtitle text there is expected; any OTHER text or key visual inside that band is
+   a defect.
 7. other: any other clear readability defect (text over a busy background with no backing, text
    running off its panel, elements colliding).
 
@@ -266,11 +284,12 @@ outside the frame, is not a defect by itself (but rule 3 still applies). A purel
 background shape (glow, texture, faint ring) that bleeds off an edge is fine. Report a defect
 only when you can see it; when the stills look fine, say so.
 Return ONLY JSON, no prose, no code fence:
-{"ok": true|false, "issues": [{"kind": "clipped|overlap|empty|covered_title|too_small|other",
+{"ok": true|false, "issues": [{"kind": "clipped|overlap|empty|covered_title|too_small|caption_band|other",
  "where": "which still (scene frame), which element and where (e.g. 'f173, left edge: the title
  什么是瑞利散射 loses its first character')",
- "fix": "a concrete layout change (move/shrink/wrap/reposition, with sizes relative to the frame)"}]}
-"ok" is true exactly when "issues" is empty."""
+ "fix": "a concrete layout change (move/shrink/wrap/reposition, with sizes relative to the frame)",
+ "height_pct": 1.5}]}
+"height_pct" only for too_small. "ok" is true exactly when "issues" is empty."""
 
 
 def layout_user(s: dict, frames: int, w: int, h: int, at: list,
@@ -300,9 +319,15 @@ def parse_review(text: str) -> dict:
         if not isinstance(it, dict):
             continue
         kind = str(it.get("kind", "other")).strip()
-        clean.append({"kind": kind if kind in LAYOUT_KINDS else "other",
-                      "where": str(it.get("where", ""))[:300],
-                      "fix": str(it.get("fix", ""))[:400]})
+        rec = {"kind": kind if kind in LAYOUT_KINDS else "other",
+               "where": str(it.get("where", ""))[:300],
+               "fix": str(it.get("fix", ""))[:400]}
+        if rec["kind"] == "too_small":
+            try:
+                rec["height_pct"] = round(float(it.get("height_pct")), 2)
+            except (TypeError, ValueError):
+                pass
+        clean.append(rec)
     if not out["ok"] and not clean:
         raise ValueError("review says not ok but lists no issues")
     return {"ok": not clean, "issues": clean}

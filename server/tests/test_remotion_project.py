@@ -38,8 +38,11 @@ BLANK = GOOD.replace("{o.title}</div>", "</div>")
 
 @pytest.fixture(autouse=True)
 def _layout_off(monkeypatch):
-    """The vision layout check is off unless a test turns it on (it would call Bedrock)."""
+    """The vision layout check is off unless a test turns it on (it would call Bedrock).
+    Stills go through the per-frame path so tests can fake render.still; the real batch path
+    (stills.cjs) is covered by the HAS_BASE tests, which re-enable it."""
     monkeypatch.setenv("EVP_LAYOUT_CHECK", "0")
+    monkeypatch.setenv("EVP_BATCH_STILLS", "0")
 
 
 def _job(n=2):
@@ -250,12 +253,30 @@ def test_llm_failure_falls_back(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not HAS_BASE, reason="no shared Remotion install")
 def test_write_project_real_tsc_and_still(tmp_path, monkeypatch):
-    # Real tsc + real still: scene_0 renders, scene_1 is blank (flat colour) both times -> fallback.
+    # Real tsc + real batched stills: scene_0 renders, scene_1 is blank both times -> fallback.
+    monkeypatch.setenv("EVP_BATCH_STILLS", "1")
     job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [BLANK, BLANK]})
     assert [s["card"] for s in job["scenes"]] == ["typography/paper-title-card", project.FALLBACK_CARD]
     assert (proj / ".check" / "scene_0.png").exists()
     render.typecheck(proj)  # the final project compiles
     assert any("flat colour" in u for s, u in fake.calls)
+    t = json.loads((proj / ".check" / "result.json").read_text())["timing"]
+    assert t["main"]["still"]["n"] == 3 and t["main"]["tsc"]["n"] >= 2 and t["total_s"] > 0
+
+
+@pytest.mark.skipif(not HAS_BASE, reason="no shared Remotion install")
+def test_batch_stills_match_single_stills(tmp_path, monkeypatch):
+    # stills.cjs (one bundle, one browser) gives the same pixels as `remotion still`.
+    from PIL import Image, ImageChops
+    monkeypatch.setenv("EVP_BATCH_STILLS", "1")
+    job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD2]})
+    frames = [5, 60, 130]
+    errs = render.stills(proj, frames + [100000], [tmp_path / f"b{f}.png" for f in frames + [100000]])
+    assert set(errs) == {100000}  # a frame past the end fails alone
+    for f in frames:
+        render.still(proj, f, (tmp_path / f"s{f}.png").resolve())
+        a, b = (Image.open(tmp_path / f"{k}{f}.png").convert("RGBA") for k in "bs")
+        assert a.size == (1920, 1080) and ImageChops.difference(a, b).getbbox() is None
 
 
 # ---- layout check (vision, §3.9) ----------------------------------------------------------
@@ -266,7 +287,12 @@ ISSUE = json.dumps({"ok": False, "issues": [
     {"kind": "clipped", "where": "left edge: earth circle", "fix": "move it right by 10% of width"}]})
 TWO = json.dumps({"ok": False, "issues": [
     {"kind": "overlap", "where": "y-axis ticks", "fix": "space them"},
+    {"kind": "covered_title", "where": "title", "fix": "move boxes down"}]})
+NOTED = json.dumps({"ok": False, "issues": [
+    {"kind": "too_small", "where": "tick labels", "fix": "bigger", "height_pct": 1.5},
     {"kind": "empty", "where": "right half", "fix": "fill it"}]})
+TINY = json.dumps({"ok": False, "issues": [
+    {"kind": "too_small", "where": "legend", "fix": "bigger", "height_pct": 0.9}]})
 
 
 class FakeVision:
@@ -452,3 +478,68 @@ def test_ask_images_downscales(monkeypatch):
     with Image.open(io.BytesIO(content[0]["image"]["source"]["bytes"])) as im:
         assert im.format == "JPEG" and im.size == (540, 960)
     assert sent["modelId"] == llm.MODEL_ID
+
+
+def test_pinned_cards_skip_picker_and_timing(tmp_path, monkeypatch):
+    monkeypatch.setenv("EVP_REMOTION_PIN_CARDS", "1")
+    d = tmp_path / "job"
+    (d / "remotion" / ".check").mkdir(parents=True)
+    (d / "remotion" / ".check" / "result.json").write_text(json.dumps({"look": {"accent": "#123456"}}))
+    job = _job(2)
+    job["scenes"][0]["card"], job["scenes"][1]["card"] = "data/chart-live-moves", "opening/orbit-ring-title-open"
+    fake = FakeLLM({}, {"scene_0": [GOOD], "scene_1": [GOOD]})
+    monkeypatch.setattr(generate.llm, "ask", fake)
+    monkeypatch.setattr(render, "still", _ok_still)
+    monkeypatch.setattr(render, "typecheck", lambda *a, **k: None)
+    proj = project.write_project(job, d, [90, 90], 1920, 1080, images={}, clips={},
+                                 background=None, context="", log=lambda m: None)
+    assert not any(s == generate.PICK_SYSTEM for s, u in fake.calls) and len(fake.calls) == 2
+    assert [s["card"] for s in job["scenes"]] == ["data/chart-live-moves", "opening/orbit-ring-title-open"]
+    res = json.loads((proj / ".check" / "result.json").read_text())
+    assert res["look"]["accent"] == "#123456" and res["timing"]["pinned_cards"] is True
+    assert res["timing"]["main"]["generate"]["n"] == 2 and res["timing"]["main"]["still"]["n"] == 2
+
+
+def test_blocking_kinds_and_height():
+    assert generate.parse_review(TINY)["issues"][0]["height_pct"] == 0.9
+    kinds = [{"kind": k} for k in ("clipped", "overlap", "covered_title", "caption_band")]
+    assert all(generate.blocking(x) for x in kinds)
+    assert not any(generate.blocking({"kind": k}) for k in ("empty", "too_small", "other"))
+    assert generate.blocking({"kind": "too_small", "height_pct": 1.1})
+    assert not generate.blocking({"kind": "too_small", "height_pct": 1.2})
+    # portrait is stricter: 1.4 % is rewritten in 9:16, only noted in 16:9
+    assert generate.blocking({"kind": "too_small", "height_pct": 1.4}, portrait=True)
+    assert not generate.blocking({"kind": "too_small", "height_pct": 1.4})
+    assert not generate.blocking({"kind": "too_small", "height_pct": 1.5}, portrait=True)
+
+
+def test_layout_noted_only_no_rewrite(tmp_path, monkeypatch):
+    # too_small (readable size) + empty: recorded, no rewrite, never the title card
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [NOTED]})
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "noted" and len(rec["after"]) == 2 and "rewrite" not in rec
+    assert len(fake.calls) == 3 and len(vision.calls) == 2  # pick + 2 scenes; no rewrite
+    assert job["scenes"][1]["layout"] == "noted"
+    assert job["scenes"][1]["layout_issues"] == ["too_small: tick labels", "empty: right half"]
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD
+
+
+def test_layout_tiny_text_rewrites_and_fixed_keeps_noted(tmp_path, monkeypatch):
+    # unreadable text (<1.2 %) is a clear defect; the rewrite counts as fixed when only
+    # non-blocking issues remain, and those stay recorded
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [TINY, NOTED]})
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "fixed" and rec["rewrite"] == "kept" and len(rec["after"]) == 2
+    assert job["scenes"][1]["layout_issues"] == ["too_small: tick labels", "empty: right half"]
+
+
+def test_layout_rewrite_all_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("EVP_LAYOUT_REWRITE", "all")
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [NOTED, OK]})
+    assert res["layout"]["scene_1"]["status"] == "fixed" and len(fake.calls) == 4

@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -31,6 +32,12 @@ LAYOUT_WORKERS = 4  # parallel vision calls; the stills themselves render one at
 def layout_enabled() -> bool:
     """The vision layout check (§3.9) runs unless EVP_LAYOUT_CHECK is 0/false/off/no."""
     return os.environ.get("EVP_LAYOUT_CHECK", "1").strip().lower() not in ("0", "false", "off", "no")
+
+
+def rewrite_all() -> bool:
+    """EVP_LAYOUT_REWRITE=all: rewrite on every reported issue (the rule before this change);
+    default: only on clear defects (generate.blocking)."""
+    return os.environ.get("EVP_LAYOUT_REWRITE", "").strip().lower() == "all"
 
 
 EARLY_MIN = 12  # first frames are a fade-in; nothing is judged before this
@@ -155,6 +162,15 @@ class _Gen:
         self.look, self.cards = dict(generate.DEFAULT_LOOK), {}
         self.layout: dict[str, dict] = {}  # stem -> layout record (result.json)
         self.layout_calls, self.layout_seconds = 0, 0.0
+        # timing[phase][kind] = {"n": count, "s": summed seconds}; phase "main" or "layout".
+        # Vision/rewrite calls run in parallel, so their summed seconds exceed wall time.
+        self.phase, self.timing, self._tlock = "main", {}, threading.Lock()
+
+    def _tick(self, kind: str, t0: float, n: int = 1) -> None:
+        with self._tlock:
+            d = self.timing.setdefault(self.phase, {}).setdefault(kind, {"n": 0, "s": 0.0})
+            d["n"] += n
+            d["s"] = round(d["s"] + time.time() - t0, 2)
 
     # ---- assets ---------------------------------------------------------------
     def copy_assets(self) -> None:
@@ -184,12 +200,15 @@ class _Gen:
     def _one(self, i: int, error: str = "") -> tuple[str, str | None]:
         s, st = self.scenes[i], self.sts[i]
         card = self.cat[self.cards[s["id"]]]
+        t0 = time.time()
         try:
             src = generate.scene_module(s, i, len(self.scenes), self.frames[i], self.w, self.h,
                                         card, self.look, self.assets(s["id"]), self.context,
                                         error=error, previous=self.src.get(st, "") if error else "")
         except Exception as e:  # noqa: BLE001 - this scene falls back
+            self._tick("rewrite" if error else "generate", t0)
             return "", f"generation failed: {e}"
+        self._tick("rewrite" if error else "generate", t0)
         bad = generate.check_tsx(src)
         return src, ("; ".join(bad) if bad else None)
 
@@ -238,34 +257,49 @@ class _Gen:
     def typecheck(self) -> dict[int, str]:
         lp = self.check / "tsc.log"
         lp.write_text("")
+        t0 = time.time()
         try:
             render.typecheck(self.proj, lp)
+            self._tick("tsc", t0)
             return {}
         except RuntimeError:
+            self._tick("tsc", t0)
             text = _tail(lp, 200000)
         by_stem = tsc_errors(text, self.sts)
         if not by_stem:
             raise RuntimeError("remotion: type-check failed outside the scene modules:\n" + text[-2000:])
         return {self.sts.index(st): e for st, e in by_stem.items()}
 
+    def check_stills(self, idx: list[int]) -> dict[int, str]:
+        """Render the midpoint of every scene in idx in ONE batch (render.stills); returns
+        {i: error text} for scenes whose still failed or is one flat colour."""
+        if not idx:
+            return {}
+        mids = {i: sum(self.frames[:i]) + self.frames[i] // 2 for i in idx}
+        outs = {i: self.check / f"{self.sts[i]}.png" for i in idx}
+        lp = self.check / "stills.log"
+        lp.write_text("")
+        t0 = time.time()
+        try:
+            errs = render.stills(self.proj, [mids[i] for i in idx], [outs[i] for i in idx], lp)
+        except Exception as e:  # noqa: BLE001
+            errs = {mids[i]: f"{e}\n{_tail(lp)}" for i in idx}
+        self._tick("still", t0, len(idx))
+        out = {}
+        for i in idx:
+            half = self.frames[i] // 2
+            if mids[i] in errs:
+                out[i] = f"still render at scene frame {half} failed: {errs[mids[i]]}"
+            elif not outs[i].exists():
+                out[i] = "still render produced no image"
+            elif uniform(outs[i]):
+                out[i] = (f"the frame at scene frame {half} (mid-scene) is one flat colour:"
+                          " nothing visible. Content must be on screen by then.")
+        return out
+
     def still(self, i: int) -> str | None:
         """Render the scene's midpoint; None = fine, else the error text."""
-        st = self.sts[i]
-        frm = sum(self.frames[:i]) + self.frames[i] // 2
-        out, lp = self.check / f"{st}.png", self.check / f"{st}.still.log"
-        lp.write_text("")
-        if out.exists():
-            out.unlink()
-        try:
-            render.still(self.proj, frm, out, lp)
-        except Exception as e:  # noqa: BLE001
-            return f"still render at scene frame {self.frames[i] // 2} failed: {e}\n{_tail(lp)}"
-        if not out.exists():
-            return "still render produced no image"
-        if uniform(out):
-            return (f"the frame at scene frame {self.frames[i] // 2} (mid-scene) is one flat colour:"
-                    " nothing visible. Content must be on screen by then.")
-        return None
+        return self.check_stills([i]).get(i)
 
     def ts_loop(self) -> None:
         """Type-check; failing scenes get their one regeneration, then the fallback."""
@@ -278,43 +312,59 @@ class _Gen:
             raise RuntimeError("remotion: type-check still failing after fallbacks")
 
     # ---- layout check (vision, §3.9) ------------------------------------------
-    def layout_stills(self, i: int, tag: str) -> list[tuple[int, bytes]]:
-        st, base = self.sts[i], sum(self.frames[:i])
+    def layout_stills(self, idx: list[int], tag: str) -> dict[int, list | str]:
+        """All layout stills of the scenes idx in ONE batch -> {i: [(scene frame, png bytes)]}
+        or {i: error text} for a scene whose stills failed."""
         ld = self.check / "layout"
         ld.mkdir(exist_ok=True)
-        out = []
-        for f in layout_frames(self.frames[i]):
-            png, lp = ld / f"{st}.{tag}.f{f}.png", ld / f"{st}.{tag}.still.log"
-            if png.exists():
-                png.unlink()
-            render.still(self.proj, base + f, png, lp)
-            out.append((f, png.read_bytes()))
+        plan = []
+        for i in idx:
+            base = sum(self.frames[:i])
+            plan += [(i, f, base + f, ld / f"{self.sts[i]}.{tag}.f{f}.png")
+                     for f in layout_frames(self.frames[i])]
+        lp = ld / f"{tag}.stills.log"
+        lp.write_text("")
+        t0 = time.time()
+        try:
+            errs = render.stills(self.proj, [p[2] for p in plan], [p[3] for p in plan], lp)
+        except Exception as e:  # noqa: BLE001
+            errs = {p[2]: str(e) for p in plan}
+        self._tick("still", t0, len(plan))
+        out: dict[int, list | str] = {i: [] for i in idx}
+        for i, f, a, png in plan:
+            if isinstance(out[i], str):
+                continue
+            if a in errs or not png.exists():
+                out[i] = f"layout still at scene frame {f} failed: {errs.get(a, 'no image')}"[:600]
+            else:
+                out[i].append((f, png.read_bytes()))
         return out
 
     def _review(self, i: int, stills: list, previous: list | None = None) -> dict:
+        t0 = time.time()
         try:
             r = generate.review_layout(self.scenes[i], self.frames[i], self.w, self.h, stills,
                                        previous=previous)
         except Exception as e:  # noqa: BLE001 - the check never blocks a scene
+            self._tick("vision", t0)
             return {"ok": True, "issues": [], "skipped": True, "error": f"review call failed: {e}"}
+        self._tick("vision", t0)
         return r
 
     def review_many(self, idx: list[int], tag: str,
                     previous: dict[int, list] | None = None) -> dict[int, dict]:
-        """Stills render one scene at a time; each scene's vision call starts as soon as its
-        stills exist (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
+        """All stills of all scenes render in one batch first; then the vision calls run
+        (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
         before a rewrite}: the confirmation pass re-checks each of them explicitly."""
         res, futs = {}, {}
         previous = previous or {}
+        shots = self.layout_stills(idx, tag)
         with ThreadPoolExecutor(max_workers=LAYOUT_WORKERS) as ex:
             for i in idx:
-                try:
-                    stills = self.layout_stills(i, tag)
-                except Exception as e:  # noqa: BLE001
-                    res[i] = {"ok": True, "issues": [], "skipped": True,
-                              "error": f"layout stills failed: {e}"}
+                if isinstance(shots[i], str):
+                    res[i] = {"ok": True, "issues": [], "skipped": True, "error": shots[i]}
                     continue
-                futs[i] = ex.submit(self._review, i, stills, previous.get(i))
+                futs[i] = ex.submit(self._review, i, shots[i], previous.get(i))
                 self.layout_calls += 1
             for i, fu in futs.items():
                 res[i] = fu.result()
@@ -342,23 +392,34 @@ class _Gen:
                 idx.append(i)
         if not idx:
             return
-        first = self.review_many(idx, "v1")
-        bad = []
-        for i in idx:
-            r, st = first[i], self.sts[i]
-            rec = {"status": "skipped" if r.get("skipped") else "ok",
-                   "frames": layout_frames(self.frames[i]), "before": r["issues"], "after": r["issues"]}
-            if r.get("error"):
-                rec["note"] = r["error"][:300]
-            self.layout[st] = rec
-            if r["issues"]:
-                bad.append(i)
-                self.log(f"remotion: layout {self.scenes[i]['id']}: {len(r['issues'])} issue(s), "
-                         "rewriting once: " + "; ".join(f"[{x['kind']}] {x['where']}"
-                                                        for x in r["issues"])[:400])
-        if bad:
-            self._layout_rewrite(bad, first)
-        self.layout_seconds = round(time.time() - t0, 1)
+        self.phase = "layout"
+        try:
+            first = self.review_many(idx, "v1")
+            bad = []
+            for i in idx:
+                r, st = first[i], self.sts[i]
+                rec = {"status": "skipped" if r.get("skipped") else "ok",
+                       "frames": layout_frames(self.frames[i]), "before": r["issues"],
+                       "after": r["issues"]}
+                if r.get("error"):
+                    rec["note"] = r["error"][:300]
+                self.layout[st] = rec
+                if any(generate.blocking(x, self.h > self.w) for x in r["issues"]) or (
+                        r["issues"] and rewrite_all()):
+                    bad.append(i)
+                    self.log(f"remotion: layout {self.scenes[i]['id']}: {len(r['issues'])} "
+                             "issue(s), rewriting once: " + "; ".join(
+                                 f"[{x['kind']}] {x['where']}" for x in r["issues"])[:400])
+                elif r["issues"]:
+                    rec["status"] = "noted"
+                    self.log(f"remotion: layout {self.scenes[i]['id']}: noted only (no clear "
+                             "defect): " + "; ".join(
+                                 f"[{x['kind']}] {x['where']}" for x in r["issues"])[:400])
+            if bad:
+                self._layout_rewrite(bad, first)
+        finally:
+            self.phase = "main"
+            self.layout_seconds = round(time.time() - t0, 1)
 
     def _layout_rewrite(self, bad: list[int], first: dict) -> None:
         old = {i: self.src[self.sts[i]] for i in bad}
@@ -376,19 +437,16 @@ class _Gen:
                 if i in live:
                     worse[i] = f"rewrite failed tsc: {e[:300]}"
                     self._restore(i, old[i])
-            for i in live:
-                if i not in worse:
-                    err = self.still(i)
-                    if err:
-                        worse[i] = f"rewrite failed the still check: {err[:300]}"
-                        self._restore(i, old[i])
+            for i, err in self.check_stills([i for i in live if i not in worse]).items():
+                worse[i] = f"rewrite failed the still check: {err[:300]}"
+                self._restore(i, old[i])
         live = [i for i in live if i not in worse]
         second = (self.review_many(live, "v2", {i: first[i]["issues"] for i in live})
                   if live else {})
         reverted = set(worse)
         for i in bad:
             st, sid = self.sts[i], self.scenes[i]["id"]
-            rec, n1 = self.layout[st], len(first[i]["issues"])
+            rec = self.layout[st]
             if i in worse:
                 rec.update(status="issues_left", rewrite="reverted", note=worse[i])
             elif second[i].get("skipped") or second[i].get("error"):
@@ -400,33 +458,60 @@ class _Gen:
             else:
                 r2 = second[i]["issues"]
                 rec["rewrite_issues"] = r2
-                if not r2:
-                    rec.update(status="fixed", after=[], rewrite="kept")
-                elif len(r2) < n1:
+                # judged on clear defects only (rewrite_all: on every issue, the old rule)
+                count = (len if rewrite_all() else
+                         (lambda xs: sum(1 for x in xs if generate.blocking(x, self.h > self.w))))
+                b1, b2 = count(first[i]["issues"]), count(r2)
+                if b2 == 0:
+                    rec.update(status="fixed", after=r2, rewrite="kept")
+                elif b2 < b1:
                     rec.update(status="improved", after=r2, rewrite="kept")
                 else:
                     self._restore(i, old[i])
                     reverted.add(i)
                     rec.update(status="issues_left", rewrite="reverted",
-                               note=f"rewrite not better ({len(r2)} vs {n1} issues)")
+                               note=f"rewrite not better ({b2} vs {b1} issues)")
             self.log(f"remotion: layout {sid}: {rec['status']} (rewrite {rec['rewrite']}"
                      f"{', ' + rec['note'][:200] if rec.get('note') else ''})")
-            if rec["status"] in ("issues_left", "improved"):
+            if rec["status"] in ("issues_left", "improved", "fixed") and rec.get("after"):
                 self.log(f"remotion: layout {sid} remaining: " + "; ".join(
                     f"[{x['kind']}] {x['where']}" for x in rec["after"])[:400])
         # .check/<stem>.png must show the module that is kept, not the rejected rewrite.
-        for i in sorted(reverted):
-            err = self.still(i)
-            if err:
-                self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
-                         f"module failed: {err[:200]}")
+        for i, err in self.check_stills(sorted(reverted)).items():
+            self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
+                     f"module failed: {err[:200]}")
+
+    def pinned_cards(self) -> tuple[dict, dict] | None:
+        """EVP_REMOTION_PIN_CARDS=1: reuse job['scenes'][i]['card'] (and the look of the last
+        .check/result.json) instead of the picker call, so timing runs are comparable."""
+        if os.environ.get("EVP_REMOTION_PIN_CARDS", "").strip() not in ("1", "true", "yes"):
+            return None
+        cards = {s["id"]: s.get("card") for s in self.scenes}
+        if not all(c in self.cat for c in cards.values()):
+            self.log("remotion: EVP_REMOTION_PIN_CARDS set but a scene has no known card; picking")
+            return None
+        look = dict(generate.DEFAULT_LOOK)
+        rp = self.check / "result.json"
+        if rp.exists():
+            try:
+                look.update(json.loads(rp.read_text()).get("look") or {})
+            except ValueError:
+                pass
+        return look, cards
 
     def run(self) -> dict:
+        t_start = time.time()
         self.copy_assets()
         cards = [c for c in self.cat.values()]
-        self.look, self.cards = generate.pick_cards(
-            self.scenes, self.frames, self.w, self.h, self.images, self.clips,
-            bool(self.bg), cards, log=self.log)
+        pinned = self.pinned_cards()
+        if pinned:
+            self.look, self.cards = pinned
+        else:
+            t0 = time.time()
+            self.look, self.cards = generate.pick_cards(
+                self.scenes, self.frames, self.w, self.h, self.images, self.clips,
+                bool(self.bg), cards, log=self.log)
+            self._tick("pick", t0)
         for s in self.scenes:
             self.log(f"remotion: {s['id']} -> card {self.cards[s['id']]}")
         sd = self.proj / "src" / "scenes"
@@ -448,23 +533,15 @@ class _Gen:
         if problems:
             self.retry_or_fail(problems)
         self.ts_loop()
-        for i in all_idx:
-            if self.sts[i] in self.fallback:
-                continue
-            err = self.still(i)
-            if err:
-                again = self.retry_or_fail({i: err})
-                if again:
-                    errs = self.typecheck()
-                    if i in errs:
-                        self.fail(i, errs[i])
-                    elif errs:  # another scene broke (should not happen): its fallback
-                        for j, e in errs.items():
-                            self.fail(j, e)
-                    else:
-                        err = self.still(i)
-                        if err:
-                            self.fail(i, err)
+        bad = self.check_stills([i for i in all_idx if self.sts[i] not in self.fallback])
+        if bad:
+            again = self.retry_or_fail(bad)
+            if again:
+                errs = self.typecheck()
+                for j, e in errs.items():  # the regenerated scene, or (should not happen) another
+                    self.fail(j, e)
+                for i, err in self.check_stills([i for i in again if i not in errs]).items():
+                    self.fail(i, err)
         self.ts_loop()
         self.layout_phase()
         self.ts_loop()
@@ -474,7 +551,8 @@ class _Gen:
             s["card"] = self.card_of(i)
             lay = self.layout.get(st, {})
             s["layout"] = lay.get("status", "skipped")
-            if s["layout"] in ("issues_left", "improved"):
+            if s["layout"] in ("issues_left", "improved", "noted") or (
+                    s["layout"] == "fixed" and lay.get("after")):
                 s["layout_issues"] = [f"{x['kind']}: {x['where']}" for x in lay.get("after", [])][:6]
             else:
                 s.pop("layout_issues", None)
@@ -488,7 +566,10 @@ class _Gen:
                 "fallback": {self.scenes[self.sts.index(k)]["id"]: v for k, v in self.fallback.items()},
                 "layout": {s["id"]: self.layout.get(st, {"status": "skipped"})
                            for s, st in zip(self.scenes, self.sts)},
-                "layout_calls": self.layout_calls, "layout_seconds": self.layout_seconds}
+                "layout_calls": self.layout_calls, "layout_seconds": self.layout_seconds,
+                "timing": {"total_s": round(time.time() - t_start, 1),
+                           "layout_wall_s": self.layout_seconds, "pinned_cards": bool(pinned),
+                           **self.timing}}
 
     def card_of(self, i: int) -> str:
         return FALLBACK_CARD if self.sts[i] in self.fallback else self.cards[self.scenes[i]["id"]]
