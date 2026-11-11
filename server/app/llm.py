@@ -39,6 +39,46 @@ def ask(system: str, user: str, max_tokens: int = 8000) -> str:
     return text
 
 
+def small_jpeg(data: bytes, long_side: int = 960, quality: int = 85) -> bytes:
+    """Re-encode an image (any PIL format) as JPEG with its long side at most long_side px."""
+    import io
+
+    from PIL import Image
+    with Image.open(io.BytesIO(data)) as im:
+        im = im.convert("RGB")
+        k = long_side / max(im.size)
+        if k < 1:
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
+                           Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def ask_images(system: str, user: str, images: list, max_tokens: int = 2000,
+               long_side: int = 960) -> str:
+    """Like ask(), with images (raw bytes, any format) sent before the text in one user turn.
+    Each image is downscaled to JPEG (long side long_side px) first."""
+    content = [{"image": {"format": "jpeg", "source": {"bytes": small_jpeg(b, long_side)}}}
+               for b in images]
+    content.append({"text": user})
+    r = _bedrock().converse_stream(
+        modelId=MODEL_ID,
+        system=[{"text": system}],
+        messages=[{"role": "user", "content": content}],
+        inferenceConfig={"maxTokens": max_tokens},
+    )
+    parts, stop = [], None
+    for ev in r["stream"]:
+        if "contentBlockDelta" in ev:
+            parts.append(ev["contentBlockDelta"]["delta"].get("text", ""))
+        elif "messageStop" in ev:
+            stop = ev["messageStop"].get("stopReason")
+    if stop == "max_tokens":
+        raise ValueError(f"model output was cut off at {max_tokens} tokens")
+    return "".join(parts)
+
+
 STORYBOARD_SYSTEM = """You write storyboards for short narrated explainer videos: principle
 explanations and slide-style walkthroughs, never drama or live-action scenes.
 Return ONLY a JSON array, no prose, no code fence. Each item:

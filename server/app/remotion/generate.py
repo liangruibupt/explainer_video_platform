@@ -223,3 +223,84 @@ def scene_module(s: dict, idx: int, total: int, frames: int, w: int, h: int, car
                  assets: list, context: str = "", error: str = "", previous: str = "") -> str:
     user = scene_prompt(s, idx, total, frames, w, h, card, look, assets, context, error, previous)
     return extract_tsx(llm.ask(SCENE_SYSTEM, user, max_tokens=16000))
+
+
+# ---- layout review (vision) ---------------------------------------------------------------
+
+LAYOUT_KINDS = ("clipped", "overlap", "empty", "covered_title", "too_small", "other")
+
+LAYOUT_SYSTEM = """You are the layout checker of a narrated explainer video. You get 3 stills of
+ONE scene, rendered at the given scene frames (in time order) once its layout should have
+settled, plus the scene's narration, visual description and the real frame size (the stills are
+downscaled). Find CONCRETE, VISIBLE layout defects only:
+- clipped: text, a label or a key shape (one that carries meaning) is cut off by a frame edge or
+  by its own panel/container;
+- overlap: two texts overlap each other, or a text overlaps a shape/dot/line so it is hard to read
+  (e.g. axis tick labels colliding, labels on top of dots);
+- empty: a large part of the frame (about a third or more) or a panel/box is blank while the
+  scene clearly meant to show something there (an empty panel, half the frame unused while the
+  other half is crowded);
+- covered_title: a box, panel or shape covers the scene title / heading, even partly;
+- too_small: text too small to read on the target screen (portrait 9:16 is watched on a phone:
+  body text under ~2% of frame height, landscape under ~2.5%, is too small);
+- other: any other clear readability defect (text over a busy background with no backing, text
+  running off its panel, elements colliding).
+The bottom 15% of the frame is reserved for burned-in captions: subtitle text there is expected
+and fine, but any OTHER text or key visual inside that band is a defect (kind clipped/overlap/
+other, where = "bottom caption band").
+Do NOT judge style, taste, colours, wording, motion design or what you would have drawn. Do not
+report elements that are clearly still fading in or animating in the first still, a decorative
+background shape that intentionally bleeds off an edge, or anything you are unsure of. When the
+stills look fine, say so: most scenes are fine.
+Return ONLY JSON, no prose, no code fence:
+{"ok": true|false, "issues": [{"kind": "clipped|overlap|empty|covered_title|too_small|other",
+ "where": "which element and where (e.g. 'left edge: the earth circle and its label 大气层')",
+ "fix": "a concrete layout change (move/shrink/wrap/reposition, with sizes relative to the frame)"}]}
+"ok" is true exactly when "issues" is empty."""
+
+
+def layout_user(s: dict, frames: int, w: int, h: int, at: list) -> str:
+    brief = {k: s.get(k) for k in ("id", "title", "narration", "visual")}
+    return (f"Frame {w}x{h} ({'portrait 9:16' if h > w else 'landscape 16:9'}). The scene lasts "
+            f"{frames} frames; the stills are at scene frames {', '.join(map(str, at))}.\n"
+            f"Scene:\n{json.dumps(brief, ensure_ascii=False, indent=1)}")
+
+
+def parse_review(text: str) -> dict:
+    """Validate the reviewer's JSON -> {"ok", "issues"}; raises ValueError when unusable."""
+    out = parse_json(text)
+    issues = out.get("issues")
+    if not isinstance(out.get("ok"), bool) or not isinstance(issues, list):
+        raise ValueError("review JSON needs ok (bool) and issues (list)")
+    clean = []
+    for it in issues:
+        if not isinstance(it, dict):
+            continue
+        kind = str(it.get("kind", "other")).strip()
+        clean.append({"kind": kind if kind in LAYOUT_KINDS else "other",
+                      "where": str(it.get("where", ""))[:300],
+                      "fix": str(it.get("fix", ""))[:400]})
+    if not out["ok"] and not clean:
+        raise ValueError("review says not ok but lists no issues")
+    return {"ok": not clean, "issues": clean}
+
+
+def review_layout(s: dict, frames: int, w: int, h: int, stills: list) -> dict:
+    """stills = [(scene frame, image bytes)]. ONE vision call. Returns {"ok", "issues"} and, when
+    the reply could not be parsed, "error" (treated as ok)."""
+    at = [f for f, _ in stills]
+    text = llm.ask_images(LAYOUT_SYSTEM, layout_user(s, frames, w, h, at),
+                          [b for _, b in stills], max_tokens=2000)
+    try:
+        return parse_review(text)
+    except Exception as e:  # noqa: BLE001 - an unreadable review never blocks the scene
+        return {"ok": True, "issues": [], "error": f"unparsable review ({e}): {text[:300]}"}
+
+
+def issues_text(issues: list, at: list) -> str:
+    """The layout issue list as the error text of a regeneration (scene_prompt's error path)."""
+    lines = [f"Layout review of stills at scene frames {', '.join(map(str, at))} found these "
+             "visible layout defects. Fix every one (move, resize, wrap or reposition elements; "
+             "keep the motion, the content and everything that already looks right):"]
+    lines += [f"- [{i['kind']}] {i['where']} -> fix: {i['fix']}" for i in issues]
+    return "\n".join(lines)

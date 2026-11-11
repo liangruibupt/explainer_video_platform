@@ -80,6 +80,23 @@ Rules (from shotcraft `references/workbench.md` §3 and our pipeline):
 8. A scene that fails type-check or its still render (after one regeneration with the error)
    becomes `export { Scene, schema } from "../lib/TitleCard"` plus `DEFAULTS` built from the
    scene's narration (see `template/src/scenes/s01.tsx`), and `card: "fallback/title-card"`.
+9. **Layout check** (vision, on by default; `EVP_LAYOUT_CHECK=0` turns it off). tsc and the
+   midpoint still cannot see layout defects, so after them every generated scene renders 3
+   stills (scene frames ~45 %, ~75 % and duration−12, never before frame 20; one at a time)
+   and ONE Opus call (`llm.ask_images`, stills downscaled to JPEG, long side 960) per scene,
+   up to 4 at once, reviews them with the narration/visual and the frame size. Reply: strict
+   JSON `{ok, issues: [{kind: clipped|overlap|empty|covered_title|too_small|other, where,
+   fix}]}`; only concrete visible defects count (no style/taste), and the bottom 15 % must stay
+   clear apart from captions. An unparsable reply counts as ok (logged); a failed call or
+   still marks the scene `skipped`. A scene with issues is regenerated ONCE with the issue
+   list as the error text, then re-checked (static check, tsc, still, layout). The rewrite is
+   kept only when it passes and has fewer issues; otherwise the previous module is restored.
+   Layout issues alone never lead to the title-card fallback. Per scene,
+   `remotion/.check/result.json` → `layout[<id>]` = `{status: ok|fixed|issues_left|skipped,
+   frames, before, after, rewrite?, rewrite_issues?, note?}` (plus `layout_calls`,
+   `layout_seconds`); `job["scenes"][i]["layout"]` = the status and, for `issues_left`,
+   `layout_issues` (short strings). Stills: `.check/layout/<stem>.v1|v2.f<frame>.png`.
+   Known limit: defects that only exist during an entrance (before ~45 %) are not sampled.
 
 `src/data/timeline.json` (type `Timeline` in `types.ts`): `fps` 30, `width`, `height`,
 `background`, `revision` (any string that changes per generation), `scenes:
