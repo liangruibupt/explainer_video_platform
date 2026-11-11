@@ -3,11 +3,15 @@
 write_project: template -> assets copied into public/ -> one Opus call picks a shotcraft card
 per scene -> one Opus call per scene (4 in parallel) writes src/scenes/<id>.tsx -> type-check
 and a midpoint still per scene, one regeneration with the error text, then the TitleCard
-fallback (§3.8). Writes src/scenes/index.ts and src/data/timeline.json; sets scenes[i]['card'].
+fallback (§3.8). Then the layout check (§3.9, EVP_LAYOUT_CHECK=0 turns it off): 3 stills per
+scene go to one Opus vision call; scenes with visible defects get one rewrite with the issue
+list, kept only when it still builds and has fewer issues. Writes src/scenes/index.ts and
+src/data/timeline.json; sets scenes[i]['card'] and scenes[i]['layout'].
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import time
@@ -21,6 +25,29 @@ from . import catalog, generate, render
 FALLBACK_CARD = "fallback/title-card"
 FPS = 30
 WORKERS = 4
+LAYOUT_WORKERS = 4  # parallel vision calls; the stills themselves render one at a time
+
+
+def layout_enabled() -> bool:
+    """The vision layout check (§3.9) runs unless EVP_LAYOUT_CHECK is 0/false/off/no."""
+    return os.environ.get("EVP_LAYOUT_CHECK", "1").strip().lower() not in ("0", "false", "off", "no")
+
+
+EARLY_MIN = 12  # first frames are a fade-in; nothing is judged before this
+
+
+def layout_frames(n: int) -> list[int]:
+    """Scene frames of the layout stills: two entrance-phase stills (~12 %, ~25 %), two
+    settled ones (~45 %, ~75 %) and n-12; never before frame EARLY_MIN.
+    Measured on the acceptance TCP job: the header boxes covered 「第二次握手」 from scene frame
+    12 to ~45 (281 frames, 4-16 %) and were clear by 25 % (f70), so 25 % alone misses that
+    class; the sky blank 人眼敏感度 panel sat at f67 of 280 (24 %)."""
+    out = []
+    for p in (round(n * 0.12), round(n * 0.25), round(n * 0.45), round(n * 0.75), n - 12):
+        p = min(max(p, EARLY_MIN), n - 1)
+        if p >= 0 and p not in out:
+            out.append(p)
+    return sorted(out)
 
 
 def file_stem(sid: str) -> str:
@@ -126,6 +153,8 @@ class _Gen:
         self.regen: set[str] = set()
         self.fallback: dict[str, str] = {}  # stem -> reason
         self.look, self.cards = dict(generate.DEFAULT_LOOK), {}
+        self.layout: dict[str, dict] = {}  # stem -> layout record (result.json)
+        self.layout_calls, self.layout_seconds = 0, 0.0
 
     # ---- assets ---------------------------------------------------------------
     def copy_assets(self) -> None:
@@ -248,6 +277,150 @@ class _Gen:
         if self.typecheck():
             raise RuntimeError("remotion: type-check still failing after fallbacks")
 
+    # ---- layout check (vision, §3.9) ------------------------------------------
+    def layout_stills(self, i: int, tag: str) -> list[tuple[int, bytes]]:
+        st, base = self.sts[i], sum(self.frames[:i])
+        ld = self.check / "layout"
+        ld.mkdir(exist_ok=True)
+        out = []
+        for f in layout_frames(self.frames[i]):
+            png, lp = ld / f"{st}.{tag}.f{f}.png", ld / f"{st}.{tag}.still.log"
+            if png.exists():
+                png.unlink()
+            render.still(self.proj, base + f, png, lp)
+            out.append((f, png.read_bytes()))
+        return out
+
+    def _review(self, i: int, stills: list, previous: list | None = None) -> dict:
+        try:
+            r = generate.review_layout(self.scenes[i], self.frames[i], self.w, self.h, stills,
+                                       previous=previous)
+        except Exception as e:  # noqa: BLE001 - the check never blocks a scene
+            return {"ok": True, "issues": [], "skipped": True, "error": f"review call failed: {e}"}
+        return r
+
+    def review_many(self, idx: list[int], tag: str,
+                    previous: dict[int, list] | None = None) -> dict[int, dict]:
+        """Stills render one scene at a time; each scene's vision call starts as soon as its
+        stills exist (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
+        before a rewrite}: the confirmation pass re-checks each of them explicitly."""
+        res, futs = {}, {}
+        previous = previous or {}
+        with ThreadPoolExecutor(max_workers=LAYOUT_WORKERS) as ex:
+            for i in idx:
+                try:
+                    stills = self.layout_stills(i, tag)
+                except Exception as e:  # noqa: BLE001
+                    res[i] = {"ok": True, "issues": [], "skipped": True,
+                              "error": f"layout stills failed: {e}"}
+                    continue
+                futs[i] = ex.submit(self._review, i, stills, previous.get(i))
+                self.layout_calls += 1
+            for i, fu in futs.items():
+                res[i] = fu.result()
+        for i in idx:
+            if res[i].get("error"):
+                self.log(f"remotion: layout {self.scenes[i]['id']} ({tag}): {res[i]['error'][:300]}")
+        return res
+
+    def _restore(self, i: int, src: str) -> None:
+        self.src[self.sts[i]] = src
+        self._write(i, src)
+
+    def layout_phase(self) -> None:
+        """Review every generated scene; scenes with issues get ONE rewrite with the issue list.
+        A rewrite that breaks (static check, tsc, still) or is not better is reverted. Layout
+        issues alone never lead to the title-card fallback."""
+        t0 = time.time()
+        idx = []
+        for i, st in enumerate(self.sts):
+            if st in self.fallback:
+                self.layout[st] = {"status": "skipped", "reason": "fallback title card"}
+            elif not layout_enabled():
+                self.layout[st] = {"status": "skipped", "reason": "EVP_LAYOUT_CHECK=0"}
+            else:
+                idx.append(i)
+        if not idx:
+            return
+        first = self.review_many(idx, "v1")
+        bad = []
+        for i in idx:
+            r, st = first[i], self.sts[i]
+            rec = {"status": "skipped" if r.get("skipped") else "ok",
+                   "frames": layout_frames(self.frames[i]), "before": r["issues"], "after": r["issues"]}
+            if r.get("error"):
+                rec["note"] = r["error"][:300]
+            self.layout[st] = rec
+            if r["issues"]:
+                bad.append(i)
+                self.log(f"remotion: layout {self.scenes[i]['id']}: {len(r['issues'])} issue(s), "
+                         "rewriting once: " + "; ".join(f"[{x['kind']}] {x['where']}"
+                                                        for x in r["issues"])[:400])
+        if bad:
+            self._layout_rewrite(bad, first)
+        self.layout_seconds = round(time.time() - t0, 1)
+
+    def _layout_rewrite(self, bad: list[int], first: dict) -> None:
+        old = {i: self.src[self.sts[i]] for i in bad}
+        errs = {i: generate.issues_text(first[i]["issues"], layout_frames(self.frames[i]))
+                for i in bad}
+        worse: dict[int, str] = {}
+        for i, p in self.generate(bad, errs).items():
+            worse[i] = f"rewrite failed the static check: {p}"
+        for i in worse:
+            self._restore(i, old[i])
+        live = [i for i in bad if i not in worse]
+        if live:
+            tsc = self.typecheck()
+            for i, e in tsc.items():
+                if i in live:
+                    worse[i] = f"rewrite failed tsc: {e[:300]}"
+                    self._restore(i, old[i])
+            for i in live:
+                if i not in worse:
+                    err = self.still(i)
+                    if err:
+                        worse[i] = f"rewrite failed the still check: {err[:300]}"
+                        self._restore(i, old[i])
+        live = [i for i in live if i not in worse]
+        second = (self.review_many(live, "v2", {i: first[i]["issues"] for i in live})
+                  if live else {})
+        reverted = set(worse)
+        for i in bad:
+            st, sid = self.sts[i], self.scenes[i]["id"]
+            rec, n1 = self.layout[st], len(first[i]["issues"])
+            if i in worse:
+                rec.update(status="issues_left", rewrite="reverted", note=worse[i])
+            elif second[i].get("skipped") or second[i].get("error"):
+                # no confirmed result for the rewrite -> never "fixed"; keep the known version
+                self._restore(i, old[i])
+                reverted.add(i)
+                rec.update(status="issues_left", rewrite="reverted",
+                           note=f"rewrite not confirmed: {second[i].get('error', '')[:300]}")
+            else:
+                r2 = second[i]["issues"]
+                rec["rewrite_issues"] = r2
+                if not r2:
+                    rec.update(status="fixed", after=[], rewrite="kept")
+                elif len(r2) < n1:
+                    rec.update(status="improved", after=r2, rewrite="kept")
+                else:
+                    self._restore(i, old[i])
+                    reverted.add(i)
+                    rec.update(status="issues_left", rewrite="reverted",
+                               note=f"rewrite not better ({len(r2)} vs {n1} issues)")
+            self.log(f"remotion: layout {sid}: {rec['status']} (rewrite {rec['rewrite']}"
+                     f"{', ' + rec['note'][:200] if rec.get('note') else ''})")
+            if rec["status"] in ("issues_left", "improved"):
+                self.log(f"remotion: layout {sid} remaining: " + "; ".join(
+                    f"[{x['kind']}] {x['where']}" for x in rec["after"])[:400])
+        # .check/<stem>.png must show the module that is kept, not the rejected rewrite.
+        for i in sorted(reverted):
+            err = self.still(i)
+            if err:
+                self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
+                         f"module failed: {err[:200]}")
+
     def run(self) -> dict:
         self.copy_assets()
         cards = [c for c in self.cat.values()]
@@ -293,10 +466,18 @@ class _Gen:
                         if err:
                             self.fail(i, err)
         self.ts_loop()
+        self.layout_phase()
+        self.ts_loop()
         self.write_timeline()
         for i, s in enumerate(self.scenes):
             st = self.sts[i]
             s["card"] = self.card_of(i)
+            lay = self.layout.get(st, {})
+            s["layout"] = lay.get("status", "skipped")
+            if s["layout"] in ("issues_left", "improved"):
+                s["layout_issues"] = [f"{x['kind']}: {x['where']}" for x in lay.get("after", [])][:6]
+            else:
+                s.pop("layout_issues", None)
             if st in self.fallback:
                 self.log(f"remotion: {s['id']} fallback to title card ({self.cards[s['id']]}): "
                          f"{self.fallback[st][:300]}")
@@ -304,7 +485,10 @@ class _Gen:
                 self.log(f"remotion: {s['id']} ok with {s['card']}"
                          f"{' after one regeneration' if st in self.regen else ''}")
         return {"look": self.look, "cards": {s["id"]: s["card"] for s in self.scenes},
-                "fallback": {self.scenes[self.sts.index(k)]["id"]: v for k, v in self.fallback.items()}}
+                "fallback": {self.scenes[self.sts.index(k)]["id"]: v for k, v in self.fallback.items()},
+                "layout": {s["id"]: self.layout.get(st, {"status": "skipped"})
+                           for s, st in zip(self.scenes, self.sts)},
+                "layout_calls": self.layout_calls, "layout_seconds": self.layout_seconds}
 
     def card_of(self, i: int) -> str:
         return FALLBACK_CARD if self.sts[i] in self.fallback else self.cards[self.scenes[i]["id"]]
@@ -327,3 +511,15 @@ def write_project(job: dict, d: Path, frames: list, w: int, h: int, *, images: d
     res = g.run()
     (g.check / "result.json").write_text(json.dumps(res, ensure_ascii=False, indent=1))
     return proj
+
+
+def review_project(job: dict, d: Path, log: Callable[[str], None], tag: str = "probe") -> dict:
+    """Run only the layout reviewer on an existing project (no rewrite, nothing changed except
+    stills under remotion/.check/layout/). Returns {scene id: review}."""
+    proj = Path(d) / "remotion"
+    tl = json.loads((proj / "src" / "data" / "timeline.json").read_text())
+    frames = [s["duration"] for s in tl["scenes"]]
+    g = _Gen(job, proj, frames, tl["width"], tl["height"], {}, {}, None, "", log)
+    idx = [i for i, s in enumerate(tl["scenes"]) if s.get("card") != FALLBACK_CARD]
+    res = g.review_many(idx, tag)
+    return {job["scenes"][i]["id"]: res[i] for i in idx}

@@ -36,6 +36,12 @@ TYPE_ERR = GOOD.replace("const dur = p.duration ?? 90;", "const dur: string = p.
 BLANK = GOOD.replace("{o.title}</div>", "</div>")
 
 
+@pytest.fixture(autouse=True)
+def _layout_off(monkeypatch):
+    """The vision layout check is off unless a test turns it on (it would call Bedrock)."""
+    monkeypatch.setenv("EVP_LAYOUT_CHECK", "0")
+
+
 def _job(n=2):
     return {"id": "t", "scenes": [{"id": f"scene_{i}", "title": f"标题{i}",
                                    "narration": f"旁白{i}", "visual": "v"} for i in range(n)]}
@@ -250,3 +256,199 @@ def test_write_project_real_tsc_and_still(tmp_path, monkeypatch):
     assert (proj / ".check" / "scene_0.png").exists()
     render.typecheck(proj)  # the final project compiles
     assert any("flat colour" in u for s, u in fake.calls)
+
+
+# ---- layout check (vision, §3.9) ----------------------------------------------------------
+
+GOOD2 = GOOD.replace('"TITLE"', '"TITLE2"')
+OK = json.dumps({"ok": True, "issues": []})
+ISSUE = json.dumps({"ok": False, "issues": [
+    {"kind": "clipped", "where": "left edge: earth circle", "fix": "move it right by 10% of width"}]})
+TWO = json.dumps({"ok": False, "issues": [
+    {"kind": "overlap", "where": "y-axis ticks", "fix": "space them"},
+    {"kind": "empty", "where": "right half", "fix": "fill it"}]})
+
+
+class FakeVision:
+    """Scripted layout reviews per scene id: the n-th review of a scene gets replies[sid][n]."""
+
+    def __init__(self, replies):
+        self.replies, self.calls = replies, []
+
+    def __call__(self, system, user, images, max_tokens=2000):
+        assert system == generate.LAYOUT_SYSTEM
+        sid = json.loads(user.split("Scene:\n", 1)[1].split("\n\nThis is a REWRITE", 1)[0])["id"]
+        n = sum(1 for c in self.calls if c[0] == sid)
+        self.calls.append((sid, user, len(images)))
+        q = self.replies[sid]
+        return q[min(n, len(q) - 1)]
+
+
+def _tc_strict(proj, log=None, timeout=180):
+    bad = [p.name for p in (proj / "src" / "scenes").glob("*.tsx") if "dur: string" in p.read_text()]
+    if bad:
+        log.write_text("".join(f"src/scenes/{b}(7,9): error TS2322: bad\n" for b in bad))
+        raise RuntimeError("tsc failed")
+
+
+def _run_layout(tmp_path, monkeypatch, modules, replies, still=None):
+    monkeypatch.setenv("EVP_LAYOUT_CHECK", "1")
+    vision = FakeVision(replies)
+    monkeypatch.setattr(generate.llm, "ask_images", vision)
+    frames = []
+
+    def st(proj, frame, out, log=None, timeout=300):
+        frames.append(frame)
+        (still or _ok_still)(proj, frame, out, log, timeout)
+
+    job, proj, logs, fake = _run(tmp_path, monkeypatch, modules, still=st, typecheck=_tc_strict)
+    res = json.loads((proj / ".check" / "result.json").read_text())
+    return job, proj, logs, fake, vision, res, frames
+
+
+def test_layout_frames():
+    assert project.layout_frames(171) == [21, 43, 77, 128, 159]
+    assert project.layout_frames(281) == [34, 70, 126, 211, 269]  # TCP step2: title covered f12-45
+    assert project.layout_frames(30) == [12, 14, 18, 22]  # never before frame 12
+    assert project.layout_frames(10) == [9]
+
+
+def test_parse_review():
+    r = generate.parse_review("```json\n" + ISSUE + "\n```")
+    assert r == {"ok": False, "issues": [{"kind": "clipped", "where": "left edge: earth circle",
+                                         "fix": "move it right by 10% of width"}]}
+    r = generate.parse_review(json.dumps({"ok": True, "issues": [{"kind": "weird", "where": "x"}]}))
+    assert r["ok"] is False and r["issues"][0]["kind"] == "other"  # issues win over ok
+    with pytest.raises(ValueError):
+        generate.parse_review(json.dumps({"ok": False, "issues": []}))
+    with pytest.raises(ValueError):
+        generate.parse_review(json.dumps({"ok": "yes", "issues": []}))
+
+
+def test_layout_ok_path(tmp_path, monkeypatch):
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD]},
+        {"scene_0": [OK], "scene_1": [OK]})
+    assert [s["layout"] for s in job["scenes"]] == ["ok", "ok"]
+    assert len(vision.calls) == 2 and all(n == 5 for _, _, n in vision.calls)  # ONE call, 5 stills
+    # midpoint stills 45, 135, then the layout stills at 12/22/40/68/78 of each 90-frame scene
+    assert frames == [45, 135, 12, 22, 40, 68, 78, 102, 112, 130, 158, 168]
+    assert res["layout"]["scene_1"]["status"] == "ok" and res["layout_calls"] == 2
+    assert "frames 12, 22, 40, 68, 78" in vision.calls[0][1] and "1920x1080" in vision.calls[0][1]
+    assert "the first 2 during the entrance" in vision.calls[0][1]
+    assert "REWRITE" not in vision.calls[0][1]
+    assert len(fake.calls) == 3  # no rewrite
+
+
+def test_layout_fix_path(tmp_path, monkeypatch):
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [ISSUE, OK]})
+    assert [s["layout"] for s in job["scenes"]] == ["ok", "fixed"]
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD2
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "fixed" and rec["before"][0]["kind"] == "clipped" and rec["after"] == []
+    retry = [u for s, u in fake.calls if "FAILED" in u]
+    assert len(retry) == 1 and "left edge: earth circle" in retry[0] and "Layout review" in retry[0]
+    assert '"TITLE"' in retry[0]  # previous module goes along
+    assert len(vision.calls) == 3 and job["scenes"][1]["card"] != project.FALLBACK_CARD
+    assert "layout_issues" not in job["scenes"][1]
+    # the confirmation pass re-checks the earlier issues explicitly
+    assert "REWRITE" in vision.calls[2][1] and "left edge: earth circle" in vision.calls[2][1]
+
+
+@pytest.mark.parametrize("rewrite,second", [(TYPE_ERR, OK), (GOOD2, TWO), (GOOD2, ISSUE)])
+def test_layout_rewrite_worse_keeps_old(tmp_path, monkeypatch, rewrite, second):
+    # tsc failure, more issues, or as many issues -> the previous working module stays.
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, rewrite]},
+        {"scene_0": [OK], "scene_1": [ISSUE, second]})
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "issues_left" and rec["rewrite"] == "reverted"
+    assert rec["after"] == rec["before"] and len(rec["after"]) == 1
+    assert job["scenes"][1]["layout"] == "issues_left"
+    assert job["scenes"][1]["card"] == "data/chart-live-moves"  # never the title card
+    assert job["scenes"][1]["layout_issues"] == ["clipped: left edge: earth circle"]
+    assert any("remaining" in x for x in logs)
+    assert frames[-1] == 135  # .check/scene_1.png re-rendered from the restored module
+    if rewrite == TYPE_ERR:
+        assert len(vision.calls) == 2 and "tsc" in rec["note"]
+
+
+def test_layout_unconfirmed_rewrite_is_not_fixed(tmp_path, monkeypatch):
+    # the confirmation reply is unreadable -> no "fixed"; the previous module stays
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [ISSUE, "looks fine to me"]})
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "issues_left" and rec["rewrite"] == "reverted"
+    assert "not confirmed" in rec["note"]
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD
+
+
+def test_layout_fewer_issues_is_improved(tmp_path, monkeypatch):
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [TWO, ISSUE]})
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "improved" and rec["rewrite"] == "kept" and len(rec["after"]) == 1
+    assert rec["rewrite_issues"] == rec["after"] and len(rec["before"]) == 2
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD2
+    assert job["scenes"][1]["layout"] == "improved"
+    assert job["scenes"][1]["layout_issues"] == ["clipped: left edge: earth circle"]
+    assert frames[-1] != 135  # kept rewrite: no restore still
+
+
+def test_layout_bad_json_is_ok(tmp_path, monkeypatch):
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD]},
+        {"scene_0": ["I think it looks fine"], "scene_1": ['{"ok": false, "issues": ']})
+    assert [s["layout"] for s in job["scenes"]] == ["ok", "ok"]
+    assert "unparsable" in res["layout"]["scene_0"]["note"]
+    assert any("unparsable" in x for x in logs) and len(fake.calls) == 3
+
+
+def test_layout_call_error_is_skipped(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("bedrock down")
+    monkeypatch.setenv("EVP_LAYOUT_CHECK", "1")
+    monkeypatch.setattr(generate.llm, "ask_images", boom)
+    job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD]},
+                                 still=_ok_still, typecheck=_tc_strict)
+    assert [s["layout"] for s in job["scenes"]] == ["skipped", "skipped"]
+    assert [s["card"] for s in job["scenes"]] == ["typography/paper-title-card", "data/chart-live-moves"]
+
+
+def test_layout_switch_off(tmp_path, monkeypatch):
+    vision = FakeVision({"scene_0": [ISSUE], "scene_1": [ISSUE]})
+    monkeypatch.setattr(generate.llm, "ask_images", vision)
+    job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD]},
+                                 still=_ok_still, typecheck=_tc_strict)  # autouse: EVP_LAYOUT_CHECK=0
+    assert vision.calls == [] and [s["layout"] for s in job["scenes"]] == ["skipped", "skipped"]
+    res = json.loads((proj / ".check" / "result.json").read_text())
+    assert res["layout"]["scene_0"]["reason"] == "EVP_LAYOUT_CHECK=0" and res["layout_calls"] == 0
+
+
+def test_ask_images_downscales(monkeypatch):
+    import io
+
+    from PIL import Image
+
+    from app import llm
+    sent = {}
+
+    class Client:
+        def converse_stream(self, **kw):
+            sent.update(kw)
+            return {"stream": [{"contentBlockDelta": {"delta": {"text": OK}}},
+                               {"messageStop": {"stopReason": "end_turn"}}]}
+    monkeypatch.setattr(llm, "_bedrock", lambda: Client())
+    buf = io.BytesIO()
+    Image.new("RGB", (1080, 1920), "red").save(buf, "PNG")
+    assert llm.ask_images("sys", "look", [buf.getvalue()] * 3) == OK
+    content = sent["messages"][0]["content"]
+    assert [list(c) for c in content] == [["image"]] * 3 + [["text"]]
+    with Image.open(io.BytesIO(content[0]["image"]["source"]["bytes"])) as im:
+        assert im.format == "JPEG" and im.size == (540, 960)
+    assert sent["modelId"] == llm.MODEL_ID
