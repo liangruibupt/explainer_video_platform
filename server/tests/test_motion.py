@@ -166,7 +166,7 @@ def test_submit_renders_version_and_records(job, fake_render):
     assert done["status"] == "done", done
     assert (job / "versions" / "v2.mp4").read_bytes() == b"mp4"
     call = fake_render[0]
-    assert call["env"] == f".evp-proj/{JOB}" and os.environ.get("WB_PROJ") is None
+    assert call["env"] == {"WB_PROJ": f".evp-proj/{JOB}"} and os.environ.get("WB_PROJ") is None
     assert call["entry"] == "src/remotion/index.ts" and call["comp"] == "Main"
     assert call["props"]["renderExact"] is True
     assert call["props"]["project"]["tracks"][2]["clips"][0]["start"] == 0  # voice locked

@@ -43,11 +43,11 @@ def _bin(name: str) -> str:
     return str(BASE / "node_modules" / ".bin" / name)
 
 
-def _run(args: list, cwd: Path, log: Path | None, timeout: int) -> None:
+def _run(args: list, cwd: Path, log: Path | None, timeout: int, env: dict | None = None) -> None:
     out = log.open("a") if log else subprocess.DEVNULL
     try:
         r = subprocess.run([str(a) for a in args], cwd=cwd, stdout=out, stderr=subprocess.STDOUT,
-                           timeout=timeout)
+                           timeout=timeout, env=dict(os.environ, **env) if env else None)
     finally:
         if log:
             out.close()
@@ -67,15 +67,41 @@ def still(proj: Path, frame: int, out: Path, log: Path | None = None, timeout: i
 
 def render(proj: Path, out: Path, log: Path | None = None, *, entry: str = "src/index.ts",
            comp: str = "Main", props: dict | None = None, public_dir: Path | None = None,
-           cwd: Path | None = None, timeout: int = 3600) -> None:
-    """Render a composition to H.264 + AAC. `cwd`/`entry`/`public_dir` let part C render the
-    workbench's own entry with an edited project as props."""
-    args = [_bin("remotion"), "render", entry, comp, out, f"--concurrency={CONCURRENCY}",
+           cwd: Path | None = None, env: dict | None = None, timeout: int = 3600) -> None:
+    """Render a composition to H.264 + AAC. `cwd`/`entry`/`public_dir`/`env` let part C render
+    the workbench's own entry with an edited project as props."""
+    out = Path(out)
+    raw = out.with_name(out.stem + ".raw" + out.suffix)
+    args = [_bin("remotion"), "render", entry, comp, raw, f"--concurrency={CONCURRENCY}",
             "--codec=h264", "--audio-codec=aac", "--log=error"]
     if props is not None:
-        pf = Path(out).with_suffix(".props.json")
+        pf = out.with_suffix(".props.json")
         pf.write_text(json.dumps(props, ensure_ascii=False))
         args.append(f"--props={pf}")
     if public_dir is not None:
         args.append(f"--public-dir={public_dir}")
-    _run(args, cwd or proj, log, timeout)
+    _run(args, cwd or proj, log, timeout, env=env)
+    _fix_audio_priming(raw, out, log)
+
+
+# Remotion 4.0.484 writes its AAC track with the encoder's 2048-sample priming but no edit
+# list, so players start the audio 42.7 ms late (measured by cross-correlation on two jobs).
+# Drop those samples and re-encode; ffmpeg's muxer writes a proper edit list for its own.
+AAC_PRIMING_SAMPLES = 2048
+FFMPEG = os.environ.get("FFMPEG", str(TOOLS / "ffmpeg"))
+
+
+def _fix_audio_priming(raw: Path, out: Path, log: Path | None) -> None:
+    has_audio = subprocess.run(
+        [os.environ.get("FFPROBE", str(TOOLS / "ffprobe")), "-v", "error", "-select_streams",
+         "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(raw)],
+        capture_output=True, text=True).stdout.strip()
+    if not has_audio:
+        raw.replace(out)
+        return
+    tmp = out.with_name(out.stem + ".fix" + out.suffix)
+    _run([FFMPEG, "-y", "-v", "error", "-i", raw, "-map", "0:v", "-map", "0:a", "-c:v", "copy",
+          "-af", f"atrim=start_sample={AAC_PRIMING_SAMPLES},asetpts=N/SR/TB",
+          "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp], raw.parent, log, 600)
+    tmp.replace(out)
+    raw.unlink(missing_ok=True)

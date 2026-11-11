@@ -103,6 +103,9 @@ export default function MotionEditPage() {
   const saveVersion = async () => {
     let raw
     try {
+      // The workbench debounces its autosave by 800 ms; its beforeunload listener writes the
+      // current project immediately, so fire it to include the very last edit.
+      frame.current?.contentWindow?.dispatchEvent(new Event('beforeunload'))
       raw = frame.current?.contentWindow?.localStorage?.getItem(PROJECT_KEY)
     } catch {
       setSave({ state: 'error', error: '读不到编辑器里的工程（编辑器页面不是同源，无法读取）' })

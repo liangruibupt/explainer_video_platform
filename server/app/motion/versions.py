@@ -307,15 +307,11 @@ def render_version(job_id: str, d: Path, n: int) -> None:
         project = json.loads((vd / f"v{n}.project.json").read_text())
         _sync_public(proj, vd / ".render-public")
         rel = workbench.render_link(job_id, proj)
-        # render.py has no env parameter: renders run one at a time on this worker thread, and
         # WB_PROJ is only read by the workbench's remotion.config.ts.
-        os.environ["WB_PROJ"] = rel
-        try:
-            rrender.render(workbench.WB, tmp, log, entry="src/remotion/index.ts", comp="Main",
-                           props={"project": project, "renderExact": True},
-                           public_dir=vd / ".render-public", cwd=workbench.WB)
-        finally:
-            os.environ.pop("WB_PROJ", None)
+        rrender.render(workbench.WB, tmp, log, entry="src/remotion/index.ts", comp="Main",
+                       props={"project": project, "renderExact": True},
+                       public_dir=vd / ".render-public", cwd=workbench.WB,
+                       env={"WB_PROJ": rel})
         os.replace(tmp, vd / f"v{n}.mp4")
         _update(d, n, status="done", ended=time.time())
     except Exception as e:  # noqa: BLE001 - recorded on the version
