@@ -1,0 +1,23 @@
+diff --git a/workbench/remotion.config.ts b/workbench/remotion.config.ts
+index 78806ef..67e0c06 100644
+--- a/workbench/remotion.config.ts
++++ b/workbench/remotion.config.ts
+@@ -5,10 +5,14 @@ import { existsSync } from "node:fs";
+ import path from "node:path";
+ import { Config } from "@remotion/cli/config";
+ 
+-const proj = path.resolve(
+-  process.cwd(),
+-  existsSync(path.resolve(process.cwd(), "proj", "workbench.ts")) ? "proj" : "proj-stub",
+-);
++// evp: WB_PROJ (a path inside this workbench dir, e.g. .evp-proj/<job>) renders one job's project
++// without touching the shared `proj` link the dev server is using.
++const proj = process.env.WB_PROJ
++  ? path.resolve(process.cwd(), process.env.WB_PROJ)
++  : path.resolve(
++    process.cwd(),
++    existsSync(path.resolve(process.cwd(), "proj", "workbench.ts")) ? "proj" : "proj-stub",
++  );
+ 
+ Config.overrideWebpackConfig((c) => ({
+   ...c,
