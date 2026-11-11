@@ -167,7 +167,9 @@ Rules for ops:
 - set_timing: give only the fields you change. The timeline is locked to the narration, so
   normally do NOT change a scene clip's start or duration. To make a scene slower or faster,
   change only "speed" (slower = 0.6-0.9, faster = 1.1-1.5; allowed 0.25-4) and keep start and
-  duration: the scene's animation is re-timed to fit the same length.
+  duration: the scene's animation is re-timed to fit the same length. Only when the user
+  explicitly asks to move, lengthen or shorten a clip, change start/duration as asked (the
+  studio shows a drift warning) and say in reply that the voice keeps its original timing.
 - Scenes are numbered in timeline order: 第一段/S1 = SCENES[0], 第三段/S3 = SCENES[2], etc.
   The selected scene (if any) is the default target when the user says "这段/这里".
 - Locked: the narration text, the voice clip (kind "voice") and the caption text/timing follow
