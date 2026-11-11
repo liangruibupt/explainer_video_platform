@@ -298,3 +298,9 @@ table.tasks { width: 100%; border-collapse: collapse; background: var(--card); b
   cursor: zoom-out; padding: 30px; }
 .mc-zoom img { max-width: 92vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 @media (max-width: 900px) { .mc-panel { width: 300px; } }
+
+/* version picker */
+.mv-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.mv-item.on { border-color: var(--accent); background: var(--accent-soft); }
+.pill.mv-base { white-space: nowrap; }
+.pill.mv-base a { color: inherit; text-decoration: underline; }

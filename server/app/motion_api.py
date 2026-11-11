@@ -61,13 +61,45 @@ def _recover_versions() -> None:
 # ---------------------------------------------------------------- workbench lifecycle
 
 @router.post("/api/jobs/{job_id}/editor")
-def editor(job_id: str):
+async def editor(job_id: str, request: Request):
+    """Body (optional) {version: n}: open the editor on version n. Restores that version's scene
+    code (snapshots.py) and rebuilds the UI when it differs; the page then loads the version's
+    project from /versions/{n}/project (v1 = import from the manifest)."""
     jid, _ = _remotion_job(job_id)
+    d = pipeline.job_dir(jid)
+    version = None
+    raw = await request.body()
+    if raw.strip():
+        try:
+            version = json.loads(raw).get("version")
+        except (ValueError, AttributeError):
+            raise HTTPException(422, "请求体必须是 JSON：{version: n}")
+    if version is not None:
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise HTTPException(422, "version 必须是版本号")
+        rec = next((v for v in versions.list_versions(d) if v["n"] == version), None)
+        if not rec or rec["status"] != "done":
+            raise HTTPException(404, f"没有 v{version}，或它还没渲染完成")
+
+    def run():
+        from .motion import snapshots
+        restored = version is not None and snapshots.restore(d, version)
+        st = workbench.start(jid, d / "remotion")
+        if restored and st.get("running"):
+            workbench.rebuild(jid)
+        return restored
+
     try:
-        workbench.start(jid, pipeline.job_dir(jid) / "remotion")
+        restored = await asyncio.to_thread(run)
     except workbench.MotionError as e:
         raise HTTPException(503, str(e))
-    return {"job_id": jid, "url": "/motion/?import=project"}
+    out = {"job_id": jid, "url": "/motion/?import=project"}
+    if version is not None:
+        from .motion import snapshots
+        out.update(version=version, scenes_restored=restored,
+                   has_scenes=snapshots.has_snapshot(d, version),
+                   project=None if version == 1 else f"/api/jobs/{jid}/versions/{version}/project")
+    return out
 
 
 @router.get("/api/motion/status")
@@ -103,10 +135,22 @@ async def version_create(job_id: str, request: Request):
     if not isinstance(body, dict) or "project" not in body:
         raise HTTPException(422, "请求体必须是 JSON：{project: ...}")
     try:
-        rec = await asyncio.to_thread(versions.submit, jid, pipeline.job_dir(jid), body["project"])
+        rec = await asyncio.to_thread(versions.submit, jid, pipeline.job_dir(jid), body["project"],
+                                      body.get("base"))
     except versions.VersionError as e:
         raise HTTPException(422, str(e))
     return JSONResponse(rec, status_code=202)
+
+
+@router.get("/api/jobs/{job_id}/versions/{n}/project")
+def version_project(job_id: str, n: int):
+    """The workbench project a saved version was rendered from (v2+; v1 has none: the editor
+    imports it from the manifest)."""
+    jid = _id(job_id)
+    p = versions.vdir(pipeline.job_dir(jid)) / f"v{n}.project.json"
+    if n < 2 or not p.is_file():
+        raise HTTPException(404, "这个版本没有保存的工程（v1 由原片导入）")
+    return FileResponse(p, media_type="application/json")
 
 
 @router.get("/api/jobs/{job_id}/versions/{n}/video")

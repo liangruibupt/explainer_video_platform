@@ -147,6 +147,17 @@ def build(job_id: str, log: Path) -> bool:
     return True
 
 
+def rebuild(job_id: str) -> bool:
+    """Rebuild the UI after the linked job's scene files changed (version restore, scene edit)."""
+    with _lock:
+        st = _read_state()
+        if st.get("job_id") != job_id:
+            return False
+        ok = build(job_id, WB / ".evp-open.log")
+        _write_state({**st, "built": job_id if ok else None})
+        return ok
+
+
 def built_dist() -> Path | None:
     """DIST when it holds the build of the job the running dev server is linked to."""
     st = _read_state()
