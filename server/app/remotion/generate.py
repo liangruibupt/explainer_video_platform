@@ -232,15 +232,19 @@ LAYOUT_KINDS = ("clipped", "overlap", "empty", "covered_title", "too_small", "ca
 # Kinds that trigger the one rewrite (§3.9). The others are recorded only ("noted"), except
 # too_small text whose reported height is below TOO_SMALL_REWRITE_PCT of the frame height.
 REWRITE_KINDS = ("clipped", "overlap", "covered_title", "caption_band")
+# Unreadable-text thresholds in % of frame height. Portrait is stricter: in the 9:16 runs,
+# labels at 1.4-1.6 % stayed visibly smaller than a rewrite would make them (PR #31).
 TOO_SMALL_REWRITE_PCT = 1.2
+TOO_SMALL_REWRITE_PCT_PORTRAIT = 1.5
 
 
-def blocking(issue: dict) -> bool:
+def blocking(issue: dict, portrait: bool = False) -> bool:
     """True for a clear defect worth a rewrite; False for issues that are only recorded."""
     if issue["kind"] in REWRITE_KINDS:
         return True
     pct = issue.get("height_pct")
-    return issue["kind"] == "too_small" and pct is not None and pct < TOO_SMALL_REWRITE_PCT
+    limit = TOO_SMALL_REWRITE_PCT_PORTRAIT if portrait else TOO_SMALL_REWRITE_PCT
+    return issue["kind"] == "too_small" and pct is not None and pct < limit
 
 LAYOUT_SYSTEM = """You are the layout checker of a narrated explainer video. You get several stills
 of ONE scene in time order (the scene frame of each is given): the first one or two are taken

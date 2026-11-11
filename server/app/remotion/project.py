@@ -404,7 +404,7 @@ class _Gen:
                 if r.get("error"):
                     rec["note"] = r["error"][:300]
                 self.layout[st] = rec
-                if any(generate.blocking(x) for x in r["issues"]) or (
+                if any(generate.blocking(x, self.h > self.w) for x in r["issues"]) or (
                         r["issues"] and rewrite_all()):
                     bad.append(i)
                     self.log(f"remotion: layout {self.scenes[i]['id']}: {len(r['issues'])} "
@@ -460,7 +460,7 @@ class _Gen:
                 rec["rewrite_issues"] = r2
                 # judged on clear defects only (rewrite_all: on every issue, the old rule)
                 count = (len if rewrite_all() else
-                         (lambda xs: sum(1 for x in xs if generate.blocking(x))))
+                         (lambda xs: sum(1 for x in xs if generate.blocking(x, self.h > self.w))))
                 b1, b2 = count(first[i]["issues"]), count(r2)
                 if b2 == 0:
                     rec.update(status="fixed", after=r2, rewrite="kept")

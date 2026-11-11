@@ -99,6 +99,7 @@ Rules (from shotcraft `references/workbench.md` §3 and our pipeline):
    counts as ok (logged); a failed call or still marks the scene `skipped`.
    **Only clear defects trigger the rewrite** (`generate.blocking`): `clipped`,
    `covered_title`, `overlap`, `caption_band`, and `too_small` with `height_pct` < 1.2
+   (16:9) or < 1.5 (9:16; portrait labels at 1.4–1.6 % stayed visibly small without a rewrite)
    (truly unreadable). `empty`, `other` and readable-but-small text are recorded only:
    status `noted`, no rewrite (`EVP_LAYOUT_REWRITE=all` restores rewriting on every issue).
    A scene with a clear defect is regenerated ONCE with the full issue list as the error text,

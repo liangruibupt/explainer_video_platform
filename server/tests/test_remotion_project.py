@@ -507,6 +507,10 @@ def test_blocking_kinds_and_height():
     assert not any(generate.blocking({"kind": k}) for k in ("empty", "too_small", "other"))
     assert generate.blocking({"kind": "too_small", "height_pct": 1.1})
     assert not generate.blocking({"kind": "too_small", "height_pct": 1.2})
+    # portrait is stricter: 1.4 % is rewritten in 9:16, only noted in 16:9
+    assert generate.blocking({"kind": "too_small", "height_pct": 1.4}, portrait=True)
+    assert not generate.blocking({"kind": "too_small", "height_pct": 1.4})
+    assert not generate.blocking({"kind": "too_small", "height_pct": 1.5}, portrait=True)
 
 
 def test_layout_noted_only_no_rewrite(tmp_path, monkeypatch):
