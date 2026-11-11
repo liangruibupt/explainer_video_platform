@@ -182,6 +182,19 @@ HTTP (router `server/app/motion_api.py`, logic in `server/app/motion/`):
 | GET | `/api/jobs/{id}/versions` | `[{n, file, status: "queued"\|"rendering"\|"done"\|"failed", created, warnings: [str], error}]`; entry `n=1` is `final.mp4` |
 | POST | `/api/jobs/{id}/versions` | body `{project: <workbench ProjectData>}` → 202 + the new record; renders in the background |
 | GET | `/api/jobs/{id}/versions/{n}/video` | the mp4 |
+| GET | `/api/jobs/{id}/versions/{n}/project` | the workbench project version n was rendered from (v2+; 404 for v1) |
+
+**Versions and the editor** (`server/app/motion/snapshots.py`): saving version N also copies
+`src/scenes/` to `versions/vN.scenes/` and records `base` (the version the editor session
+started from). `versions/v1.scenes/` is the original film's scene code, built on first use
+(live files, with any scene rewritten by the Opus panel replaced by the backup of its earliest
+edit). `POST /api/jobs/{id}/editor` takes an optional body `{version: n}`: it restores that
+version's scene code when it differs (the previous live files go to `versions/.live-*`),
+rebuilds the editor UI, and returns `version`, `scenes_restored`, `has_scenes` and `project`
+(the URL above, or null for v1). The edit page seeds the workbench's localStorage with that
+project before the iframe loads (v1: clears it, so the workbench imports the manifest). The job
+page's version picker drives the main player, the download and `/jobs/:id/edit?version=n`.
+Versions saved before this have no scene snapshot and open with the live scene code.
 
 Saving a version: validate the JSON (size cap, fps/size equal to the job), apply the voice
 lock (§1), render with the workbench's own entry (`src/remotion/index.ts`, comp `Main`,

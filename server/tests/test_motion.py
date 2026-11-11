@@ -377,3 +377,80 @@ def test_motion_status_api(client, tmp_path, monkeypatch):
     assert client.get("/api/motion/status").json() == {"running": False, "job_id": None,
                                                         "proj": None, "port": workbench.PORT}
     assert motion_api.router is not None
+
+
+# ---------------------------------------------------------------- version selection (snapshots)
+
+def _scenes(job):
+    p = job / "remotion" / "src" / "scenes"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def test_save_snapshots_scenes_and_records_base(job, fake_render):
+    from app.motion import snapshots
+    sc = _scenes(job)
+    (sc / "s01.tsx").write_text("orig")
+    rec = versions.submit(JOB, job, _project(), base=1)
+    assert rec["base"] == 1
+    assert (snapshots.snap_dir(job, 1) / "s01.tsx").read_text() == "orig"
+    assert (snapshots.snap_dir(job, 2) / "s01.tsx").read_text() == "orig"
+    with pytest.raises(versions.VersionError):
+        versions.submit(JOB, job, _project(), base=0)
+    _wait(job, 2)
+    v = {r["n"]: r for r in versions.list_versions(job)}
+    assert v[1]["has_scenes"] and v[2]["has_scenes"] and v[2]["base"] == 1
+
+
+def test_v1_snapshot_uses_backup_of_earliest_scene_edit(job):
+    from app.motion import snapshots
+    sc = _scenes(job)
+    (sc / "s01.tsx").write_text("rewritten twice")
+    (sc / "s02.tsx").write_text("untouched")
+    ed = job / "remotion" / ".assist" / "edits"
+    for n, body in ((1, "original"), (2, "rewritten once")):
+        (ed / str(n)).mkdir(parents=True)
+        (ed / str(n) / "backup.tsx").write_text(body)
+    (ed / "index.json").write_text(json.dumps([{"n": 1, "scene_id": "s01", "status": "applied"},
+                                               {"n": 2, "scene_id": "s01", "status": "applied"}]))
+    v1 = snapshots.ensure_v1(job)
+    assert (v1 / "s01.tsx").read_text() == "original"
+    assert (v1 / "s02.tsx").read_text() == "untouched"
+
+
+def test_restore_swaps_scene_files_and_keeps_live_copy(job):
+    from app.motion import snapshots
+    sc = _scenes(job)
+    (sc / "s01.tsx").write_text("v1 code")
+    snapshots.ensure_v1(job)
+    snapshots.snapshot(job, 2)
+    (snapshots.snap_dir(job, 2) / "s01.tsx").write_text("v2 code")
+    assert snapshots.restore(job, 2) is True
+    assert (sc / "s01.tsx").read_text() == "v2 code"
+    assert snapshots.restore(job, 2) is False  # already equal: no rebuild needed
+    kept = list((job / "versions").glob(".live-*"))
+    assert kept and (kept[0] / "s01.tsx").read_text() == "v1 code"
+    assert snapshots.restore(job, 1) is True and (sc / "s01.tsx").read_text() == "v1 code"
+    assert snapshots.restore(job, 7) is False  # no snapshot: live files stay
+
+
+def test_editor_opens_a_version(job, client, monkeypatch, fake_render):
+    _scenes(job).joinpath("s01.tsx").write_text("orig")
+    calls = []
+    monkeypatch.setattr(workbench, "start", lambda jid, proj: {"running": True, "job_id": jid})
+    monkeypatch.setattr(workbench, "rebuild", lambda jid: calls.append(jid) or True)
+    r = client.post(f"/api/jobs/{JOB}/editor", json={"version": 1})
+    assert r.status_code == 200 and r.json()["project"] is None and r.json()["version"] == 1
+    assert client.post(f"/api/jobs/{JOB}/editor", json={"version": 5}).status_code == 404
+    assert client.post(f"/api/jobs/{JOB}/editor", json={"version": "2"}).status_code == 422
+    versions.submit(JOB, job, _project(), base=1)
+    _wait(job, 2)
+    from app.motion import snapshots
+    (snapshots.snap_dir(job, 2) / "s01.tsx").write_text("v2 code")
+    r = client.post(f"/api/jobs/{JOB}/editor", json={"version": 2}).json()
+    assert r["project"] == f"/api/jobs/{JOB}/versions/2/project" and r["scenes_restored"] is True
+    assert calls == [JOB]
+    p = client.get(r["project"])
+    assert p.status_code == 200 and p.json()["fps"] == _project()["fps"]
+    assert client.get(f"/api/jobs/{JOB}/versions/1/project").status_code == 404
+    assert client.post(f"/api/jobs/{JOB}/editor").status_code == 200  # no body: unchanged

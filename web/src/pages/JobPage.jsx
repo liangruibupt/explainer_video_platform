@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api, usePoll, isLive, fileUrl, STATUS } from '../api.js'
 import FeedbackButton from '../components/FeedbackButton.jsx'
-import MotionVersions from '../components/MotionVersions.jsx'
+import MotionVersions, { versionLive, versionUrl } from '../components/MotionVersions.jsx'
 
 const GALLERY = 'https://vincentwei1021.github.io/video-shotcraft/'
 const cardLabel = (c) => (c === 'fallback/title-card' ? '标题卡（回退）' : c)
@@ -13,6 +13,14 @@ export default function JobPage() {
   const nav = useNavigate()
   const [job, error] = usePoll(() => api(`/jobs/${id}`), 2500, isLive, [id])
   const [log, setLog] = useState(null)
+  // versions (Remotion jobs): v1 = final.mp4, v2+ saved from the motion editor. The selected
+  // version drives the main player, the download and which version the editor opens.
+  const [vlist] = usePoll(() => api(`/jobs/${id}/versions`), 4000,
+                          (vs) => Array.isArray(vs) && vs.some(versionLive), [id])
+  const [picked, setPicked] = useState(null)
+  const doneVersions = Array.isArray(vlist) ? vlist.filter((v) => v.status === 'done') : []
+  const latest = doneVersions.length ? Math.max(...doneVersions.map((v) => v.n)) : 1
+  const sel = picked && doneVersions.some((v) => v.n === picked) ? picked : latest
 
   if (error && !job) return <div className="page"><div className="error">{error}</div></div>
   if (!job) return <div className="page"><p className="sub">加载中…</p></div>
@@ -60,29 +68,46 @@ export default function JobPage() {
 
       <div className="job-grid">
         <div>
+          {remotion && job.status === 'done' && doneVersions.length > 1 && (
+            <div className="mv-pick">
+              <span className="muted">版本</span>
+              {doneVersions.map((v) => (
+                <button key={v.n} className={`chip ${v.n === sel ? 'on' : ''}`}
+                        onClick={() => setPicked(v.n)}
+                        title={v.n === 1 ? '原片' : v.base ? `基于 v${v.base} 编辑` : '编辑器保存'}>
+                  v{v.n}{v.n === 1 ? ' 原片' : ''}{v.n === latest && v.n !== 1 ? ' · 最新' : ''}
+                </button>
+              ))}
+            </div>
+          )}
           {job.status === 'done'
-            ? <video className={`player ${job.ratio === '9:16' ? 'tall' : ''}`}
-                     src={fileUrl(id, 'final.mp4')} poster={fileUrl(id, 'poster.jpg')} controls />
+            ? <video key={sel} className={`player ${job.ratio === '9:16' ? 'tall' : ''}`}
+                     src={remotion && sel !== 1 ? versionUrl(id, sel) : fileUrl(id, 'final.mp4')}
+                     poster={fileUrl(id, 'poster.jpg')} controls />
             : <div className={`player waiting ${job.ratio === '9:16' ? 'tall' : ''}`}>
                 {job.status === 'failed' ? '制作失败' : '正在制作，完成后在这里播放'}
               </div>}
           {job.status === 'failed' && <pre className="error pre">{job.error}</pre>}
           <div className="actions">
-            {job.status === 'done' && <a className="btn" href={fileUrl(id, 'final.mp4')} download>下载 MP4</a>}
+            {job.status === 'done' && (remotion && sel !== 1
+              ? <a className="btn" href={versionUrl(id, sel)} download={`v${sel}.mp4`}>下载 v{sel}</a>
+              : <a className="btn" href={fileUrl(id, 'final.mp4')} download>下载 MP4</a>)}
             {!isLive(job) && <button className="btn" onClick={remake}>用同一主题重做</button>}
             <button className="btn" onClick={showLog}>查看日志</button>
             {!isLive(job) && <button className="btn danger" onClick={remove}>删除</button>}
             {job.status === 'done' && <FeedbackButton target={{ kind: 'job', id }} />}
             {remotion && job.status === 'done' && (
-              <Link className="btn mv-open" to={`/jobs/${id}/edit`}>在动效编辑器中打开</Link>
+              <Link className="btn mv-open" to={`/jobs/${id}/edit?version=${sel}`}>
+                在动效编辑器中打开 v{sel}
+              </Link>
             )}
           </div>
           {log && <pre className="log">{log}</pre>}
           {remotion && job.status === 'done' && (
             <div className="panel mv-versions">
               <h3>版本</h3>
-              <p className="muted">v1 是原片；在动效编辑器里每次「保存为新版本」都会渲染一个新版本，原片保留不变。</p>
-              <MotionVersions id={id} tall={tall} />
+              <p className="muted">v1 是原片；在动效编辑器里每次「保存为新版本」都会渲染一个新版本，原片保留不变。点一个版本，上面的播放器、下载和「在动效编辑器中打开」都会换成它。</p>
+              <MotionVersions id={id} list={vlist} selected={sel} onSelect={setPicked} />
             </div>
           )}
         </div>

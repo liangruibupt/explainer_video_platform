@@ -23,28 +23,30 @@ export function VersionWarnings({ warnings }) {
   )
 }
 
-export default function MotionVersions({ id, tall }) {
-  const [list, error] = usePoll(() => api(`/jobs/${id}/versions`), 4000,
-                                (vs) => Array.isArray(vs) && vs.some(versionLive), [id])
-  if (error && !list) return <p className="muted">版本列表暂时读不到：{error}</p>
+export default function MotionVersions({ id, list, selected, onSelect }) {
   if (!list) return <p className="muted">读取版本…</p>
   const versions = [...list].sort((a, b) => b.n - a.n)
   return (
     <div className="mv-list">
       {versions.map((v) => (
-        <div key={v.n} className="mv-item">
+        <div key={v.n} className={`mv-item ${v.n === selected ? 'on' : ''}`}>
           <div className="mv-head">
             <b>v{v.n}</b>
-            <span className="muted">{v.n === 1 ? '原片' : '编辑器保存'}{v.created ? ` · ${when(v.created)}` : ''}</span>
+            <span className="muted">
+              {v.n === 1 ? '原片' : v.base ? `基于 v${v.base} 编辑` : '编辑器保存'}
+              {v.created ? ` · ${when(v.created)}` : ''}
+            </span>
             <span className={`pill ${v.status === 'rendering' ? 'running' : v.status}`}>{VERSION_STATUS[v.status] || v.status}</span>
-            {v.status === 'done' && <a className="more mv-dl" href={versionUrl(id, v.n)} download={`v${v.n}.mp4`}>下载</a>}
+            {v.status === 'done' && (v.n === selected
+              ? <span className="mc-ok">正在查看</span>
+              : <button className="more" onClick={() => onSelect?.(v.n)}>查看这个版本</button>)}
+            {v.status === 'done' && <a className="more mv-dl" href={v.n === 1 ? fileUrl(id, 'final.mp4') : versionUrl(id, v.n)} download={`v${v.n}.mp4`}>下载</a>}
           </div>
-          {v.status === 'done'
-            ? <video className={`player mv-player ${tall ? 'tall' : ''}`} src={versionUrl(id, v.n)}
-                     poster={fileUrl(id, 'poster.jpg')} controls preload="metadata" />
-            : v.status === 'failed'
-              ? <pre className="error pre">{v.error || '渲染失败'}</pre>
-              : <div className="mv-wait muted">正在渲染这个版本，完成后在这里播放</div>}
+          {v.status === 'failed' && <pre className="error pre">{v.error || '渲染失败'}</pre>}
+          {versionLive(v) && <div className="mv-wait muted">正在渲染这个版本，完成后可以查看</div>}
+          {v.status === 'done' && v.n !== 1 && v.has_scenes === false && (
+            <p className="muted">这个版本保存时还没有记录场景代码，在编辑器里打开时用的是当前的场景代码。</p>
+          )}
           <VersionWarnings warnings={v.warnings} />
         </div>
       ))}

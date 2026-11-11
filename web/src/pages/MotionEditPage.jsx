@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { VERSION_STATUS, versionLive, versionUrl, VersionWarnings } from '../components/MotionVersions.jsx'
 import MotionChat, { call } from '../components/MotionChat.jsx'
 
@@ -17,6 +17,10 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
 
 export default function MotionEditPage() {
   const { id } = useParams()
+  // ?version=n (from the job page's version picker): open the editor on that version
+  const [params] = useSearchParams()
+  const askedVersion = /^\d+$/.test(params.get('version') || '') ? Number(params.get('version')) : null
+  const [base, setBase] = useState(null) // {n, has_scenes} once the editor opened that version
   const frame = useRef(null)
   const [job, setJob] = useState(null)
   // phase: starting | waiting | ready | conflict | error
@@ -75,7 +79,9 @@ export default function MotionEditPage() {
       } catch { /* let the editor call report the problem */ }
       let res
       try {
-        res = await call(`/jobs/${id}/editor`, { method: 'POST' })
+        res = await call(`/jobs/${id}/editor`, askedVersion
+          ? { method: 'POST', body: JSON.stringify({ version: askedVersion }) }
+          : { method: 'POST' })
       } catch (e) {
         if (!alive) return
         if (e.status === 409) {
@@ -89,6 +95,24 @@ export default function MotionEditPage() {
       }
       if (!alive) return
       const target = res?.url || '/motion/?import=project'
+      // Seed the workbench with the chosen version before its page loads (same origin, shared
+      // localStorage): v2+ -> that version's saved project; v1 -> clear it, so the workbench
+      // imports the original film from the manifest.
+      if (res?.version) {
+        try {
+          if (res.project) {
+            const p = await call(res.project.replace(/^\/api/, ''))
+            window.localStorage.setItem(PROJECT_KEY, JSON.stringify(p))
+          } else {
+            window.localStorage.removeItem(PROJECT_KEY)
+          }
+        } catch (e) {
+          if (!alive) return
+          setPhase('error'); setMsg(`读不到 v${res.version} 的工程：${e.message}`)
+          return
+        }
+        setBase({ n: res.version, has_scenes: res.has_scenes })
+      }
       setPhase('waiting')
       for (let i = 0; i < READY_TRIES && alive; i++) {
         try {
@@ -100,7 +124,7 @@ export default function MotionEditPage() {
       if (alive) { setPhase('error'); setMsg('编辑器在 1 分钟内没有启动完成') }
     })()
     return () => { alive = false }
-  }, [id, attempt])
+  }, [id, attempt, askedVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // poll the saved version until it is done or failed
   useEffect(() => {
@@ -132,7 +156,8 @@ export default function MotionEditPage() {
     }
     setSave({ state: 'saving' })
     try {
-      const v = await call(`/jobs/${id}/versions`, { method: 'POST', body: JSON.stringify({ project }) })
+      const v = await call(`/jobs/${id}/versions`, {
+        method: 'POST', body: JSON.stringify(base ? { project, base: base.n } : { project }) })
       if (v && !versionLive(v)) {
         setSave({ state: v.status === 'done' ? 'done' : 'failed', version: v, error: v.error })
       } else {
@@ -151,6 +176,12 @@ export default function MotionEditPage() {
       <div className="mv-bar">
         <Link to={`/jobs/${id}`} className="back">← 返回作品</Link>
         <b className="mv-title" title={job?.topic}>{job?.topic || '动效编辑器'}</b>
+        {base && (
+          <span className="pill mv-base" title={base.has_scenes ? '' : '这个版本保存时还没有记录场景代码，用的是当前的场景代码'}>
+            基于 v{base.n} 编辑{base.has_scenes ? '' : '（场景代码为当前版本）'}
+            {' · '}<Link to={`/jobs/${id}`}>换版本</Link>
+          </span>
+        )}
         <span className="mv-note">{VOICE_NOTE}</span>
         {phase === 'ready' && !chatOpen && (
           <button className="btn mc-toggle" onClick={() => toggleChat(true)}>Opus 助手</button>
@@ -167,7 +198,7 @@ export default function MotionEditPage() {
             <span>已保存为 v{v.n}，{VERSION_STATUS[v.status] || v.status}。渲染完成前可以继续编辑，下次保存会生成新的版本。</span>
           )}
           {save.state === 'done' && v && (
-            <span>v{v.n} 渲染完成。<a href={versionUrl(id, v.n)} target="_blank" rel="noreferrer">播放 v{v.n}</a> · <Link to={`/jobs/${id}`}>在作品页查看所有版本</Link></span>
+            <span>v{v.n}{v.base ? `（基于 v${v.base}）` : ''} 渲染完成。<a href={versionUrl(id, v.n)} target="_blank" rel="noreferrer">播放 v{v.n}</a> · <Link to={`/jobs/${id}`}>在作品页查看所有版本</Link></span>
           )}
           {save.state === 'failed' && <span>v{v?.n} 渲染失败：{save.error || '未知错误'}</span>}
           {save.state === 'error' && <span>{save.error}</span>}

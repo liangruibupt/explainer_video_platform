@@ -80,8 +80,12 @@ def list_versions(d: Path) -> list[dict]:
     final = d / "final.mp4"
     v1 = {"n": 1, "file": "final.mp4", "status": "done" if final.exists() else "failed",
           "created": final.stat().st_mtime if final.exists() else None, "warnings": [],
-          "error": None if final.exists() else "final.mp4 missing"}
-    return [v1] + sorted(_read_index(d), key=lambda r: r.get("n", 0))
+          "error": None if final.exists() else "final.mp4 missing", "base": None}
+    recs = sorted(_read_index(d), key=lambda r: r.get("n", 0))
+    for r in recs:  # versions saved before per-version scene snapshots existed have none
+        r["has_scenes"] = (vdir(d) / f"v{r.get('n')}.scenes").is_dir()
+    v1["has_scenes"] = True
+    return [v1] + recs
 
 
 def video_path(d: Path, n: int) -> Path | None:
@@ -237,11 +241,16 @@ def drift_warnings(project: dict, tl: dict) -> list[str]:
 
 # ---------------------------------------------------------------- render
 
-def submit(job_id: str, d: Path, project) -> dict:
-    """Validate, lock the voice, store vN.project.json and queue the render. Returns the record."""
+def submit(job_id: str, d: Path, project, base: int | None = None) -> dict:
+    """Validate, lock the voice, store vN.project.json + a copy of the scene code (snapshots.py)
+    and queue the render. `base` = the version the editor session started from. Returns the
+    record."""
+    from . import snapshots
     proj = d / "remotion"
     if not (proj / "src" / "workbench.ts").exists():
         raise VersionError("该任务没有 Remotion 工程")
+    if base is not None and (isinstance(base, bool) or not isinstance(base, int) or base < 1):
+        raise VersionError("base 必须是版本号（≥ 1）")
     tl, audio = _load_job_data(proj)
     project = validate(project, tl)
     locked, warnings = apply_voice_lock(project, tl, audio)
@@ -252,8 +261,10 @@ def submit(job_id: str, d: Path, project) -> dict:
         recs = _read_index(d)
         n = max([1] + [r.get("n", 0) for r in recs]) + 1
         (vd / f"v{n}.project.json").write_text(json.dumps(locked, ensure_ascii=False))
+        snapshots.ensure_v1(d)  # before the first snapshot of a later version, keep the original
+        snapshots.snapshot(d, n)
         rec = {"n": n, "file": f"v{n}.mp4", "status": "queued", "created": time.time(),
-               "warnings": warnings, "error": None}
+               "warnings": warnings, "error": None, "base": base}
         recs.append(rec)
         _write_index(d, recs)
         _active.add((job_id, n))
