@@ -296,7 +296,9 @@ def _music_yue2(inputs, p, ctx):
               "voice": {"type": "string", "default": "Zhiyu"},
               "illustrations": {"type": "integer", "default": 0, "min": 0, "max": 4},
               "clips": {"type": "integer", "default": 0, "min": 0, "max": 2},
-              "brief": {"type": "string", "default": ""}},
+              "brief": {"type": "string", "default": ""},
+              "renderer": {"type": "string", "default": "html", "enum": ["html", "remotion"],
+                           "label": "html=Canvas 绘制；remotion=动效卡，可在动效编辑器里改"}},
       doc="把现有的讲解视频任务作为子任务运行（data/jobs/<id>），返回成片 MP4。"
           "插图、视频镜头、AI 音乐会用到对应 GPU。")
 def _explainer(inputs, p, ctx):
@@ -305,7 +307,8 @@ def _explainer(inputs, p, ctx):
     job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     pipeline.create_job(job_id, inputs["topic"].strip(), p["language"], p["seconds"],
                         p["ratio"], p["captions"], p["music"], p["voice"],
-                        brief=p["brief"], illustrations=p["illustrations"], clips=p["clips"])
+                        brief=p["brief"], illustrations=p["illustrations"], clips=p["clips"],
+                        renderer=p.get("renderer", "html"))
     ctx.meta["job_id"] = job_id
     t0 = time.time()
     while True:

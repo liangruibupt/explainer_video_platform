@@ -1,0 +1,125 @@
+diff --git a/workbench/src/App.tsx b/workbench/src/App.tsx
+index ca3bce0..351460a 100644
+--- a/workbench/src/App.tsx
++++ b/workbench/src/App.tsx
+@@ -55,7 +55,7 @@ const ExportButton: React.FC = () => {
+ 
+   const poll = (id: string) => {
+     timer.current = window.setInterval(async () => {
+-      const r = await fetch(`/api/export/${id}`);
++      const r = await fetch(`${import.meta.env.BASE_URL}api/export/${id}`);
+       if (!r.ok) return;
+       const j = await r.json();
+       setJob({ id, ...j });
+@@ -65,7 +65,7 @@ const ExportButton: React.FC = () => {
+ 
+   const start = async () => {
+     const project = useStore.getState().project;
+-    const r = await fetch("/api/export", { method: "POST", body: JSON.stringify({ project }) });
++    const r = await fetch(`${import.meta.env.BASE_URL}api/export`, { method: "POST", body: JSON.stringify({ project }) });
+     const j = await r.json();
+     if (!r.ok) {
+       const error: ExportError | undefined = j.error;
+@@ -92,7 +92,7 @@ const ExportButton: React.FC = () => {
+         <button
+           className="btn"
+           title={t("export.revealTitle")}
+-          onClick={() => fetch(`/api/export/${job.id}/reveal`, { method: "POST" })}
++          onClick={() => fetch(`${import.meta.env.BASE_URL}api/export/${job.id}/reveal`, { method: "POST" })}
+         >
+           {t("export.done")}
+         </button>
+diff --git a/workbench/src/main.tsx b/workbench/src/main.tsx
+index 371ede2..f1f8074 100644
+--- a/workbench/src/main.tsx
++++ b/workbench/src/main.tsx
+@@ -2,6 +2,10 @@ import ReactDOM from "react-dom/client";
+ import { App } from "./App";
+ import "./styles.css";
+ 
++// evp: under a non-root base (studio proxy at /motion/) staticFile() must resolve below it too.
++if (import.meta.env.BASE_URL !== "/")
++  (window as unknown as { remotion_staticBase: string }).remotion_staticBase = import.meta.env.BASE_URL.replace(/\/$/, "");
++
+ // 不包 <React.StrictMode>：工作台永远跑在 dev server 上（导出也走它），StrictMode 会把每个
+ // Remotion Player / 缩略图挂载两遍，首屏十几个 1080p 场景闪一轮，用户看到的就是"闪"。
+ ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+diff --git a/workbench/src/panels/LibraryPanel.tsx b/workbench/src/panels/LibraryPanel.tsx
+index fff4749..8dd373c 100644
+--- a/workbench/src/panels/LibraryPanel.tsx
++++ b/workbench/src/panels/LibraryPanel.tsx
+@@ -196,7 +196,7 @@ export const LibraryPanel: React.FC = () => {
+       onClick={() => setPreview({ kind: "card", cardId: card.id })}
+       payload={{ cardId: card.id }}
+     >
+-      {card.preview ? <LazyLoopVideo src={`/${card.preview}`} /> : <LazyCardLoop card={card} />}
++      {card.preview ? <LazyLoopVideo src={`${import.meta.env.BASE_URL}${card.preview}`} /> : <LazyCardLoop card={card} />}
+     </Cell>
+   );
+ 
+@@ -323,9 +323,9 @@ export const LibraryPanel: React.FC = () => {
+                       }
+                     >
+                       {m.kind === "video" ? (
+-                        <LazyLoopVideo src={`/${m.file}`} />
++                        <LazyLoopVideo src={`${import.meta.env.BASE_URL}${m.file}`} />
+                       ) : (
+-                        <img className="lib-thumb" src={`/${m.file}`} />
++                        <img className="lib-thumb" src={`${import.meta.env.BASE_URL}${m.file}`} />
+                       )}
+                     </Cell>
+                   ))}
+diff --git a/workbench/src/preview/PreviewPanel.tsx b/workbench/src/preview/PreviewPanel.tsx
+index f719055..389467c 100644
+--- a/workbench/src/preview/PreviewPanel.tsx
++++ b/workbench/src/preview/PreviewPanel.tsx
+@@ -49,14 +49,14 @@ const ItemPreview: React.FC<{ item: NonNullable<PreviewItem>; onClose: () => voi
+   } else {
+     title = item.label;
+     if (item.kind === "video")
+-      body = <video className="preview-media" src={`/${item.file}`} controls autoPlay loop />;
++      body = <video className="preview-media" src={`${import.meta.env.BASE_URL}${item.file}`} controls autoPlay loop />;
+     else if (item.kind === "image")
+-      body = <img className="preview-media" src={`/${item.file}`} />;
++      body = <img className="preview-media" src={`${import.meta.env.BASE_URL}${item.file}`} />;
+     else
+       body = (
+         <div className="preview-audio">
+           🔊 {item.label}
+-          <audio src={`/${item.file}`} controls autoPlay />
++          <audio src={`${import.meta.env.BASE_URL}${item.file}`} controls autoPlay />
+         </div>
+       );
+   }
+diff --git a/workbench/vite.config.ts b/workbench/vite.config.ts
+index a5d805a..c96f2e5 100644
+--- a/workbench/vite.config.ts
++++ b/workbench/vite.config.ts
+@@ -14,6 +14,8 @@ import type { ExportError } from "./src/export-errors";
+ const root = fileURLToPath(new URL(".", import.meta.url));
+ // 工程链接了但没写 src/workbench.ts 清单时也回退到 stub（工作台只 import @proj/workbench 这一个模块）
+ const proj = existsSync(path.join(root, "proj", "workbench.ts")) ? "proj" : "proj-stub";
++// evp: served behind the studio's reverse proxy at WB_BASE (e.g. /motion/); default "/" as upstream.
++const BASE = process.env.WB_BASE || "/";
+ 
+ /** 导出成片：dev server 内起 Remotion CLI 渲染，
+  *  前端 POST /api/export 提交工程 JSON，轮询 GET /api/export/:id 取进度。 */
+@@ -40,7 +42,7 @@ const renderExportPlugin = (): Plugin => {
+           if (/^\.props-[a-z0-9]+\.json$/.test(f)) rmSync(path.join(exportsDir, f), { force: true });
+         }
+       }
+-      server.middlewares.use("/api/export", (req, res) => {
++      server.middlewares.use(`${BASE}api/export`, (req, res) => {
+         const send = (code: number, body: unknown) => {
+           res.statusCode = code;
+           res.setHeader("Content-Type", "application/json");
+@@ -188,7 +190,8 @@ const renderExportPlugin = (): Plugin => {
+ export default defineConfig({
+   plugins: [react(), renderExportPlugin()],
+   // 5198：与 video-talkcraft 的工作台（5199）错开，两边可同时开
+-  server: { port: 5198, strictPort: true },
++  base: BASE,
++  server: { port: 5198, strictPort: true, host: "127.0.0.1" },
+   resolve: {
+     preserveSymlinks: true,
+     alias: { "@proj": path.join(root, proj), "@demos": path.join(root, "demosrc") },

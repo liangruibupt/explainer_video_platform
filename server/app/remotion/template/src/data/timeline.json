@@ -1,0 +1,2 @@
+{"fps": 30, "width": 1920, "height": 1080, "background": "#101828", "revision": "template",
+ "scenes": [{"id": "s01", "label": "S1 标题", "from": 0, "duration": 90, "card": "fallback/title-card"}]}

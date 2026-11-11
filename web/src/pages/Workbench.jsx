@@ -21,6 +21,7 @@ export default function Workbench() {
   const [music, setMusic] = useState('synth')
   const [illustrations, setIllustrations] = useState(0)
   const [clips, setClips] = useState(0)
+  const [renderer, setRenderer] = useState('html')
   const [musicChoices, setMusicChoices] = useState({ synth: '合成垫乐', none: '无音乐' })
   useEffect(() => { api('/music').then(setMusicChoices).catch(() => {}) }, [])
   const [busy, setBusy] = useState(false)
@@ -33,7 +34,7 @@ export default function Workbench() {
     try {
       const j = await api('/jobs', {
         method: 'POST',
-        body: JSON.stringify({ topic, seconds, ratio, captions, music, illustrations, clips }),
+        body: JSON.stringify({ topic, seconds, ratio, captions, music, illustrations, clips, renderer }),
       })
       nav(`/jobs/${j.id}`)
     } catch (e) { setErr(e.message); setBusy(false) }
@@ -81,6 +82,12 @@ export default function Workbench() {
               <option value={0}>不用</option>
               <option value={1}>最多 1 段</option>
               <option value={2}>最多 2 段</option>
+            </select>
+          </label>
+          <label className="opt" title="Remotion：每段用 video-shotcraft 动效卡写成 Remotion 场景，完成后可在动效编辑器里改文字、颜色和时长">渲染方式
+            <select value={renderer} onChange={(e) => setRenderer(e.target.value)}>
+              <option value="html">Canvas 绘制（默认）</option>
+              <option value="remotion">Remotion 动效卡（可在编辑器里改）</option>
             </select>
           </label>
           <label className="toggle">

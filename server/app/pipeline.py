@@ -101,7 +101,7 @@ def _save(job: dict) -> None:
 def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
                captions: bool, music: str, voice: str, brief: str = "",
                scene_context: str = "", background_png: bytes = b"",
-               illustrations: int = 0, clips: int = 0) -> dict:
+               illustrations: int = 0, clips: int = 0, renderer: str = "html") -> dict:
     d = job_dir(job_id)
     d.mkdir(parents=True, exist_ok=False)
     if scene_context:
@@ -111,7 +111,7 @@ def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
     job = {"id": job_id, "topic": topic, "language": language, "seconds": seconds,
            "ratio": ratio, "captions": captions, "music": music, "voice": voice,
            "brief": brief, "has_background": bool(background_png),
-           "illustrations": illustrations, "clips": clips,
+           "illustrations": illustrations, "clips": clips, "renderer": renderer,
            "status": "queued", "created": time.time(), "updated": time.time(),
            "steps": [{"key": k, "label": l, "status": "pending"} for k, l in STEPS],
            "error": None, "video": None, "scenes": []}
@@ -374,12 +374,25 @@ def _run(job_id: str) -> None:
             if (d / "background.png").exists():
                 bg = "data:image/png;base64," + base64.b64encode((d / "background.png").read_bytes()).decode()
             ctx = (d / "scene_context.txt").read_text() if (d / "scene_context.txt").exists() else ""
+            if job.get("renderer") == "remotion":
+                from . import remotion
+                remotion.write_project(
+                    job, d, frames, w, h,
+                    images={k: d / "img" / f"{k}.png" for k in imgs},
+                    clips={k: d / f"clip_{k}.mp4" for k in clips},
+                    background=(d / "background.png") if (d / "background.png").exists() else None,
+                    context=ctx, log=note)
+                _save(job)
+                return
             (d / "index.html").write_text(llm.scene_html(job["scenes"], frames, w, h, log=note,
                                                          context=ctx, bg_data_url=bg,
                                                          images=imgs, clips=clips))
         step("scene_code", do_scene_code)
 
-        if any(s.get("sfx") for s in job["scenes"]):
+        remotion_job = job.get("renderer") == "remotion"
+        # Remotion jobs place SFX as editable audio clips inside the project (part B), so the
+        # voice track (narration + ducked music) is mixed without them.
+        if any(s.get("sfx") for s in job["scenes"]) and not remotion_job:
             step("sfx", lambda: _sh([PY, SCRIPTS / "sfx.py", "scenes.json", "."], d, log))
         else:
             skip("sfx")
@@ -402,19 +415,33 @@ def _run(job_id: str) -> None:
                                           "--size", f"{w}x{h}"], d, log))
         else:
             skip("captions")
-        step("capture", lambda: _sh([PY, SCRIPTS / "capture_html.py", "index.html", "silent.mp4",
-                                     "--frames", sum(frames), "--size", f"{w}x{h}"], d, log))
+        if remotion_job:
+            def do_render():
+                from . import remotion
+                from .remotion import render as rr
+                proj = d / "remotion"
+                def note(msg):
+                    with log.open("a") as f:
+                        f.write(msg + "\n")
+                remotion.prepare_media(job, d, proj, note)
+                rr.render(proj, d / "final.mp4", log)
+            step("capture", do_render)
+        else:
+            step("capture", lambda: _sh([PY, SCRIPTS / "capture_html.py", "index.html", "silent.mp4",
+                                         "--frames", sum(frames), "--size", f"{w}x{h}"], d, log))
 
         def do_compose():
-            args = [FFMPEG, "-y", "-v", "error", "-i", "silent.mp4", "-i", "narration_bgm.wav"]
-            if job["captions"]:
-                args += ["-vf", "ass=captions.ass", "-c:v", "libx264", "-crf", "18",
-                         "-pix_fmt", "yuv420p"]
-            else:
-                args += ["-c:v", "copy"]
-            args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest",
-                     "-movflags", "+faststart", "final.mp4"]
-            _sh(args, d, log)
+            # Remotion jobs: final.mp4 already carries voice, sfx and captions (do_render).
+            if not remotion_job:
+                args = [FFMPEG, "-y", "-v", "error", "-i", "silent.mp4", "-i", "narration_bgm.wav"]
+                if job["captions"]:
+                    args += ["-vf", "ass=captions.ass", "-c:v", "libx264", "-crf", "18",
+                             "-pix_fmt", "yuv420p"]
+                else:
+                    args += ["-c:v", "copy"]
+                args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest",
+                         "-movflags", "+faststart", "final.mp4"]
+                _sh(args, d, log)
             poster_at = f"{max(1.0, frames[0] / 30 * 0.6):.2f}"
             _sh([FFMPEG, "-y", "-v", "error", "-ss", poster_at, "-i", "final.mp4",
                  "-frames:v", "1", "-vf", "scale=640:-2", "poster.jpg"], d, log)

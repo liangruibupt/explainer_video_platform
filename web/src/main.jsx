@@ -20,6 +20,7 @@ import FeedbackPage from './pages/FeedbackPage.jsx'
 const optional = import.meta.glob([
   './pages/ChatPage.jsx', './pages/GuidePage.jsx', './pages/WorkflowEditor.jsx',
   './pages/AssetsPage.jsx', './pages/ProjectsPage.jsx', './pages/SettingsPage.jsx',
+  './pages/MotionEditPage.jsx', // docs/REMOTION_CONTRACT.md §8 (part D)
 ])
 function Soon() {
   return <div className="page"><h1 className="h1-sm">建设中</h1><p className="sub">这个页面还在开发。</p></div>
@@ -40,6 +41,7 @@ createRoot(document.getElementById('root')).render(
           <Route path="tasks" element={<Tasks />} />
           <Route path="feedback" element={<FeedbackPage />} />
           <Route path="jobs/:id" element={<JobPage />} />
+          <Route path="jobs/:id/edit" element={page('MotionEditPage')} />
           <Route path="image" element={<ImagePage />} />
           <Route path="video" element={<VideoPage />} />
           <Route path="avatar" element={<AvatarPage />} />

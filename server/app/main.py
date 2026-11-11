@@ -32,6 +32,7 @@ class JobIn(BaseModel):
     background_png_b64: str = Field(default="", max_length=12_000_000)
     illustrations: int = Field(default=0, ge=0, le=4)
     clips: int = Field(default=0, ge=0, le=2)
+    renderer: str = Field(default="html", pattern=r"^(html|remotion)$")
 
 
 @app.get("/api/health")
@@ -66,7 +67,7 @@ def create(body: JobIn):
                                body.ratio, body.captions, body.music, body.voice,
                                brief=body.brief.strip(), scene_context=body.scene_context.strip(),
                                background_png=bg, illustrations=body.illustrations,
-                               clips=body.clips)
+                               clips=body.clips, renderer=body.renderer)
 
 
 class ImageIn(BaseModel):
@@ -426,6 +427,15 @@ except ModuleNotFoundError as _e:
     if _e.name not in ("app.avatar_api", "app.avatar"):
         raise
     _logging.getLogger(__name__).info("avatar module not present")
+
+# Motion editor (docs/REMOTION_CONTRACT.md §7, part C): /api/motion/*, /api/jobs/{id}/versions*
+# and the /motion/ reverse proxy to the shotcraft workbench dev server.
+try:
+    app.include_router(_importlib.import_module("app.motion_api").router)
+except ModuleNotFoundError as _e:
+    if _e.name not in ("app.motion_api", "app.motion"):
+        raise
+    _logging.getLogger(__name__).info("motion editor not present")
 
 
 if WEB.exists():

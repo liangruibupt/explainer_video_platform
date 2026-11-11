@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api, usePoll, isLive, fileUrl, STATUS } from '../api.js'
 import FeedbackButton from '../components/FeedbackButton.jsx'
+import MotionVersions from '../components/MotionVersions.jsx'
 
+const GALLERY = 'https://vincentwei1021.github.io/video-shotcraft/'
+const cardLabel = (c) => (c === 'fallback/title-card' ? '标题卡（回退）' : c)
 const secs = (s) => (s.started && s.ended ? `${Math.round(s.ended - s.started)}s` : '')
 
 export default function JobPage() {
@@ -14,6 +17,8 @@ export default function JobPage() {
   if (error && !job) return <div className="page"><div className="error">{error}</div></div>
   if (!job) return <div className="page"><p className="sub">加载中…</p></div>
 
+  const remotion = job.renderer === 'remotion'
+  const tall = job.ratio === '9:16'
   const showLog = async () => {
     const r = await fetch(fileUrl(id, 'pipeline.log'))
     setLog(r.ok ? (await r.text()).slice(-6000) : '还没有日志')
@@ -28,7 +33,8 @@ export default function JobPage() {
       method: 'POST',
       body: JSON.stringify({ topic: job.topic, seconds: job.seconds, ratio: job.ratio,
                              captions: job.captions, music: job.music,
-                             illustrations: job.illustrations || 0, clips: job.clips || 0 }),
+                             illustrations: job.illustrations || 0, clips: job.clips || 0,
+                             renderer: job.renderer || 'html' }),
     })
     nav(`/jobs/${j.id}`)
   }
@@ -39,6 +45,10 @@ export default function JobPage() {
       <div className="job-head">
         <h1 className="h1-sm">{job.topic}</h1>
         <span className={`pill ${job.status}`}>{STATUS[job.status]}</span>
+        <span className={`pill mv-renderer ${remotion ? 'remotion' : ''}`}
+              title={remotion ? '每段由 video-shotcraft 动效卡写成 Remotion 场景' : 'Canvas2D 逐帧绘制'}>
+          {remotion ? 'Remotion 动效卡' : 'Canvas 绘制'}
+        </span>
       </div>
       <p className="sub">
         {job.ratio === '9:16' ? '竖屏' : '横屏'} · 约 {job.seconds} 秒 · {job.captions ? '逐字字幕' : '无字幕'} · {({ synth: '合成垫乐', none: '无音乐', guqin: '古琴', ai: 'AI 音乐' })[job.music] || job.music}
@@ -63,8 +73,18 @@ export default function JobPage() {
             <button className="btn" onClick={showLog}>查看日志</button>
             {!isLive(job) && <button className="btn danger" onClick={remove}>删除</button>}
             {job.status === 'done' && <FeedbackButton target={{ kind: 'job', id }} />}
+            {remotion && job.status === 'done' && (
+              <Link className="btn mv-open" to={`/jobs/${id}/edit`}>在动效编辑器中打开</Link>
+            )}
           </div>
           {log && <pre className="log">{log}</pre>}
+          {remotion && job.status === 'done' && (
+            <div className="panel mv-versions">
+              <h3>版本</h3>
+              <p className="muted">v1 是原片；在动效编辑器里每次「保存为新版本」都会渲染一个新版本，原片保留不变。</p>
+              <MotionVersions id={id} tall={tall} />
+            </div>
+          )}
         </div>
 
         <div className="panel">
@@ -86,6 +106,12 @@ export default function JobPage() {
                   {s.illustration && <span className="pill soon">AI 插图</span>}
                   {s.clip && <span className="pill soon">AI 镜头</span>}
                   {s.frames && <span className="frames">{(s.frames / 30).toFixed(1)}s</span>}
+                  {remotion && s.card && (
+                    <a className="mv-card" href={GALLERY} target="_blank" rel="noreferrer"
+                       title="在 video-shotcraft 镜头卡图库中查看">
+                      动效卡 · {cardLabel(s.card)}
+                    </a>
+                  )}
                   <p>{s.narration}</p>
                 </li>
               ))}

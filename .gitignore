@@ -10,6 +10,8 @@
 
 # environments and caches
 data/
+# Remotion template's placeholder data files are source, not runtime data.
+!server/app/remotion/template/src/data/
 web/dist/
 infra/budget/*.local.json
 .venv/
