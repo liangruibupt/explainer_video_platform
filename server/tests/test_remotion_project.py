@@ -38,8 +38,11 @@ BLANK = GOOD.replace("{o.title}</div>", "</div>")
 
 @pytest.fixture(autouse=True)
 def _layout_off(monkeypatch):
-    """The vision layout check is off unless a test turns it on (it would call Bedrock)."""
+    """The vision layout check is off unless a test turns it on (it would call Bedrock).
+    Stills go through the per-frame path so tests can fake render.still; the real batch path
+    (stills.cjs) is covered by the HAS_BASE tests, which re-enable it."""
     monkeypatch.setenv("EVP_LAYOUT_CHECK", "0")
+    monkeypatch.setenv("EVP_BATCH_STILLS", "0")
 
 
 def _job(n=2):
@@ -250,12 +253,30 @@ def test_llm_failure_falls_back(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not HAS_BASE, reason="no shared Remotion install")
 def test_write_project_real_tsc_and_still(tmp_path, monkeypatch):
-    # Real tsc + real still: scene_0 renders, scene_1 is blank (flat colour) both times -> fallback.
+    # Real tsc + real batched stills: scene_0 renders, scene_1 is blank both times -> fallback.
+    monkeypatch.setenv("EVP_BATCH_STILLS", "1")
     job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [BLANK, BLANK]})
     assert [s["card"] for s in job["scenes"]] == ["typography/paper-title-card", project.FALLBACK_CARD]
     assert (proj / ".check" / "scene_0.png").exists()
     render.typecheck(proj)  # the final project compiles
     assert any("flat colour" in u for s, u in fake.calls)
+    t = json.loads((proj / ".check" / "result.json").read_text())["timing"]
+    assert t["main"]["still"]["n"] == 3 and t["main"]["tsc"]["n"] >= 2 and t["total_s"] > 0
+
+
+@pytest.mark.skipif(not HAS_BASE, reason="no shared Remotion install")
+def test_batch_stills_match_single_stills(tmp_path, monkeypatch):
+    # stills.cjs (one bundle, one browser) gives the same pixels as `remotion still`.
+    from PIL import Image, ImageChops
+    monkeypatch.setenv("EVP_BATCH_STILLS", "1")
+    job, proj, logs, fake = _run(tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD2]})
+    frames = [5, 60, 130]
+    errs = render.stills(proj, frames + [100000], [tmp_path / f"b{f}.png" for f in frames + [100000]])
+    assert set(errs) == {100000}  # a frame past the end fails alone
+    for f in frames:
+        render.still(proj, f, (tmp_path / f"s{f}.png").resolve())
+        a, b = (Image.open(tmp_path / f"{k}{f}.png").convert("RGBA") for k in "bs")
+        assert a.size == (1920, 1080) and ImageChops.difference(a, b).getbbox() is None
 
 
 # ---- layout check (vision, §3.9) ----------------------------------------------------------
@@ -452,3 +473,23 @@ def test_ask_images_downscales(monkeypatch):
     with Image.open(io.BytesIO(content[0]["image"]["source"]["bytes"])) as im:
         assert im.format == "JPEG" and im.size == (540, 960)
     assert sent["modelId"] == llm.MODEL_ID
+
+
+def test_pinned_cards_skip_picker_and_timing(tmp_path, monkeypatch):
+    monkeypatch.setenv("EVP_REMOTION_PIN_CARDS", "1")
+    d = tmp_path / "job"
+    (d / "remotion" / ".check").mkdir(parents=True)
+    (d / "remotion" / ".check" / "result.json").write_text(json.dumps({"look": {"accent": "#123456"}}))
+    job = _job(2)
+    job["scenes"][0]["card"], job["scenes"][1]["card"] = "data/chart-live-moves", "opening/orbit-ring-title-open"
+    fake = FakeLLM({}, {"scene_0": [GOOD], "scene_1": [GOOD]})
+    monkeypatch.setattr(generate.llm, "ask", fake)
+    monkeypatch.setattr(render, "still", _ok_still)
+    monkeypatch.setattr(render, "typecheck", lambda *a, **k: None)
+    proj = project.write_project(job, d, [90, 90], 1920, 1080, images={}, clips={},
+                                 background=None, context="", log=lambda m: None)
+    assert not any(s == generate.PICK_SYSTEM for s, u in fake.calls) and len(fake.calls) == 2
+    assert [s["card"] for s in job["scenes"]] == ["data/chart-live-moves", "opening/orbit-ring-title-open"]
+    res = json.loads((proj / ".check" / "result.json").read_text())
+    assert res["look"]["accent"] == "#123456" and res["timing"]["pinned_cards"] is True
+    assert res["timing"]["main"]["generate"]["n"] == 2 and res["timing"]["main"]["still"]["n"] == 2

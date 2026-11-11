@@ -65,6 +65,56 @@ def still(proj: Path, frame: int, out: Path, log: Path | None = None, timeout: i
           "--log=error"], proj, log, timeout)
 
 
+STILLS_JS = Path(__file__).parent / "stills.cjs"
+STILLS_CONCURRENCY = int(os.environ.get("EVP_STILLS_CONCURRENCY", "2"))
+
+
+def stills(proj: Path, frames: list, outs: list, log: Path | None = None,
+           timeout: int = 900) -> dict:
+    """Render many stills of one project with ONE bundle and ONE browser (stills.cjs) instead of
+    one `remotion still` process per frame. frames[k] -> outs[k] (PNG, same pixels as still()).
+    Returns {frame: error text} for frames that failed (empty = all rendered); raises
+    RuntimeError when bundling or the browser fails."""
+    proj, outs = Path(proj), [Path(o) for o in outs]
+    if not frames:
+        return {}
+    if os.environ.get("EVP_BATCH_STILLS", "1").strip().lower() in ("0", "false", "off", "no"):
+        errs = {}
+        for f, o in zip(frames, outs):  # the old path: one `remotion still` process per frame
+            try:
+                o.unlink(missing_ok=True)
+                still(proj, int(f), o.resolve(), log)
+            except Exception as e:  # noqa: BLE001
+                errs[int(f)] = str(e)
+        return errs
+    for o in outs:
+        o.parent.mkdir(parents=True, exist_ok=True)
+        o.unlink(missing_ok=True)
+    jf = (proj / ".check" / "stills.job.json").resolve()
+    jf.parent.mkdir(parents=True, exist_ok=True)
+    jf.write_text(json.dumps({"proj": str(proj.resolve()), "comp": "Main",
+                              "bundle": str((proj / ".check" / "bundle").resolve()),
+                              "gl": "angle", "concurrency": STILLS_CONCURRENCY,
+                              "frames": [{"frame": int(f), "out": str(o.resolve())}
+                                         for f, o in zip(frames, outs)]}))
+    r = subprocess.run([os.environ.get("NODE", "node"), str(STILLS_JS), str(BASE / "node_modules"),
+                        str(jf)], cwd=proj, capture_output=True, text=True, timeout=timeout)
+    if log:
+        with log.open("a") as fh:
+            fh.write(r.stdout + r.stderr)
+    errs = {}
+    for ln in r.stdout.splitlines():
+        if ln.startswith("fail "):
+            k, _, msg = ln[5:].partition(" ")
+            errs[int(k)] = msg
+    if r.returncode and not errs:
+        raise RuntimeError(f"stills.cjs failed (exit {r.returncode}): {(r.stderr or r.stdout)[-600:]}")
+    for f, o in zip(frames, outs):
+        if int(f) not in errs and not o.exists():
+            errs[int(f)] = "no image written"
+    return errs
+
+
 def render(proj: Path, out: Path, log: Path | None = None, *, entry: str = "src/index.ts",
            comp: str = "Main", props: dict | None = None, public_dir: Path | None = None,
            cwd: Path | None = None, env: dict | None = None, timeout: int = 3600) -> None:

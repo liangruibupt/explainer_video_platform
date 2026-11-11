@@ -264,27 +264,36 @@ class _Gen:
             raise RuntimeError("remotion: type-check failed outside the scene modules:\n" + text[-2000:])
         return {self.sts.index(st): e for st, e in by_stem.items()}
 
-    def still(self, i: int) -> str | None:
-        """Render the scene's midpoint; None = fine, else the error text."""
-        st = self.sts[i]
-        frm = sum(self.frames[:i]) + self.frames[i] // 2
-        out, lp = self.check / f"{st}.png", self.check / f"{st}.still.log"
+    def check_stills(self, idx: list[int]) -> dict[int, str]:
+        """Render the midpoint of every scene in idx in ONE batch (render.stills); returns
+        {i: error text} for scenes whose still failed or is one flat colour."""
+        if not idx:
+            return {}
+        mids = {i: sum(self.frames[:i]) + self.frames[i] // 2 for i in idx}
+        outs = {i: self.check / f"{self.sts[i]}.png" for i in idx}
+        lp = self.check / "stills.log"
         lp.write_text("")
-        if out.exists():
-            out.unlink()
         t0 = time.time()
         try:
-            render.still(self.proj, frm, out, lp)
+            errs = render.stills(self.proj, [mids[i] for i in idx], [outs[i] for i in idx], lp)
         except Exception as e:  # noqa: BLE001
-            self._tick("still", t0)
-            return f"still render at scene frame {self.frames[i] // 2} failed: {e}\n{_tail(lp)}"
-        self._tick("still", t0)
-        if not out.exists():
-            return "still render produced no image"
-        if uniform(out):
-            return (f"the frame at scene frame {self.frames[i] // 2} (mid-scene) is one flat colour:"
-                    " nothing visible. Content must be on screen by then.")
-        return None
+            errs = {mids[i]: f"{e}\n{_tail(lp)}" for i in idx}
+        self._tick("still", t0, len(idx))
+        out = {}
+        for i in idx:
+            half = self.frames[i] // 2
+            if mids[i] in errs:
+                out[i] = f"still render at scene frame {half} failed: {errs[mids[i]]}"
+            elif not outs[i].exists():
+                out[i] = "still render produced no image"
+            elif uniform(outs[i]):
+                out[i] = (f"the frame at scene frame {half} (mid-scene) is one flat colour:"
+                          " nothing visible. Content must be on screen by then.")
+        return out
+
+    def still(self, i: int) -> str | None:
+        """Render the scene's midpoint; None = fine, else the error text."""
+        return self.check_stills([i]).get(i)
 
     def ts_loop(self) -> None:
         """Type-check; failing scenes get their one regeneration, then the fallback."""
@@ -297,19 +306,32 @@ class _Gen:
             raise RuntimeError("remotion: type-check still failing after fallbacks")
 
     # ---- layout check (vision, §3.9) ------------------------------------------
-    def layout_stills(self, i: int, tag: str) -> list[tuple[int, bytes]]:
-        st, base = self.sts[i], sum(self.frames[:i])
+    def layout_stills(self, idx: list[int], tag: str) -> dict[int, list | str]:
+        """All layout stills of the scenes idx in ONE batch -> {i: [(scene frame, png bytes)]}
+        or {i: error text} for a scene whose stills failed."""
         ld = self.check / "layout"
         ld.mkdir(exist_ok=True)
-        out = []
-        for f in layout_frames(self.frames[i]):
-            png, lp = ld / f"{st}.{tag}.f{f}.png", ld / f"{st}.{tag}.still.log"
-            if png.exists():
-                png.unlink()
-            t0 = time.time()
-            render.still(self.proj, base + f, png, lp)
-            self._tick("still", t0)
-            out.append((f, png.read_bytes()))
+        plan = []
+        for i in idx:
+            base = sum(self.frames[:i])
+            plan += [(i, f, base + f, ld / f"{self.sts[i]}.{tag}.f{f}.png")
+                     for f in layout_frames(self.frames[i])]
+        lp = ld / f"{tag}.stills.log"
+        lp.write_text("")
+        t0 = time.time()
+        try:
+            errs = render.stills(self.proj, [p[2] for p in plan], [p[3] for p in plan], lp)
+        except Exception as e:  # noqa: BLE001
+            errs = {p[2]: str(e) for p in plan}
+        self._tick("still", t0, len(plan))
+        out: dict[int, list | str] = {i: [] for i in idx}
+        for i, f, a, png in plan:
+            if isinstance(out[i], str):
+                continue
+            if a in errs or not png.exists():
+                out[i] = f"layout still at scene frame {f} failed: {errs.get(a, 'no image')}"[:600]
+            else:
+                out[i].append((f, png.read_bytes()))
         return out
 
     def _review(self, i: int, stills: list, previous: list | None = None) -> dict:
@@ -325,20 +347,18 @@ class _Gen:
 
     def review_many(self, idx: list[int], tag: str,
                     previous: dict[int, list] | None = None) -> dict[int, dict]:
-        """Stills render one scene at a time; each scene's vision call starts as soon as its
-        stills exist (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
+        """All stills of all scenes render in one batch first; then the vision calls run
+        (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
         before a rewrite}: the confirmation pass re-checks each of them explicitly."""
         res, futs = {}, {}
         previous = previous or {}
+        shots = self.layout_stills(idx, tag)
         with ThreadPoolExecutor(max_workers=LAYOUT_WORKERS) as ex:
             for i in idx:
-                try:
-                    stills = self.layout_stills(i, tag)
-                except Exception as e:  # noqa: BLE001
-                    res[i] = {"ok": True, "issues": [], "skipped": True,
-                              "error": f"layout stills failed: {e}"}
+                if isinstance(shots[i], str):
+                    res[i] = {"ok": True, "issues": [], "skipped": True, "error": shots[i]}
                     continue
-                futs[i] = ex.submit(self._review, i, stills, previous.get(i))
+                futs[i] = ex.submit(self._review, i, shots[i], previous.get(i))
                 self.layout_calls += 1
             for i, fu in futs.items():
                 res[i] = fu.result()
@@ -405,12 +425,9 @@ class _Gen:
                 if i in live:
                     worse[i] = f"rewrite failed tsc: {e[:300]}"
                     self._restore(i, old[i])
-            for i in live:
-                if i not in worse:
-                    err = self.still(i)
-                    if err:
-                        worse[i] = f"rewrite failed the still check: {err[:300]}"
-                        self._restore(i, old[i])
+            for i, err in self.check_stills([i for i in live if i not in worse]).items():
+                worse[i] = f"rewrite failed the still check: {err[:300]}"
+                self._restore(i, old[i])
         live = [i for i in live if i not in worse]
         second = (self.review_many(live, "v2", {i: first[i]["issues"] for i in live})
                   if live else {})
@@ -444,11 +461,9 @@ class _Gen:
                 self.log(f"remotion: layout {sid} remaining: " + "; ".join(
                     f"[{x['kind']}] {x['where']}" for x in rec["after"])[:400])
         # .check/<stem>.png must show the module that is kept, not the rejected rewrite.
-        for i in sorted(reverted):
-            err = self.still(i)
-            if err:
-                self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
-                         f"module failed: {err[:200]}")
+        for i, err in self.check_stills(sorted(reverted)).items():
+            self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
+                     f"module failed: {err[:200]}")
 
     def pinned_cards(self) -> tuple[dict, dict] | None:
         """EVP_REMOTION_PIN_CARDS=1: reuse job['scenes'][i]['card'] (and the look of the last
@@ -502,23 +517,15 @@ class _Gen:
         if problems:
             self.retry_or_fail(problems)
         self.ts_loop()
-        for i in all_idx:
-            if self.sts[i] in self.fallback:
-                continue
-            err = self.still(i)
-            if err:
-                again = self.retry_or_fail({i: err})
-                if again:
-                    errs = self.typecheck()
-                    if i in errs:
-                        self.fail(i, errs[i])
-                    elif errs:  # another scene broke (should not happen): its fallback
-                        for j, e in errs.items():
-                            self.fail(j, e)
-                    else:
-                        err = self.still(i)
-                        if err:
-                            self.fail(i, err)
+        bad = self.check_stills([i for i in all_idx if self.sts[i] not in self.fallback])
+        if bad:
+            again = self.retry_or_fail(bad)
+            if again:
+                errs = self.typecheck()
+                for j, e in errs.items():  # the regenerated scene, or (should not happen) another
+                    self.fail(j, e)
+                for i, err in self.check_stills([i for i in again if i not in errs]).items():
+                    self.fail(i, err)
         self.ts_loop()
         self.layout_phase()
         self.ts_loop()
