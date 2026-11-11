@@ -153,17 +153,26 @@ def test_wrong_key_and_type_rejected(job, opus, client):
         assert frag in rej, (frag, rej)
 
 
-def test_locked_voice_caption_text_and_sfx_file(job, opus, client):
+def test_locked_voice_caption_chars_and_sfx_file(job, opus, client):
     opus.answer = {"reply": "x", "ops": [
         {"op": "set_timing", "clip_id": "voice", "start": 30},
         {"op": "set_props", "clip_id": "voice", "props": {"volume": 0.5}},
-        {"op": "set_props", "clip_id": "cap1", "props": {"text": "改过的旁白"}},
         {"op": "set_props", "clip_id": "cap1", "props": {"chars": []}},
         {"op": "set_props", "clip_id": "sfx1", "props": {"file": "../../etc/passwd"}}]}
     out = post(client, {"message": "m", "project": project()}).json()
     assert out["ops"] == [] and out["project"] is None
-    assert len(out["rejected"]) == 5
+    assert len(out["rejected"]) == 4
     assert sum("配音轨已锁定" in x for x in out["rejected"]) == 2
+
+
+def test_caption_text_is_editable(job, opus, client):
+    # typo fixes on screen are allowed; per-character timing stays locked
+    opus.answer = {"reply": "x", "ops": [
+        {"op": "set_props", "clip_id": "cap1", "props": {"text": "改过的字幕"}}]}
+    out = post(client, {"message": "第一句字幕改个错别字", "project": project()}).json()
+    assert out["rejected"] == [] and len(out["ops"]) == 1
+    caps = [c for t in out["project"]["tracks"] for c in t["clips"] if c["id"] == "cap1"]
+    assert caps[0]["props"]["text"] == "改过的字幕"
 
 
 def test_speed_bounds(job, opus, client):

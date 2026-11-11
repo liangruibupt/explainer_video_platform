@@ -7,7 +7,7 @@ new drawing code, a scene_edit suggestion (part B runs it; this module never sta
 
 Every operation is validated against the project before it is applied to a deep copy:
   set_props   only keys already in that clip's props, same JSON type (string/number/boolean),
-              colours stay #rrggbb; the voice clip, audio file paths and caption text are locked
+              colours stay #rrggbb; the voice clip, audio file paths and caption timing (`chars`) are locked
   set_timing  never on the voice clip; start >= 0, duration >= 1, 0.25 <= speed <= 4
 Invalid parts land in `rejected`; `changes` is the Chinese change list plus new drift warnings
 (a scene clip > versions.LOCK_TOL frames off the narration timeline).
@@ -37,9 +37,10 @@ CAPTION_CARD = "proj:caption:caption"
 AUDIO_CARD = "audio-clip"
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SCHEMA_FIELD = re.compile(r'key:\s*"([A-Za-z0-9_]+)"\s*,\s*label:\s*"([^"]+)"')
-# Caption props that follow the narration (locked like the voice) or are not scalars.
-CAPTION_LOCKED = {"text": "字幕文字跟随配音，已锁定（要改旁白请重新生成任务）",
-                  "chars": "逐字时间来自配音，已锁定"}
+# Caption props that follow the narration (locked like the voice). Caption `text` stays editable
+# (typo fixes, wording on screen): Captions.tsx spreads the highlight evenly when the length no
+# longer matches `chars`, the same as a hand edit in the workbench.
+CAPTION_LOCKED = {"chars": "逐字时间来自配音，已锁定"}
 
 FRIENDLY_BAD_JSON = "抱歉，这次没能理解成可执行的修改。请换个说法再试一次，例如「S2 标题改成……」。"
 
@@ -172,9 +173,11 @@ Rules for ops:
   studio shows a drift warning) and say in reply that the voice keeps its original timing.
 - Scenes are numbered in timeline order: 第一段/S1 = SCENES[0], 第三段/S3 = SCENES[2], etc.
   The selected scene (if any) is the default target when the user says "这段/这里".
-- Locked: the narration text, the voice clip (kind "voice") and the caption text/timing follow
-  the recorded voice. If asked to change narration, voice or caption wording, return no ops and
-  explain in reply that this cannot be done here; suggest remaking the job (重新生成任务).
+- Locked: the narration text, the voice clip (kind "voice") and caption timing (`chars`, clip
+  timing) follow the recorded voice. If asked to change what is SPOKEN (narration, voice), return
+  no ops and explain in reply that this cannot be done here; suggest remaking the job
+  (重新生成任务). Caption `text` may be edited (typo fixes, on-screen wording); say in reply that
+  the voice still says the original words.
 - If the request needs new drawing code (a different chart type, new elements, arrows, a new
   layout that no existing prop controls), return no ops for it and set scene_edit with the
   scene id and a concrete instruction; in reply say that Opus can rewrite this scene and the
