@@ -111,8 +111,9 @@ def check_ready() -> None:
 def status() -> dict:
     pid = _managed_pid()
     st = _read_state() if pid else {}
-    return {"running": bool(pid), "job_id": st.get("job_id") if st.get("pid") == pid else None,
-            "port": PORT}
+    ours = st.get("pid") == pid
+    return {"running": bool(pid), "job_id": st.get("job_id") if ours else None,
+            "proj": st.get("proj") if ours else None, "port": PORT}
 
 
 # A production build of the editor UI, served by the studio itself (motion_api.py). The dev

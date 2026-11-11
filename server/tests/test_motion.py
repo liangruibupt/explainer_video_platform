@@ -224,7 +224,8 @@ def test_is_our_vite_rejects_foreign_pid():
 
 def test_status_without_pidfile(tmp_path, monkeypatch):
     monkeypatch.setattr(workbench, "WB", tmp_path)
-    assert workbench.status() == {"running": False, "job_id": None, "port": workbench.PORT}
+    assert workbench.status() == {"running": False, "job_id": None, "proj": None,
+                                  "port": workbench.PORT}
     assert workbench.stop()["stopped"] is False
 
 
@@ -374,5 +375,5 @@ def test_proxy_forwards_path_query_body_and_range(client, monkeypatch):
 def test_motion_status_api(client, tmp_path, monkeypatch):
     monkeypatch.setattr(workbench, "WB", tmp_path)
     assert client.get("/api/motion/status").json() == {"running": False, "job_id": None,
-                                                        "port": workbench.PORT}
+                                                        "proj": None, "port": workbench.PORT}
     assert motion_api.router is not None
