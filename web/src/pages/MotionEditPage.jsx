@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { VERSION_STATUS, versionLive, versionUrl, VersionWarnings } from '../components/MotionVersions.jsx'
+import MotionChat, { call } from '../components/MotionChat.jsx'
 
 // Motion editor for a Remotion job (docs/REMOTION_CONTRACT.md §7–§8). The studio starts the
 // shotcraft workbench for this job and proxies it under /motion/, so the iframe is same-origin
@@ -10,19 +11,7 @@ const PROJECT_KEY = 'shotcraft-workbench-project-v1'
 const VOICE_NOTE = '配音轨已锁定：保存时恢复原配音；镜头时长和配音偏离超过 0.5 秒会提示'
 const READY_TRIES = 40 // × 1.5 s ≈ 1 minute for the dev server to come up
 
-// fetch that keeps the HTTP status, so 409 can get its own message
-async function call(path, opts = {}) {
-  const r = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...opts })
-  let body = null
-  try { body = await r.json() } catch { /* not json */ }
-  if (!r.ok) {
-    const d = body?.detail
-    const e = new Error(typeof d === 'string' ? d : d ? JSON.stringify(d) : `${r.status}`)
-    e.status = r.status
-    throw e
-  }
-  return body
-}
+const CHAT_OPEN_KEY = 'evp-motion-chat-open'
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
 
@@ -36,6 +25,41 @@ export default function MotionEditPage() {
   const [url, setUrl] = useState(null)
   const [attempt, setAttempt] = useState(0)
   const [save, setSave] = useState(null) // {state: saving|polling|done|failed|error, version, error}
+  const [chatOpen, setChatOpen] = useState(() => localStorage.getItem(CHAT_OPEN_KEY) !== '0')
+  const toggleChat = (open) => {
+    setChatOpen(open)
+    try { localStorage.setItem(CHAT_OPEN_KEY, open ? '1' : '0') } catch { /* ignore */ }
+  }
+
+  // Current workbench project. The workbench debounces its autosave by 800 ms; its beforeunload
+  // listener writes the current project immediately, so fire it to include the very last edit.
+  const readProject = () => {
+    let raw
+    try {
+      frame.current?.contentWindow?.dispatchEvent(new Event('beforeunload'))
+      raw = frame.current?.contentWindow?.localStorage?.getItem(PROJECT_KEY)
+    } catch {
+      throw new Error('读不到编辑器里的工程（编辑器页面不是同源，无法读取）')
+    }
+    if (!raw) throw new Error('编辑器里还没有可用的工程。等编辑器加载完成，或先做一处修改再试。')
+    try { return JSON.parse(raw) } catch { throw new Error('编辑器里的工程数据损坏，无法解析') }
+  }
+
+  // Put a project into the workbench and reload it. Navigate the iframe away first: its unload
+  // flush would otherwise overwrite the stored project with the old in-memory one. The page and
+  // the iframe are same-origin, so they share localStorage. The manifest is unchanged, so the
+  // workbench keeps the stored project on ?import=project.
+  const writeProject = async (project) => {
+    const f = frame.current
+    if (!f || !url) throw new Error('编辑器还没加载完成')
+    const nav = (src) => new Promise((ok) => { f.addEventListener('load', ok, { once: true }); f.src = src })
+    await nav('about:blank')
+    try {
+      window.localStorage.setItem(PROJECT_KEY, JSON.stringify(project))
+    } finally {
+      await nav(url)
+    }
+  }
 
   // start the editor, then wait until the proxied page answers before showing the iframe
   useEffect(() => {
@@ -101,23 +125,9 @@ export default function MotionEditPage() {
   }, [id, save?.state, save?.version?.n]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveVersion = async () => {
-    let raw
-    try {
-      // The workbench debounces its autosave by 800 ms; its beforeunload listener writes the
-      // current project immediately, so fire it to include the very last edit.
-      frame.current?.contentWindow?.dispatchEvent(new Event('beforeunload'))
-      raw = frame.current?.contentWindow?.localStorage?.getItem(PROJECT_KEY)
-    } catch {
-      setSave({ state: 'error', error: '读不到编辑器里的工程（编辑器页面不是同源，无法读取）' })
-      return
-    }
-    if (!raw) {
-      setSave({ state: 'error', error: '编辑器里还没有可保存的工程。等编辑器加载完成，或先做一处修改再保存。' })
-      return
-    }
     let project
-    try { project = JSON.parse(raw) } catch {
-      setSave({ state: 'error', error: '编辑器里的工程数据损坏，无法解析' })
+    try { project = readProject() } catch (e) {
+      setSave({ state: 'error', error: e.message })
       return
     }
     setSave({ state: 'saving' })
@@ -142,6 +152,9 @@ export default function MotionEditPage() {
         <Link to={`/jobs/${id}`} className="back">← 返回作品</Link>
         <b className="mv-title" title={job?.topic}>{job?.topic || '动效编辑器'}</b>
         <span className="mv-note">{VOICE_NOTE}</span>
+        {phase === 'ready' && !chatOpen && (
+          <button className="btn mc-toggle" onClick={() => toggleChat(true)}>Opus 助手</button>
+        )}
         <button className="primary mv-save" disabled={phase !== 'ready' || busy} onClick={saveVersion}>
           {save?.state === 'saving' ? '提交中…' : save?.state === 'polling' ? '渲染中…' : '保存为新版本'}
         </button>
@@ -163,6 +176,7 @@ export default function MotionEditPage() {
         </div>
       )}
 
+      <div className="mv-body">
       <div className="mv-stage">
         {phase === 'ready' && url && (
           <iframe ref={frame} className="mv-frame" src={url} title="动效编辑器" />
@@ -191,6 +205,11 @@ export default function MotionEditPage() {
             </div>
           </div>
         )}
+      </div>
+      {phase === 'ready' && chatOpen && (
+        <MotionChat id={id} scenes={job?.scenes || []} ready={!!url}
+                    readProject={readProject} writeProject={writeProject} onClose={() => toggleChat(false)} />
+      )}
       </div>
     </div>
   )
