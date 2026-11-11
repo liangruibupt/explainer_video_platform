@@ -81,22 +81,31 @@ Rules (from shotcraft `references/workbench.md` §3 and our pipeline):
    becomes `export { Scene, schema } from "../lib/TitleCard"` plus `DEFAULTS` built from the
    scene's narration (see `template/src/scenes/s01.tsx`), and `card: "fallback/title-card"`.
 9. **Layout check** (vision, on by default; `EVP_LAYOUT_CHECK=0` turns it off). tsc and the
-   midpoint still cannot see layout defects, so after them every generated scene renders 3
-   stills (scene frames ~45 %, ~75 % and duration−12, never before frame 20; one at a time)
-   and ONE Opus call (`llm.ask_images`, stills downscaled to JPEG, long side 960) per scene,
-   up to 4 at once, reviews them with the narration/visual and the frame size. Reply: strict
-   JSON `{ok, issues: [{kind: clipped|overlap|empty|covered_title|too_small|other, where,
-   fix}]}`; only concrete visible defects count (no style/taste), and the bottom 15 % must stay
-   clear apart from captions. An unparsable reply counts as ok (logged); a failed call or
-   still marks the scene `skipped`. A scene with issues is regenerated ONCE with the issue
-   list as the error text, then re-checked (static check, tsc, still, layout). The rewrite is
-   kept only when it passes and has fewer issues; otherwise the previous module is restored.
-   Layout issues alone never lead to the title-card fallback. Per scene,
-   `remotion/.check/result.json` → `layout[<id>]` = `{status: ok|fixed|issues_left|skipped,
-   frames, before, after, rewrite?, rewrite_issues?, note?}` (plus `layout_calls`,
-   `layout_seconds`); `job["scenes"][i]["layout"]` = the status and, for `issues_left`,
+   midpoint still cannot see layout defects, so after them every generated scene renders 5
+   stills, one at a time: two in the entrance (scene frames ~12 % and ~25 %) and three settled
+   (~45 %, ~75 %, duration−12), none before frame 12. (Measured: the TCP header boxes covered
+   the title from scene frame 12 to ~45 of 281, and were clear by 25 %.) ONE Opus call
+   (`llm.ask_images`, stills downscaled to JPEG, long side 960) per scene, up to 4 at once,
+   reviews them with the narration/visual and the frame size. The prompt walks every still
+   through fixed checks: anything touching/crossing a frame edge (also during camera moves),
+   labels over data points/lines/labels, mostly empty panels or chart areas, covered heading,
+   text height under 2.2 % (16:9) / 1.8 % (9:16) of frame height, and the bottom 15 % caption
+   band; no style/taste. Reply: strict JSON `{ok, issues: [{kind: clipped|overlap|empty|
+   covered_title|too_small|other, where, fix}]}`. In the first review an unparsable reply
+   counts as ok (logged); a failed call or still marks the scene `skipped`.
+   A scene with issues is regenerated ONCE with the issue list as the error text, then
+   re-checked (static check, tsc, still) and reviewed again; this confirmation pass gets the
+   earlier issues and must re-check each. Outcome: zero issues → `fixed` (rewrite kept); fewer
+   but not zero → `improved` (rewrite kept, remaining issues recorded); otherwise, or when the
+   rewrite breaks or its confirmation is unparsable/failed → `issues_left` with the previous
+   module restored (and its `.check/<stem>.png` re-rendered). Layout issues alone never lead
+   to the title-card fallback. Per scene, `remotion/.check/result.json` → `layout[<id>]` =
+   `{status: ok|fixed|improved|issues_left|skipped, frames, before, after, rewrite?,
+   rewrite_issues?, note?}` (plus `layout_calls`, `layout_seconds`);
+   `job["scenes"][i]["layout"]` = the status and, for `improved`/`issues_left`,
    `layout_issues` (short strings). Stills: `.check/layout/<stem>.v1|v2.f<frame>.png`.
-   Known limit: defects that only exist during an entrance (before ~45 %) are not sampled.
+   Known limit: the reviewer has false negatives, so `fixed` means "the reviewer saw no
+   defect", not a guarantee.
 
 `src/data/timeline.json` (type `Timeline` in `types.ts`): `fps` 30, `width`, `height`,
 `background`, `revision` (any string that changes per generation), `scenes:

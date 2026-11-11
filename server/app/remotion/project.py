@@ -33,11 +33,18 @@ def layout_enabled() -> bool:
     return os.environ.get("EVP_LAYOUT_CHECK", "1").strip().lower() not in ("0", "false", "off", "no")
 
 
+EARLY_MIN = 12  # first frames are a fade-in; nothing is judged before this
+
+
 def layout_frames(n: int) -> list[int]:
-    """Scene frames of the layout stills: ~45 %, ~75 % and n-12, never in the first 20 frames."""
+    """Scene frames of the layout stills: two entrance-phase stills (~12 %, ~25 %), two
+    settled ones (~45 %, ~75 %) and n-12; never before frame EARLY_MIN.
+    Measured on the acceptance TCP job: the header boxes covered 「第二次握手」 from scene frame
+    12 to ~45 (281 frames, 4-16 %) and were clear by 25 % (f70), so 25 % alone misses that
+    class; the sky blank 人眼敏感度 panel sat at f67 of 280 (24 %)."""
     out = []
-    for p in (round(n * 0.45), round(n * 0.75), n - 12):
-        p = min(max(p, 20), n - 1)
+    for p in (round(n * 0.12), round(n * 0.25), round(n * 0.45), round(n * 0.75), n - 12):
+        p = min(max(p, EARLY_MIN), n - 1)
         if p >= 0 and p not in out:
             out.append(p)
     return sorted(out)
@@ -284,17 +291,21 @@ class _Gen:
             out.append((f, png.read_bytes()))
         return out
 
-    def _review(self, i: int, stills: list) -> dict:
+    def _review(self, i: int, stills: list, previous: list | None = None) -> dict:
         try:
-            r = generate.review_layout(self.scenes[i], self.frames[i], self.w, self.h, stills)
+            r = generate.review_layout(self.scenes[i], self.frames[i], self.w, self.h, stills,
+                                       previous=previous)
         except Exception as e:  # noqa: BLE001 - the check never blocks a scene
             return {"ok": True, "issues": [], "skipped": True, "error": f"review call failed: {e}"}
         return r
 
-    def review_many(self, idx: list[int], tag: str) -> dict[int, dict]:
+    def review_many(self, idx: list[int], tag: str,
+                    previous: dict[int, list] | None = None) -> dict[int, dict]:
         """Stills render one scene at a time; each scene's vision call starts as soon as its
-        stills exist (up to LAYOUT_WORKERS at once)."""
+        stills exist (up to LAYOUT_WORKERS at once). previous = {i: issues of the version
+        before a rewrite}: the confirmation pass re-checks each of them explicitly."""
         res, futs = {}, {}
+        previous = previous or {}
         with ThreadPoolExecutor(max_workers=LAYOUT_WORKERS) as ex:
             for i in idx:
                 try:
@@ -303,7 +314,7 @@ class _Gen:
                     res[i] = {"ok": True, "issues": [], "skipped": True,
                               "error": f"layout stills failed: {e}"}
                     continue
-                futs[i] = ex.submit(self._review, i, stills)
+                futs[i] = ex.submit(self._review, i, stills, previous.get(i))
                 self.layout_calls += 1
             for i, fu in futs.items():
                 res[i] = fu.result()
@@ -372,34 +383,43 @@ class _Gen:
                         worse[i] = f"rewrite failed the still check: {err[:300]}"
                         self._restore(i, old[i])
         live = [i for i in live if i not in worse]
-        second = self.review_many(live, "v2") if live else {}
+        second = (self.review_many(live, "v2", {i: first[i]["issues"] for i in live})
+                  if live else {})
+        reverted = set(worse)
         for i in bad:
             st, sid = self.sts[i], self.scenes[i]["id"]
             rec, n1 = self.layout[st], len(first[i]["issues"])
             if i in worse:
                 rec.update(status="issues_left", rewrite="reverted", note=worse[i])
-            elif second[i].get("skipped"):
+            elif second[i].get("skipped") or second[i].get("error"):
+                # no confirmed result for the rewrite -> never "fixed"; keep the known version
                 self._restore(i, old[i])
+                reverted.add(i)
                 rec.update(status="issues_left", rewrite="reverted",
-                           note=f"rewrite not reviewed: {second[i].get('error', '')[:300]}")
+                           note=f"rewrite not confirmed: {second[i].get('error', '')[:300]}")
             else:
                 r2 = second[i]["issues"]
                 rec["rewrite_issues"] = r2
                 if not r2:
                     rec.update(status="fixed", after=[], rewrite="kept")
                 elif len(r2) < n1:
-                    rec.update(status="issues_left", after=r2, rewrite="kept")
+                    rec.update(status="improved", after=r2, rewrite="kept")
                 else:
                     self._restore(i, old[i])
+                    reverted.add(i)
                     rec.update(status="issues_left", rewrite="reverted",
                                note=f"rewrite not better ({len(r2)} vs {n1} issues)")
-                if second[i].get("error"):
-                    rec["note"] = second[i]["error"][:300]
             self.log(f"remotion: layout {sid}: {rec['status']} (rewrite {rec['rewrite']}"
                      f"{', ' + rec['note'][:200] if rec.get('note') else ''})")
-            if rec["status"] == "issues_left":
+            if rec["status"] in ("issues_left", "improved"):
                 self.log(f"remotion: layout {sid} remaining: " + "; ".join(
                     f"[{x['kind']}] {x['where']}" for x in rec["after"])[:400])
+        # .check/<stem>.png must show the module that is kept, not the rejected rewrite.
+        for i in sorted(reverted):
+            err = self.still(i)
+            if err:
+                self.log(f"remotion: layout {self.scenes[i]['id']}: still of the restored "
+                         f"module failed: {err[:200]}")
 
     def run(self) -> dict:
         self.copy_assets()
@@ -454,7 +474,7 @@ class _Gen:
             s["card"] = self.card_of(i)
             lay = self.layout.get(st, {})
             s["layout"] = lay.get("status", "skipped")
-            if s["layout"] == "issues_left":
+            if s["layout"] in ("issues_left", "improved"):
                 s["layout_issues"] = [f"{x['kind']}: {x['where']}" for x in lay.get("after", [])][:6]
             else:
                 s.pop("layout_issues", None)

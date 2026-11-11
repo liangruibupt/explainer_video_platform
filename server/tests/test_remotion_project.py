@@ -277,7 +277,7 @@ class FakeVision:
 
     def __call__(self, system, user, images, max_tokens=2000):
         assert system == generate.LAYOUT_SYSTEM
-        sid = json.loads(user.split("Scene:\n", 1)[1])["id"]
+        sid = json.loads(user.split("Scene:\n", 1)[1].split("\n\nThis is a REWRITE", 1)[0])["id"]
         n = sum(1 for c in self.calls if c[0] == sid)
         self.calls.append((sid, user, len(images)))
         q = self.replies[sid]
@@ -307,8 +307,9 @@ def _run_layout(tmp_path, monkeypatch, modules, replies, still=None):
 
 
 def test_layout_frames():
-    assert project.layout_frames(171) == [77, 128, 159]
-    assert project.layout_frames(30) == [20, 22]  # never before frame 20
+    assert project.layout_frames(171) == [21, 43, 77, 128, 159]
+    assert project.layout_frames(281) == [34, 70, 126, 211, 269]  # TCP step2: title covered f12-45
+    assert project.layout_frames(30) == [12, 14, 18, 22]  # never before frame 12
     assert project.layout_frames(10) == [9]
 
 
@@ -329,11 +330,13 @@ def test_layout_ok_path(tmp_path, monkeypatch):
         tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD]},
         {"scene_0": [OK], "scene_1": [OK]})
     assert [s["layout"] for s in job["scenes"]] == ["ok", "ok"]
-    assert len(vision.calls) == 2 and all(n == 3 for _, _, n in vision.calls)  # ONE call, 3 stills
-    # midpoint stills 45, 135, then the layout stills at 40/68/78 of each 90-frame scene
-    assert frames == [45, 135, 40, 68, 78, 130, 158, 168]
+    assert len(vision.calls) == 2 and all(n == 5 for _, _, n in vision.calls)  # ONE call, 5 stills
+    # midpoint stills 45, 135, then the layout stills at 12/22/40/68/78 of each 90-frame scene
+    assert frames == [45, 135, 12, 22, 40, 68, 78, 102, 112, 130, 158, 168]
     assert res["layout"]["scene_1"]["status"] == "ok" and res["layout_calls"] == 2
-    assert "frames 40, 68, 78" in vision.calls[0][1] and "1920x1080" in vision.calls[0][1]
+    assert "frames 12, 22, 40, 68, 78" in vision.calls[0][1] and "1920x1080" in vision.calls[0][1]
+    assert "the first 2 during the entrance" in vision.calls[0][1]
+    assert "REWRITE" not in vision.calls[0][1]
     assert len(fake.calls) == 3  # no rewrite
 
 
@@ -350,6 +353,8 @@ def test_layout_fix_path(tmp_path, monkeypatch):
     assert '"TITLE"' in retry[0]  # previous module goes along
     assert len(vision.calls) == 3 and job["scenes"][1]["card"] != project.FALLBACK_CARD
     assert "layout_issues" not in job["scenes"][1]
+    # the confirmation pass re-checks the earlier issues explicitly
+    assert "REWRITE" in vision.calls[2][1] and "left edge: earth circle" in vision.calls[2][1]
 
 
 @pytest.mark.parametrize("rewrite,second", [(TYPE_ERR, OK), (GOOD2, TWO), (GOOD2, ISSUE)])
@@ -366,17 +371,33 @@ def test_layout_rewrite_worse_keeps_old(tmp_path, monkeypatch, rewrite, second):
     assert job["scenes"][1]["card"] == "data/chart-live-moves"  # never the title card
     assert job["scenes"][1]["layout_issues"] == ["clipped: left edge: earth circle"]
     assert any("remaining" in x for x in logs)
+    assert frames[-1] == 135  # .check/scene_1.png re-rendered from the restored module
     if rewrite == TYPE_ERR:
         assert len(vision.calls) == 2 and "tsc" in rec["note"]
 
 
-def test_layout_fewer_issues_keeps_rewrite(tmp_path, monkeypatch):
+def test_layout_unconfirmed_rewrite_is_not_fixed(tmp_path, monkeypatch):
+    # the confirmation reply is unreadable -> no "fixed"; the previous module stays
+    job, proj, logs, fake, vision, res, frames = _run_layout(
+        tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
+        {"scene_0": [OK], "scene_1": [ISSUE, "looks fine to me"]})
+    rec = res["layout"]["scene_1"]
+    assert rec["status"] == "issues_left" and rec["rewrite"] == "reverted"
+    assert "not confirmed" in rec["note"]
+    assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD
+
+
+def test_layout_fewer_issues_is_improved(tmp_path, monkeypatch):
     job, proj, logs, fake, vision, res, frames = _run_layout(
         tmp_path, monkeypatch, {"scene_0": [GOOD], "scene_1": [GOOD, GOOD2]},
         {"scene_0": [OK], "scene_1": [TWO, ISSUE]})
     rec = res["layout"]["scene_1"]
-    assert rec["status"] == "issues_left" and rec["rewrite"] == "kept" and len(rec["after"]) == 1
+    assert rec["status"] == "improved" and rec["rewrite"] == "kept" and len(rec["after"]) == 1
+    assert rec["rewrite_issues"] == rec["after"] and len(rec["before"]) == 2
     assert (proj / "src" / "scenes" / "scene_1.tsx").read_text() == GOOD2
+    assert job["scenes"][1]["layout"] == "improved"
+    assert job["scenes"][1]["layout_issues"] == ["clipped: left edge: earth circle"]
+    assert frames[-1] != 135  # kept rewrite: no restore still
 
 
 def test_layout_bad_json_is_ok(tmp_path, monkeypatch):

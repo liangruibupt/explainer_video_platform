@@ -43,7 +43,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 7. 音乐也可以选合成垫乐、公有领域古琴录音（《秋风词》）或不要音乐。
 8. 可选渲染方式「Remotion 动效卡」（见 [docs/REMOTION_CONTRACT.md](docs/REMOTION_CONTRACT.md)）：
    - Opus 从 [video-shotcraft](https://github.com/Vincentwei1021/video-shotcraft) 的 122 张镜头配方卡里给每段挑一张，再参考卡片的 Remotion 实现写成 React 组件。写坏的段落重写一次，再不行退回标题卡。
-   - 版面检查（默认开，`EVP_LAYOUT_CHECK=0` 关闭）：每段渲染 3 张画面稳定后的截图，一次 Opus 视觉调用找出被裁切、重叠、大片空白、遮住标题、字太小等可见问题；有问题就带着问题清单重写一次，只有更好才采用，结果记在 `remotion/.check/result.json`。
+   - 版面检查（默认开，`EVP_LAYOUT_CHECK=0` 关闭）：每段渲染 5 张截图（2 张入场中、3 张画面稳定后），一次 Opus 视觉调用找出被裁切、重叠、大片空白、遮住标题、字太小等可见问题；有问题就带着问题清单重写一次并复查：复查零问题才算「已修复」，问题变少记为「有改善」，否则保留原版本。结果记在 `remotion/.check/result.json`。
    - 字幕、配音、音效都在 Remotion 里渲染，每个作品留下一个完整的 Remotion 工程。
    - 作品页点「在动效编辑器中打开」，进入 shotcraft 的剪映式动效编辑器（多轨时间线、属性面板、实时预览）：可以改字幕和每段的文案、颜色、字号，挪动、裁剪、变速镜头，换成别的动效卡。
    - 「保存为新版本」渲染出 v2、v3……，原片保留。配音轨锁定：保存时总是恢复原配音；镜头和配音偏离超过 0.5 秒会提示。

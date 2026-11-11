@@ -229,41 +229,64 @@ def scene_module(s: dict, idx: int, total: int, frames: int, w: int, h: int, car
 
 LAYOUT_KINDS = ("clipped", "overlap", "empty", "covered_title", "too_small", "other")
 
-LAYOUT_SYSTEM = """You are the layout checker of a narrated explainer video. You get 3 stills of
-ONE scene, rendered at the given scene frames (in time order) once its layout should have
-settled, plus the scene's narration, visual description and the real frame size (the stills are
-downscaled). Find CONCRETE, VISIBLE layout defects only:
-- clipped: text, a label or a key shape (one that carries meaning) is cut off by a frame edge or
-  by its own panel/container;
-- overlap: two texts overlap each other, or a text overlaps a shape/dot/line so it is hard to read
-  (e.g. axis tick labels colliding, labels on top of dots);
-- empty: a large part of the frame (about a third or more) or a panel/box is blank while the
-  scene clearly meant to show something there (an empty panel, half the frame unused while the
-  other half is crowded);
-- covered_title: a box, panel or shape covers the scene title / heading, even partly;
-- too_small: text too small to read on the target screen (portrait 9:16 is watched on a phone:
-  body text under ~2% of frame height, landscape under ~2.5%, is too small);
-- other: any other clear readability defect (text over a busy background with no backing, text
-  running off its panel, elements colliding).
-The bottom 15% of the frame is reserved for burned-in captions: subtitle text there is expected
-and fine, but any OTHER text or key visual inside that band is a defect (kind clipped/overlap/
-other, where = "bottom caption band").
-Do NOT judge style, taste, colours, wording, motion design or what you would have drawn. Do not
-report elements that are clearly still fading in or animating in the first still, a decorative
-background shape that intentionally bleeds off an edge, or anything you are unsure of. When the
-stills look fine, say so: most scenes are fine.
+LAYOUT_SYSTEM = """You are the layout checker of a narrated explainer video. You get several stills
+of ONE scene in time order (the scene frame of each is given): the first one or two are taken
+during the entrance, the others once the layout should have settled. You also get the scene's
+narration, visual description and the real frame size (the stills are downscaled to a long
+side of 960 px). Find CONCRETE, VISIBLE layout defects only.
+
+Go through EVERY still and check each of these explicitly; checkers before you missed them:
+1. Frame edges (kind clipped): does any text, label, panel, card or meaningful shape touch or
+   cross the left, right, top or bottom edge of the frame, so part of it is cut off? This counts
+   in every still, also while a camera moves, zooms or tilts the scene, and also for a panel
+   whose border runs off the frame. Check the first and last characters of every text line near
+   an edge. Also text cut by its own panel or container border.
+2. Labels over content (kind overlap): any text drawn on top of data points, dots, molecules,
+   lines, curves, arrows, bars or another label so that some glyphs are crossed or hidden;
+   colliding axis tick labels; two tick sets or duplicate labels on one axis.
+3. Covered heading (kind covered_title): any box, panel, card or shape over the scene title /
+   heading, even partly, even while it is still moving in. This counts in the entrance stills.
+4. Empty areas (kind empty): a panel, card or chart area that is mostly empty (a frame with
+   nothing or almost nothing inside), or a third or more of the frame unused while the rest is
+   crowded, in a SETTLED still. In an entrance still only report a panel that is drawn at full
+   size but empty.
+5. Text height (kind too_small): measure the glyph height of every text that must be read
+   (labels, axis ticks, list lines, notes, annotations, legends). Too small = under 2.2% of
+   frame height in landscape 16:9 (24 px of 1080; 12 px in a 960x540 still) or under 1.8% in
+   portrait 9:16 (35 px of 1920; 17 px in a 540x960 still). Name the elements.
+6. Caption band: the bottom 15% of the frame is reserved for burned-in captions. Subtitle text
+   there is expected; any OTHER text or key visual inside that band is a defect (kind other,
+   where = "bottom caption band").
+7. other: any other clear readability defect (text over a busy background with no backing, text
+   running off its panel, elements colliding).
+
+Do NOT judge style, taste, colours, wording, motion design or what you would have drawn. In
+entrance stills, an element that is half transparent, or that is visibly sliding in from
+outside the frame, is not a defect by itself (but rule 3 still applies). A purely decorative
+background shape (glow, texture, faint ring) that bleeds off an edge is fine. Report a defect
+only when you can see it; when the stills look fine, say so.
 Return ONLY JSON, no prose, no code fence:
 {"ok": true|false, "issues": [{"kind": "clipped|overlap|empty|covered_title|too_small|other",
- "where": "which element and where (e.g. 'left edge: the earth circle and its label 大气层')",
+ "where": "which still (scene frame), which element and where (e.g. 'f173, left edge: the title
+ 什么是瑞利散射 loses its first character')",
  "fix": "a concrete layout change (move/shrink/wrap/reposition, with sizes relative to the frame)"}]}
 "ok" is true exactly when "issues" is empty."""
 
 
-def layout_user(s: dict, frames: int, w: int, h: int, at: list) -> str:
+def layout_user(s: dict, frames: int, w: int, h: int, at: list,
+                previous: list | None = None) -> str:
     brief = {k: s.get(k) for k in ("id", "title", "narration", "visual")}
-    return (f"Frame {w}x{h} ({'portrait 9:16' if h > w else 'landscape 16:9'}). The scene lasts "
-            f"{frames} frames; the stills are at scene frames {', '.join(map(str, at))}.\n"
+    n_early = sum(1 for f in at if f < frames * 0.3)
+    text = (f"Frame {w}x{h} ({'portrait 9:16' if h > w else 'landscape 16:9'}). The scene lasts "
+            f"{frames} frames; the stills are at scene frames {', '.join(map(str, at))} "
+            f"(the first {n_early} during the entrance).\n"
             f"Scene:\n{json.dumps(brief, ensure_ascii=False, indent=1)}")
+    if previous:
+        text += ("\n\nThis is a REWRITE. The previous version had these defects; for each one, look "
+                 "at the same place in every still and report it again if any trace remains, "
+                 "then check everything else as usual:\n"
+                 + "\n".join(f"- [{x['kind']}] {x['where']}" for x in previous))
+    return text
 
 
 def parse_review(text: str) -> dict:
@@ -285,12 +308,14 @@ def parse_review(text: str) -> dict:
     return {"ok": not clean, "issues": clean}
 
 
-def review_layout(s: dict, frames: int, w: int, h: int, stills: list) -> dict:
-    """stills = [(scene frame, image bytes)]. ONE vision call. Returns {"ok", "issues"} and, when
-    the reply could not be parsed, "error" (treated as ok)."""
+def review_layout(s: dict, frames: int, w: int, h: int, stills: list,
+                  previous: list | None = None) -> dict:
+    """stills = [(scene frame, image bytes)]. ONE vision call. previous = issues of the version
+    before a rewrite (confirmation pass). Returns {"ok", "issues"} and, when the reply could not
+    be parsed, "error" (a first review then counts as ok; a confirmation never counts as fixed)."""
     at = [f for f, _ in stills]
-    text = llm.ask_images(LAYOUT_SYSTEM, layout_user(s, frames, w, h, at),
-                          [b for _, b in stills], max_tokens=2000)
+    text = llm.ask_images(LAYOUT_SYSTEM, layout_user(s, frames, w, h, at, previous),
+                          [b for _, b in stills], max_tokens=2500)
     try:
         return parse_review(text)
     except Exception as e:  # noqa: BLE001 - an unreadable review never blocks the scene
