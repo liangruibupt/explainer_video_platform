@@ -437,6 +437,16 @@ except ModuleNotFoundError as _e:
         raise
     _logging.getLogger(__name__).info("motion editor not present")
 
+# Opus chat panel in the motion editor (docs/MOTION_ASSIST_CONTRACT.md): part A /api/jobs/{id}/assist,
+# part B /api/jobs/{id}/scene-edits*. A part that is not built yet is skipped.
+for _part in ("assist_api", "scene_edit_api"):
+    try:
+        app.include_router(_importlib.import_module(f"app.motion.{_part}").router)
+    except ModuleNotFoundError as _e:
+        if _e.name != f"app.motion.{_part}":
+            raise
+        _logging.getLogger(__name__).info("motion %s not present", _part)
+
 
 if WEB.exists():
     app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
