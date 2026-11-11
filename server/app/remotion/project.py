@@ -314,10 +314,6 @@ class _Gen:
         tl = timeline(self.scenes, self.frames, self.w, self.h, self.look["background"], cards)
         dd = self.proj / "src" / "data"
         dd.mkdir(parents=True, exist_ok=True)
-        # Part B's files; empty placeholders so the project compiles before prepare_media runs.
-        for name, empty in (("captions.json", "[]"), ("audio.json", '{"voice": null, "sfx": []}')):
-            if not (dd / name).exists():
-                (dd / name).write_text(empty + "\n")
         (dd / "timeline.json").write_text(json.dumps(tl, ensure_ascii=False, indent=1),
                                           encoding="utf-8")
 
