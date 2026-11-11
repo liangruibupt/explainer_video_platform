@@ -1,0 +1,37 @@
+diff --git a/workbench/src/store.ts b/workbench/src/store.ts
+index 8654fae..3d30249 100644
+--- a/workbench/src/store.ts
++++ b/workbench/src/store.ts
+@@ -332,8 +332,14 @@ export const useStore = create<WorkbenchState>((set, get) => ({
+ 
+ // —— 自动保存：每次改动 800ms 防抖落 localStorage；关页/切后台时立即落盘 ——
+ let saveTimer: ReturnType<typeof setTimeout> | undefined;
+-const flushSave = () => {
++// Only a tab that changed the project writes it back. All tabs share one localStorage key, so a
++// stale tab (left open, or showing another version) flushing on visibilitychange/beforeunload
++// would otherwise overwrite the project another tab or the studio page just stored.
++let dirty = false;
++const flushSave = (force?: unknown) => {
+   clearTimeout(saveTimer);
++  if (!dirty && force !== true) return;
++  dirty = false;
+   try {
+     localStorage.setItem(STORAGE_KEY, JSON.stringify(useStore.getState().project));
+   } catch {
+@@ -342,6 +348,7 @@ const flushSave = () => {
+ };
+ useStore.subscribe((s, prev) => {
+   if (s.project === prev.project) return;
++  dirty = true;
+   clearTimeout(saveTimer);
+   saveTimer = setTimeout(flushSave, 800);
+ });
+@@ -350,7 +357,7 @@ document.addEventListener("visibilitychange", () => {
+   if (document.visibilityState === "hidden") flushSave();
+ });
+ // 按清单重新导入的工程立即落盘：否则不改任何东西就刷新会退回旧存档
+-if (initial.imported) flushSave();
++if (initial.imported) flushSave(true);
+ 
+ export const resetProject = () => {
+   useStore.getState().setProject(demoProject());
