@@ -1,0 +1,20 @@
+{
+  "name": "evp-remotion-job",
+  "private": true,
+  "type": "module",
+  "description": "One explainer job as a Remotion project (docs/REMOTION_CONTRACT.md). node_modules is a symlink to the shared base install.",
+  "scripts": {
+    "render": "remotion render src/index.ts Main out/final.mp4",
+    "still": "remotion still src/index.ts Main"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.484",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.484"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}
