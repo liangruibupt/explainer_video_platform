@@ -11,6 +11,9 @@ const EDIT_STATUS = {
   queued: '排队中', running: 'Opus 正在改写画面', ready: '改好了，请确认', failed: '改写失败',
   applied: '已应用', discarded: '已放弃', undone: '已撤销',
 }
+// layout-review issue kinds (docs/REMOTION_CONTRACT.md §3.9)
+const KIND = { clipped: '被截断', overlap: '重叠', empty: '空白', covered_title: '挡住标题',
+  too_small: '字太小', caption_band: '占用字幕区', other: '其他' }
 const editLive = (e) => e && (e.status === 'queued' || e.status === 'running')
 
 // fetch that keeps the HTTP status, so 409 can get its own message
@@ -142,7 +145,17 @@ export default function MotionChat({ id, scenes, ready, readProject, writeProjec
     setError('')
     let project
     try { project = readProject() } catch (e) { setError(e.message); return }
-    const history = turns.filter((t) => t.text).slice(-MAX_TURNS).map((t) => ({ role: t.role, text: t.text }))
+    // Tell Opus what happened to earlier suggestions, so it does not ask to apply something that
+    // was already applied (or treat an undone change as live).
+    const STATE = { applied: '已应用', undone: '已撤销', discarded: '已放弃', failed: '失败' }
+    const note = (t) => {
+      const s = []
+      if (t.hasProject && t.applied) s.push(`参数修改${STATE[t.applied] || t.applied}`)
+      if (t.hasProject && !t.applied) s.push('参数修改未应用')
+      if (t.edit?.status && STATE[t.edit.status]) s.push(`画面重写（${t.edit.scene_id}）${STATE[t.edit.status]}`)
+      return s.length ? `${t.text}\n[状态：${s.join('；')}]` : t.text
+    }
+    const history = turns.filter((t) => t.text).slice(-MAX_TURNS).map((t) => ({ role: t.role, text: t.role === 'assistant' ? note(t) : t.text }))
     const ut = { id: newId(), role: 'user', text: msg, scene_id: scene || null }
     setTurns((ts) => trim([...ts, ut])); setText(''); setBusy('Opus 正在思考…')
     try {
@@ -337,7 +350,8 @@ function SceneEdit({ t, label, busy, ready, onStart, onApply, onDiscard, onUndo,
           ? <p className="mc-ok">版面检查：通过</p>
           : (
             <div className="mc-warn">版面检查发现 {layout.issues.length} 个问题：
-              <ul>{layout.issues.map((x, i) => <li key={i}>{typeof x === 'string' ? x : JSON.stringify(x)}</li>)}</ul>
+              <ul>{layout.issues.map((x, i) => <li key={i}>{typeof x === 'string' ? x
+                : [x.kind && `[${KIND[x.kind] || x.kind}]`, x.where, x.fix && `→ ${x.fix}`].filter(Boolean).join(' ')}</li>)}</ul>
             </div>
           )
       )}
