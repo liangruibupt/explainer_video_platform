@@ -178,7 +178,7 @@ HTTP (router `server/app/motion_api.py`, logic in `server/app/motion/`):
 | POST | `/api/jobs/{id}/editor` | link + (re)start the workbench for this job → `{job_id, url:"/motion/?import=project"}`; 409 if the job is not `renderer=="remotion"` and `status=="done"` |
 | GET | `/api/motion/status` | `{running, job_id, port}` |
 | POST | `/api/motion/stop` | stop the server we started |
-| ANY | `/motion/{path}` (+ whatever absolute paths the workbench page needs) | reverse proxy to the dev server (vite `base` = `/motion/`; HMR off or proxied) |
+| ANY | `/motion/{path}` (+ whatever absolute paths the workbench page needs) | reverse proxy to the dev server (vite `base` = `/motion/`; HMR off or proxied). The UI itself (`index.html`, `assets/*.js|css`) is served from a production build made on every editor open (`workbench.build`, ~3 s, `.evp-dist/`, pre-gzipped): 4 requests / ~0.6 MB on the wire instead of ~300 dev modules / ~15 MB, which took about a minute through an SSM port forward. Public files and `/motion/api/export` still go to the dev server; if the build fails the dev UI is served as before |
 | GET | `/api/jobs/{id}/versions` | `[{n, file, status: "queued"\|"rendering"\|"done"\|"failed", created, warnings: [str], error}]`; entry `n=1` is `final.mp4` |
 | POST | `/api/jobs/{id}/versions` | body `{project: <workbench ProjectData>}` → 202 + the new record; renders in the background |
 | GET | `/api/jobs/{id}/versions/{n}/video` | the mp4 |

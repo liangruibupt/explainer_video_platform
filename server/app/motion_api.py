@@ -142,8 +142,39 @@ def motion_root(request: Request):
     return RedirectResponse("/motion/" + (f"?{q}" if q else ""), status_code=307)
 
 
+_ASSET = re.compile(r"^assets/[A-Za-z0-9._-]+\.(js|css)$")
+_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+
+
+def _from_build(path: str, request: Request):
+    """Serve the editor UI from the production build (workbench.build) when there is one for
+    the linked job: index.html (no-cache) and hashed assets (immutable, pre-gzipped). Every
+    other path (public files, /motion/api/export) still goes to the dev server."""
+    dist = workbench.built_dist()
+    if dist is None or not workbench.status()["running"]:
+        return None
+    if path in ("", "index.html"):
+        return FileResponse(dist / "index.html", media_type="text/html; charset=utf-8",
+                            headers={"Cache-Control": "no-cache"})
+    if not _ASSET.match(path):
+        return None
+    f = dist / path
+    if not f.is_file():
+        return None
+    headers = {"Cache-Control": "public, max-age=31536000, immutable", "Vary": "Accept-Encoding"}
+    gz = f.with_name(f.name + ".gz")
+    if gz.is_file() and "gzip" in request.headers.get("accept-encoding", ""):
+        headers["Content-Encoding"] = "gzip"
+        return FileResponse(gz, media_type=_TYPES[f.suffix], headers=headers)
+    return FileResponse(f, media_type=_TYPES[f.suffix], headers=headers)
+
+
 @router.api_route("/motion/{path:path}", methods=_METHODS, include_in_schema=False)
 async def motion_proxy(path: str, request: Request):
+    if request.method in ("GET", "HEAD"):
+        built = _from_build(path, request)
+        if built is not None:
+            return built
     raw_path = request.scope.get("raw_path") or request.url.path.encode()
     q = request.scope.get("query_string") or b""
     url = f"http://{_upstream()}{raw_path.decode('latin-1')}" + (f"?{q.decode('latin-1')}" if q else "")

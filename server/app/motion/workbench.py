@@ -115,6 +115,45 @@ def status() -> dict:
             "port": PORT}
 
 
+# A production build of the editor UI, served by the studio itself (motion_api.py). The dev
+# server ships ~300 unbundled modules (~15 MB); through an SSM port forward that took about a
+# minute before anything showed. The build is 2 files (~2 MB JS, ~0.6 MB gzipped) and takes
+# ~3 s. The dev server stays up for everything else (public files, /motion/api/export).
+DIST = WB / ".evp-dist"
+
+
+def build(job_id: str, log: Path) -> bool:
+    """Build the UI for the linked project into DIST and pre-gzip its assets. False on failure
+    (the dev server keeps serving the unbundled UI)."""
+    import gzip
+    env = {**os.environ, "WB_BASE": BASE}
+    with log.open("a") as fh:
+        fh.write(f"[evp] vite build for {job_id}\n")
+        fh.flush()
+        try:
+            r = subprocess.run([_node(), str(_vite_bin()), "build", "--outDir", str(DIST),
+                                "--emptyOutDir", "--logLevel", "warn"], cwd=WB, env=env,
+                               stdout=fh, stderr=subprocess.STDOUT, timeout=300)
+        except subprocess.TimeoutExpired:
+            fh.write("[evp] vite build timed out; serving the dev UI\n")
+            return False
+    if r.returncode or not (DIST / "index.html").exists():
+        return False
+    for f in (DIST / "assets").glob("*"):
+        if f.suffix in (".js", ".css"):
+            with f.open("rb") as src, gzip.open(f.with_name(f.name + ".gz"), "wb", 6) as dst:
+                shutil.copyfileobj(src, dst)
+    return True
+
+
+def built_dist() -> Path | None:
+    """DIST when it holds the build of the job the running dev server is linked to."""
+    st = _read_state()
+    if st.get("built") and st.get("built") == st.get("job_id") and (DIST / "index.html").exists():
+        return DIST
+    return None
+
+
 def start(job_id: str, proj: Path, timeout: int = 150) -> dict:
     """Link `proj` (a job's remotion/ dir) and (re)start the dev server. No-op when that job is
     already the one being served."""
@@ -123,6 +162,8 @@ def start(job_id: str, proj: Path, timeout: int = 150) -> dict:
         cur = status()
         st = _read_state()
         if cur["running"] and cur["job_id"] == job_id and st.get("proj") == str(proj):
+            if st.get("built") != job_id and build(job_id, WB / ".evp-open.log"):
+                _write_state({**st, "built": job_id})
             return cur
         log = WB / ".evp-open.log"
         env = {**os.environ, "WB_BASE": BASE}
@@ -142,7 +183,8 @@ def start(job_id: str, proj: Path, timeout: int = 150) -> dict:
         if not pid:
             raise MotionError(f"工作台已启动但无法核实进程号，见 {log}")
         _write_state({"job_id": job_id, "proj": str(proj), "pid": pid, "port": PORT,
-                      "started": time.time()})
+                      "started": time.time(),
+                      "built": job_id if build(job_id, log) else None})
         return status()
 
 

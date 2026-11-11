@@ -314,6 +314,26 @@ def test_proxy_down_is_503(client, monkeypatch):
     assert r.status_code == 307 and r.headers["location"] == "/motion/?import=project"
 
 
+def test_built_ui_served_from_dist(client, monkeypatch, tmp_path):
+    import gzip
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<script src=/motion/assets/index-a1.js></script>")
+    (tmp_path / "assets" / "index-a1.js").write_text("console.log(1)")
+    (tmp_path / "assets" / "index-a1.js.gz").write_bytes(gzip.compress(b"console.log(1)"))
+    monkeypatch.setattr(workbench, "built_dist", lambda: tmp_path)
+    monkeypatch.setattr(workbench, "status", lambda: {"running": True, "job_id": JOB, "port": 1})
+    monkeypatch.setattr(workbench, "PORT", _free_port())  # anything not served from dist -> 503
+    r = client.get("/motion/?import=project")
+    assert r.status_code == 200 and "index-a1.js" in r.text and r.headers["cache-control"] == "no-cache"
+    r = client.get("/motion/assets/index-a1.js", headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200 and r.text == "console.log(1)"
+    assert r.headers["content-encoding"] == "gzip" and "immutable" in r.headers["cache-control"]
+    assert client.get("/motion/assets/../index.html").status_code in (200, 404, 503)
+    assert client.get("/motion/audio/voice_bgm.wav").status_code == 503  # dev server path
+    monkeypatch.setattr(workbench, "built_dist", lambda: None)
+    assert client.get("/motion/").status_code == 503  # no build -> proxied (dev UI)
+
+
 def test_proxy_forwards_path_query_body_and_range(client, monkeypatch):
     seen = {}
 
