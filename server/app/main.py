@@ -439,7 +439,8 @@ except ModuleNotFoundError as _e:
 
 # Opus chat panel in the motion editor (docs/MOTION_ASSIST_CONTRACT.md): part A /api/jobs/{id}/assist,
 # part B /api/jobs/{id}/scene-edits*. A part that is not built yet is skipped.
-for _part in ("assist_api", "scene_edit_api"):
+# docs/REVOICE_CONTRACT.md: part A /api/jobs/{id}/revoice*, part B /api/jobs/{id}/consistency.
+for _part in ("assist_api", "scene_edit_api", "revoice_api", "consistency_api"):
     try:
         app.include_router(_importlib.import_module(f"app.motion.{_part}").router)
     except ModuleNotFoundError as _e:
