@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { call, errText } from './MotionChat.jsx'
+import { liveNarrations } from './voiceLive.js'
 
 // 「配音」 panel of the motion editor (docs/REVOICE_CONTRACT.md §4). The user edits the narration
 // per scene (or lets Opus draft it with the consistency check, §3), re-voices only the changed
@@ -27,16 +28,6 @@ export function deltaText(delta, fps, last) {
   return `−${fmtSecs(delta, fps)} 秒${last ? '' : '，后面的段落提前'}`
 }
 
-// Narration in use: the job's scenes.json, overlaid with every applied take (oldest first)
-function liveNarrations(scenes, records) {
-  const out = {}
-  for (const s of scenes || []) out[s.id] = s.narration || ''
-  for (const r of [...(records || [])].sort((a, b) => a.n - b.n)) {
-    if (r.status !== 'applied') continue
-    for (const s of r.scenes || []) if (s.id in out && s.new_text != null) out[s.id] = s.new_text
-  }
-  return out
-}
 
 // set_props ops from the consistency check, applied to a copy of the project
 export function applyOps(project, ops) {
@@ -98,7 +89,7 @@ export default function MotionVoice({ id, scenes, ready, hidden, readProject, wr
       try {
         const list = await reload(false)
         const newest = list[0]
-        if (newest && (takeLive(newest) || newest.status === 'ready')) setTake(newest)
+        if (newest && (takeLive(newest) || newest.status === 'ready' || (newest.status === 'applied' && newest.live))) setTake(newest)
       } catch (e) { setError(errText(e, '读不到配音记录')) }
     })()
   }, [id, scenes]) // eslint-disable-line react-hooks/exhaustive-deps
