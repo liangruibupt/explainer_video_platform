@@ -6,7 +6,14 @@ import { useEffect, useRef, useState } from 'react'
 
 const MAX_TURNS = 20
 const histKey = (id) => `evp-motion-chat-${id}`
-const NOTE = '旁白和配音不能在这里改；改完画面后用「保存为新版本」出片。'
+const NOTE = '旁白和配音不能在这里改，请到「配音」面板修改；改完画面后用「保存为新版本」出片。'
+// an assist reply that turns down a narration / voice change gets a link to the 配音 panel
+const VOICE_WORD = /旁白|配音|narration|voice/i
+const REFUSE_WORD = /不能|不可以|改不了|无法|锁定|不支持|locked|cannot|can't|not allowed/i
+export const refusesVoice = (t) => {
+  const s = [t.text || '', ...(t.rejected || []).map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))].join('\n')
+  return VOICE_WORD.test(s) && REFUSE_WORD.test(s)
+}
 const EDIT_STATUS = {
   queued: '排队中', running: 'Opus 正在改写画面', ready: '改好了，请确认', failed: '改写失败',
   applied: '已应用', discarded: '已放弃', undone: '已撤销',
@@ -82,7 +89,7 @@ export function withDefaults(project, sceneId, defaults) {
   return { project: next, count }
 }
 
-export default function MotionChat({ id, scenes, ready, readProject, writeProject, onClose }) {
+export default function MotionChat({ id, scenes, ready, hidden, readProject, writeProject, onVoice }) {
   const [turns, setTurns] = useState(() => loadHistory(id))
   const [text, setText] = useState('')
   const [scene, setScene] = useState('')
@@ -218,12 +225,12 @@ export default function MotionChat({ id, scenes, ready, readProject, writeProjec
   const clear = () => { if (!busy) { setTurns([]); mem.current = {}; setError('') } }
 
   return (
-    <aside className="mc-panel" aria-label="Opus 助手">
-      <div className="mc-head">
-        <b>Opus 助手</b>
-        {turns.length > 0 && <button className="mc-link" onClick={clear} disabled={!!busy}>清空记录</button>}
-        <button className="mc-close" aria-label="收起助手" title="收起" onClick={onClose}>›</button>
-      </div>
+    <section className="mc-pane" hidden={hidden} aria-label="Opus 助手">
+      {turns.length > 0 && (
+        <div className="mc-head">
+          <button className="mc-link" onClick={clear} disabled={!!busy}>清空记录</button>
+        </div>
+      )}
       <p className="mc-note">{NOTE}</p>
       <label className="mc-scene">
         <span>修改范围</span>
@@ -277,6 +284,9 @@ export default function MotionChat({ id, scenes, ready, readProject, writeProjec
                            onStart={startEdit} onApply={applyEdit} onDiscard={discardEdit} onUndo={undoEdit} onZoom={setZoom} />
               )}
               {t.notice && <p className="mc-warn">{t.notice}</p>}
+              {onVoice && refusesVoice(t) && (
+                <button className="mc-link mc-voice-link" onClick={onVoice}>去配音面板修改</button>
+              )}
             </div>
           )))}
         {busy && <div className="mc-busy"><i />{busy}</div>}
@@ -300,7 +310,7 @@ export default function MotionChat({ id, scenes, ready, readProject, writeProjec
           <img src={zoom} alt="预览大图" />
         </div>
       )}
-    </aside>
+    </section>
   )
 }
 

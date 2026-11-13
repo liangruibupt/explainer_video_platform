@@ -66,7 +66,9 @@ def load_context(d: Path) -> dict:
     proj = d / "remotion"
     tl, audio = versions._load_job_data(proj)
     try:
-        board = {s["id"]: s for s in json.loads((d / "scenes.json").read_text())}
+        # narration as currently voiced: the live re-voice take, else the job's original
+        from . import revoice
+        board = {s["id"]: s for s in revoice.live_scenes(d)}
     except (OSError, ValueError, KeyError, TypeError):
         board = {}
     labels: dict[str, dict[str, str]] = {}
@@ -175,8 +177,9 @@ Rules for ops:
   The selected scene (if any) is the default target when the user says "这段/这里".
 - Locked: the narration text, the voice clip (kind "voice") and caption timing (`chars`, clip
   timing) follow the recorded voice. If asked to change what is SPOKEN (narration, voice), return
-  no ops and explain in reply that this cannot be done here; suggest remaking the job
-  (重新生成任务). Caption `text` may be edited (typo fixes, on-screen wording); say in reply that
+  no ops and explain in reply that the narration is changed and re-voiced in the 「配音」 panel
+  next to this chat (检查一致性 → 重新配音改动的段落 → 应用到编辑器); do NOT suggest remaking
+  the job. Caption `text` may be edited (typo fixes, on-screen wording); say in reply that
   the voice still says the original words.
 - If the request needs new drawing code (a different chart type, new elements, arrows, a new
   layout that no existing prop controls), return no ops for it and set scene_edit with the

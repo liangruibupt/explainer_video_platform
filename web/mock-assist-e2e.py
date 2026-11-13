@@ -3,13 +3,14 @@
     node mock-assist.mjs 8803 &   then   python mock-assist-e2e.py <outdir>
 """
 import json
+import os
 import sys
 import urllib.request
 
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:8803"
+BASE = os.environ.get("MOCK_BASE", "http://127.0.0.1:8803")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 KEY = "shotcraft-workbench-project-v1"
 SID = "growth_math"
@@ -132,7 +133,8 @@ with sync_playwright() as pw:
     # 3. refusal
     send(pg, "把旁白改得活泼一点")
     last(pg).get_by_text("改不了").wait_for()
-    check(last(pg).locator("button").count() == 0, "refusal has no apply buttons")
+    check(last(pg).locator("button").count() == 1 and last(pg).get_by_role("button", name="去配音面板修改").count() == 1,
+          "refusal has no apply buttons, only the 配音 panel link")
 
     # 4. second scene edit while one runs -> 409; discard
     send(pg, "画面加一个箭头")
@@ -178,7 +180,7 @@ with sync_playwright() as pw:
     pg.wait_for_selector(".mv-status.done", timeout=15000)
     check(clip(posts()["versions"][-1]["project"])["props"] == OLD, "save-as-version posts the current project")
     pg.get_by_role("button", name="收起助手").click()
-    check(pg.locator(".mc-panel").count() == 0, "panel collapses")
+    check(pg.locator(".mc-panel").is_hidden(), "panel collapses")
     shot(pg, "10-collapsed")
     pg.get_by_role("button", name="Opus 助手").click()
     check(pg.locator(".mc-panel").count() == 1, "panel reopens")

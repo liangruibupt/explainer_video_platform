@@ -184,6 +184,14 @@ HTTP (router `server/app/motion_api.py`, logic in `server/app/motion/`):
 | GET | `/api/jobs/{id}/versions/{n}/video` | the mp4 |
 | GET | `/api/jobs/{id}/versions/{n}/project` | the workbench project version n was rendered from (v2+; 404 for v1) |
 
+**Per-version voice** (docs/REVOICE_CONTRACT.md): each version snapshot also holds the voice
+(`versions/vN.voice/`: `src/data/*.json`, `public/audio/voice_bgm.wav`, `.voice/live`), so
+opening a version restores the voice it was rendered with and the voice lock locks to it.
+`v1.voice` is always the original voice (take 0). Versions saved before per-version voice
+existed were all rendered with the original voice, so they restore take 0 too. Version renders
+use a per-project link `.evp-proj/<job>-<hash of the project path>`, so studios with different
+`EVP_DATA` never re-point each other's link.
+
 **Versions and the editor** (`server/app/motion/snapshots.py`): saving version N also copies
 `src/scenes/` to `versions/vN.scenes/` and records `base` (the version the editor session
 started from). `versions/v1.scenes/` is the original film's scene code, built on first use
