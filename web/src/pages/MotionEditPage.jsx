@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { VERSION_STATUS, versionLive, versionUrl, VersionWarnings } from '../components/MotionVersions.jsx'
 import MotionChat, { call } from '../components/MotionChat.jsx'
+import MotionVoice from '../components/MotionVoice.jsx'
 
 // Motion editor for a Remotion job (docs/REMOTION_CONTRACT.md §7–§8). The studio starts the
 // shotcraft workbench for this job and proxies it under /motion/, so the iframe is same-origin
 // and the page can read the workbench project straight from its localStorage.
 
 const PROJECT_KEY = 'shotcraft-workbench-project-v1'
-const VOICE_NOTE = '配音轨已锁定：保存时恢复原配音；镜头时长和配音偏离超过 0.5 秒会提示'
+const VOICE_NOTE = '配音轨已锁定，改旁白请用『配音』面板重新配音'
 const READY_TRIES = 40 // × 1.5 s ≈ 1 minute for the dev server to come up
 
 const CHAT_OPEN_KEY = 'evp-motion-chat-open'
+const SIDE_TAB_KEY = 'evp-motion-side-tab'
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms))
 
@@ -33,6 +35,12 @@ export default function MotionEditPage() {
   const toggleChat = (open) => {
     setChatOpen(open)
     try { localStorage.setItem(CHAT_OPEN_KEY, open ? '1' : '0') } catch { /* ignore */ }
+  }
+  // right panel tab: chat | voice
+  const [tab, setTabState] = useState(() => (localStorage.getItem(SIDE_TAB_KEY) === 'voice' ? 'voice' : 'chat'))
+  const setTab = (t) => {
+    setTabState(t)
+    try { localStorage.setItem(SIDE_TAB_KEY, t) } catch { /* ignore */ }
   }
 
   // Current workbench project. The workbench debounces its autosave by 800 ms; its beforeunload
@@ -184,7 +192,7 @@ export default function MotionEditPage() {
         )}
         <span className="mv-note">{VOICE_NOTE}</span>
         {phase === 'ready' && !chatOpen && (
-          <button className="btn mc-toggle" onClick={() => toggleChat(true)}>Opus 助手</button>
+          <button className="btn mc-toggle" onClick={() => toggleChat(true)}>Opus 助手 / 配音</button>
         )}
         <button className="primary mv-save" disabled={phase !== 'ready' || busy} onClick={saveVersion}>
           {save?.state === 'saving' ? '提交中…' : save?.state === 'polling' ? '渲染中…' : '保存为新版本'}
@@ -237,9 +245,18 @@ export default function MotionEditPage() {
           </div>
         )}
       </div>
-      {phase === 'ready' && chatOpen && (
-        <MotionChat id={id} scenes={job?.scenes || []} ready={!!url}
-                    readProject={readProject} writeProject={writeProject} onClose={() => toggleChat(false)} />
+      {phase === 'ready' && (
+        <aside className="mc-panel" aria-label="Opus 助手和配音" hidden={!chatOpen}>
+          <div className="mc-head mv-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>Opus 助手</button>
+            <button role="tab" aria-selected={tab === 'voice'} className={tab === 'voice' ? 'on' : ''} onClick={() => setTab('voice')}>配音</button>
+            <button className="mc-close" aria-label="收起助手" title="收起" onClick={() => toggleChat(false)}>›</button>
+          </div>
+          <MotionChat id={id} scenes={job?.scenes || []} ready={!!url} hidden={tab !== 'chat'}
+                      readProject={readProject} writeProject={writeProject} onVoice={() => setTab('voice')} />
+          <MotionVoice id={id} scenes={job?.scenes || []} ready={!!url} hidden={tab !== 'voice'}
+                       readProject={readProject} writeProject={writeProject} />
+        </aside>
       )}
       </div>
     </div>
