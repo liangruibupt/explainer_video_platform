@@ -646,12 +646,15 @@ def transform(project: dict, old: dict, new: dict, uid: str = "rv") -> tuple[dic
         p["source"] = key
     fps = ntl.get("fps", 30)
     changes = []
+    last = otl["scenes"][-1]["id"]
     for s in otl["scenes"]:
         k = s["id"]
         dd = ns_[k]["duration"] - s["duration"]
         if k in redo or dd:
-            what = (f"{dd / fps:+.2f} 秒，后面的段落顺延" if dd > 0 else
-                    f"{dd / fps:+.2f} 秒，后面的段落提前" if dd < 0 else "长度不变")
+            after = "片尾相应延长" if k == last else "后面的段落顺延"
+            what = (f"{dd / fps:+.2f} 秒，{after}" if dd > 0 else
+                    f"{dd / fps:+.2f} 秒，{'片尾相应缩短' if k == last else '后面的段落提前'}"
+                    if dd < 0 else "长度不变")
             changes.append(f"{s.get('label', k)}：配音已更新，{what}")
     if counts["caption_new"] or counts["caption_dropped"]:
         changes.append(f"字幕：{counts['caption_dropped']} 行旧字幕换成 {counts['caption_new']} 行新字幕")
