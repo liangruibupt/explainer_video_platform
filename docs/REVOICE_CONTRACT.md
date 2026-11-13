@@ -99,7 +99,12 @@ version's voice. Versions saved before this have no voice snapshot: they keep th
   more than ~40 % of the characters → `rejected`). Never invent new facts.
 - `props` go through the same validation as `assist.py` (reuse its validator); caption `text`
   edits are allowed there too.
-- 400/404/409 like the assist endpoint; 502 on Opus failure; Chinese `detail`.
+- 400/404/409 like the assist endpoint; 502 on Opus failure AND on a reply with no usable JSON
+  (an empty 200 would read as "consistent"); Chinese `detail`.
+- The response also carries `changes` (Chinese change lines) and `project` (the input project
+  with the valid props applied, or null). Narrations are read from the LIVE take
+  (`revoice.live_scenes`), since `scenes.json` is never rewritten. Scene props the user changed
+  from the module's `DEFAULTS` are treated as the source of truth and never overwritten.
 
 ## 4. Part C — UI (`web/src/components/MotionVoice.jsx`, hooks into `MotionChat.jsx` / `MotionEditPage.jsx`)
 

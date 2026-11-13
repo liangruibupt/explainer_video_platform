@@ -230,14 +230,18 @@ def render_link(job_id: str, proj: Path) -> str:
     from the linked sources still resolve to the workbench's node_modules (symlinks: false)."""
     d = WB / ".evp-proj"
     d.mkdir(exist_ok=True)
-    link = d / job_id
     target = proj / "src"
+    # keyed by job id AND project path: several studios (different EVP_DATA) can hold the same
+    # job id, and their renders must not re-point each other's link
+    import hashlib
+    name = f"{job_id}-{hashlib.sha1(str(target.resolve()).encode()).hexdigest()[:8]}"
+    link = d / name
     if link.is_symlink() and Path(os.readlink(link)) == target:
-        return f".evp-proj/{job_id}"
+        return f".evp-proj/{name}"
     if link.is_symlink():
         link.unlink()
     link.symlink_to(target, target_is_directory=True)
-    return f".evp-proj/{job_id}"
+    return f".evp-proj/{name}"
 
 
 def repo_public_entries() -> list[tuple[str, Path]]:

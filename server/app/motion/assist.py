@@ -66,7 +66,9 @@ def load_context(d: Path) -> dict:
     proj = d / "remotion"
     tl, audio = versions._load_job_data(proj)
     try:
-        board = {s["id"]: s for s in json.loads((d / "scenes.json").read_text())}
+        # narration as currently voiced: the live re-voice take, else the job's original
+        from . import revoice
+        board = {s["id"]: s for s in revoice.live_scenes(d)}
     except (OSError, ValueError, KeyError, TypeError):
         board = {}
     labels: dict[str, dict[str, str]] = {}
