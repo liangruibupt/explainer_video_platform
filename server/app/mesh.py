@@ -160,5 +160,6 @@ def generate(image: bytes, model: str = "", texture: bool = False, seed: int = 4
         meta_out.update(res.get("meta") or {})
         if isinstance(res.get("instance"), dict):
             meta_out["instance_type"] = res["instance"].get("instance_type")
+            meta_out["instance"] = res["instance"]  # bootstrap timings (pull_s, weights_s...)
         meta_out["worker_s"] = res.get("worker_s")
     return blobs[0]
