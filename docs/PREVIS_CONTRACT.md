@@ -272,3 +272,9 @@ HTTP：
 7. **镜头状态**：`GET /api/jobs/{id}/previs` 里每个镜头的 `status` 取 `queued | running | done | failed | blocked`（`blocked` = 检查有 error 没有渲染）；`report` 是 `{"issues": CheckIssue[]}`。
 8. **四冲程示例**：曲轴盘原来被不透明的曲轴箱挡住，曲轴箱改成半透明（opacity 0.45），缸盖 0.6。
 9. **`core/expr.ts`** 修了 `tsc --strict` 下的 5 个类型错误，行为不变。
+
+### 2026-11-25，根据 C（[PR #42](https://github.com/liangruibupt/explainer_video_platform/pull/42)）的报告
+
+10. **目标和点的写法**：`show`、`hide`、`highlight`、`section` 的目标可以是 `物体` 或 `物体.部件`（例如 `eng.intake_valve`）；`pose`、`spin`、`move`、`explode` 的目标只能是物体。点（`look`、`pos`、`orbit.around`、`label.attach`、`dimension.from/to`）是坐标、标记点、`物体` 或 `物体.锚点`，只认锚点名，不认部件 id。
+11. **`time_order` 检查**（加到第 5 节的静态校验里）：相机关键帧的时间顺序反了，或动作的 `until` 不在 `at` 之后，在不需要时长就能判断时报错。
+12. **同一个词出现多次**：`occurrence` 按去掉标点后的旁白里**可以重叠**的匹配计数，C 的校验和 B 的锚点换算一致。
