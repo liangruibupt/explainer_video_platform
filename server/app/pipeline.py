@@ -69,6 +69,23 @@ STEPS = [
     ("capture", "逐帧渲染"),
     ("compose", "FFmpeg 合成"),
 ]
+# renderer="previs3d" (docs/PREVIS_CONTRACT.md section 2): planning and asset building run
+# next to narration; the shots are compiled after the captions (words.json) and rendered one
+# by one (shots/sNN.mp4) before the Main film.
+PREVIS_STEPS = [
+    ("storyboard", "Opus 5.5 写分镜"),
+    ("previs_plan", "Opus 5.5 规划 3D 资产和镜头"),
+    ("assets3d", "构建 3D 资产"),
+    ("music_ai", "YuE2 生成背景音乐"),
+    ("narrate", "Polly 合成旁白"),
+    ("mix", "混音"),
+    ("captions", "Whisper 逐字字幕"),
+    ("shots", "编译镜头 + 逐帧检查"),
+    ("project", "写 Remotion 工程"),
+    ("shot_render", "渲染镜头片段"),
+    ("capture", "渲染成片"),
+    ("compose", "FFmpeg 合成"),
+]
 SIZES = {"16:9": (1920, 1080), "9:16": (1080, 1920)}
 _lock = threading.Lock()
 
@@ -101,9 +118,17 @@ def _save(job: dict) -> None:
 def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
                captions: bool, music: str, voice: str, brief: str = "",
                scene_context: str = "", background_png: bytes = b"",
-               illustrations: int = 0, clips: int = 0, renderer: str = "html") -> dict:
+               illustrations: int = 0, clips: int = 0, renderer: str = "html",
+               scenes: list | None = None, previs_plan: dict | None = None) -> dict:
+    """scenes: a fixed storyboard (the storyboard step keeps it, no Opus call). previs_plan: a
+    fixed PrevisPlan for a previs3d job (checked by the plan step instead of writing one)."""
     d = job_dir(job_id)
     d.mkdir(parents=True, exist_ok=False)
+    if scenes:
+        (d / "scenes.json").write_text(json.dumps(scenes, ensure_ascii=False, indent=1))
+    if previs_plan:
+        (d / "previs").mkdir()
+        (d / "previs" / "plan.json").write_text(json.dumps(previs_plan, ensure_ascii=False, indent=1))
     if scene_context:
         (d / "scene_context.txt").write_text(scene_context)
     if background_png:
@@ -113,7 +138,9 @@ def create_job(job_id: str, topic: str, language: str, seconds: int, ratio: str,
            "brief": brief, "has_background": bool(background_png),
            "illustrations": illustrations, "clips": clips, "renderer": renderer,
            "status": "queued", "created": time.time(), "updated": time.time(),
-           "steps": [{"key": k, "label": l, "status": "pending"} for k, l in STEPS],
+           "fixed_scenes": bool(scenes), "fixed_plan": bool(previs_plan),
+           "steps": [{"key": k, "label": l, "status": "pending"}
+                     for k, l in (PREVIS_STEPS if renderer == "previs3d" else STEPS)],
            "error": None, "video": None, "scenes": []}
     from .feedback import skill_info  # phase 5: skill_version + skill_commit
     job.update(skill_info())
@@ -183,11 +210,23 @@ def _run(job_id: str) -> None:
         _save(job)
 
     def skip(key):
-        next(x for x in job["steps"] if x["key"] == key)["status"] = "skipped"
-        _save(job)
+        s = next((x for x in job["steps"] if x["key"] == key), None)
+        if s:  # a previs3d job has no illustrate / clips / scene_code / sfx steps
+            s["status"] = "skipped"
+            _save(job)
+
+    def note(msg):
+        with log.open("a") as f:
+            f.write(msg + "\n")
+
+    previs = job.get("renderer") == "previs3d"
 
     try:
         def do_storyboard():
+            if job.get("fixed_scenes"):
+                job["scenes"] = json.loads((d / "scenes.json").read_text())
+                next(x for x in job["steps"] if x["key"] == "storyboard")["note"] = "使用给定分镜"
+                return
             meta = {}
             scenes = llm.storyboard(job["topic"], job["language"], job["seconds"],
                                     brief=job.get("brief", ""),
@@ -200,6 +239,38 @@ def _run(job_id: str) -> None:
                 job["music_style"] = meta.get("music_style") or (
                     "calm cinematic underscore, soft piano and strings, slow, " + llm.MUSIC_TAIL)
         step("storyboard", do_storyboard)
+
+        # previs3d: plan (Opus) and asset building run in the background next to narration.
+        previs_thread, previs_err, previs_out = None, [], {}
+        if previs:
+            def do_previs_prep():
+                from .previs import job as pjob
+                for key, fn in (("previs_plan", lambda: previs_out.update(
+                                    plan=pjob.plan_step(job, d, note))),
+                                ("assets3d", lambda: previs_out.update(
+                                    ids=pjob.assets_step(job, d, previs_out["plan"]["plan"], note)))):
+                    s = next(x for x in job["steps"] if x["key"] == key)
+                    s["status"], s["started"] = "running", time.time()
+                    _save(job)
+                    try:
+                        fn()
+                    except Exception as e:  # noqa: BLE001 - raised again after narration
+                        s["status"] = "failed"
+                        previs_err.append(e)
+                        with log.open("a") as f:
+                            f.write(traceback.format_exc())
+                        _save(job)
+                        return
+                    s["status"], s["ended"] = "done", time.time()
+                    if key == "previs_plan":
+                        pl = previs_out["plan"]
+                        s["note"] = ("使用给定规划" if pl["fixed"] else f"{pl['rounds']} 轮") + \
+                            f"，{len(pl['plan']['assets'])} 个资产、{len(pl['plan']['shots'])} 个镜头"
+                    else:
+                        s["note"] = "、".join(previs_out["ids"].values())
+                    _save(job)
+            previs_thread = threading.Thread(target=do_previs_prep, daemon=True)
+            previs_thread.start()
 
         def waiter(s_step):
             def waiting(sec):
@@ -387,9 +458,13 @@ def _run(job_id: str) -> None:
             (d / "index.html").write_text(llm.scene_html(job["scenes"], frames, w, h, log=note,
                                                          context=ctx, bg_data_url=bg,
                                                          images=imgs, clips=clips))
-        step("scene_code", do_scene_code)
+        if previs:
+            skip("scene_code")
+        else:
+            step("scene_code", do_scene_code)
 
-        remotion_job = job.get("renderer") == "remotion"
+        # previs3d renders through Remotion too: sfx, captions and voice go into the project
+        remotion_job = job.get("renderer") in ("remotion", "previs3d")
         # Remotion jobs place SFX as editable audio clips inside the project (part B), so the
         # voice track (narration + ducked music) is mixed without them.
         if any(s.get("sfx") for s in job["scenes"]) and not remotion_job:
@@ -410,12 +485,35 @@ def _run(job_id: str) -> None:
             if lines:
                 next(x for x in job["steps"] if x["key"] == "mix")["note"] = lines[-1][4:]
         step("mix", do_mix)
-        if job["captions"]:
+        if job["captions"] or previs:  # previs3d needs words.json for the word anchors
             step("captions", lambda: _sh([PY, SCRIPTS / "captions.py", "scenes.json", ".",
                                           "--size", f"{w}x{h}"], d, log))
         else:
             skip("captions")
-        if remotion_job:
+        if previs:
+            from .previs import job as pjob
+            previs_thread.join()
+            if previs_err:
+                raise previs_err[0]
+
+            def do_shots():
+                r = pjob.shots_step(job, d, note)
+                fixed = [k for k, v in r.items() if v["rounds"] or v["fallback"]]
+                warns = sum(v["warnings"] for v in r.values())
+                next(x for x in job["steps"] if x["key"] == "shots")["note"] = (
+                    f"{len(r)} 个镜头无 error，{warns} 个 warn"
+                    + (f"；重写/兜底：{', '.join(fixed)}" if fixed else ""))
+            step("shots", do_shots)
+            step("project", lambda: pjob.project_step(job, d, note))
+            s_sr = next(x for x in job["steps"] if x["key"] == "shot_render")
+
+            def on_shot(sid, r):
+                s_sr["note"] = f"{sid} {r['seconds']} 秒"
+                _save(job)
+            step("shot_render", lambda: pjob.render_shots_step(job, d, on_shot))
+            s_sr["note"] = f"{len(job['scenes'])} 个镜头"
+            step("capture", lambda: pjob.render_main_step(job, d))
+        elif remotion_job:
             def do_render():
                 from . import remotion
                 from .remotion import render as rr

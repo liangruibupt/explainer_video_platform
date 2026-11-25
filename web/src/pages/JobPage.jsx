@@ -29,7 +29,7 @@ export default function JobPage() {
   if (error && !job) return <div className="page"><div className="error">{error}</div></div>
   if (!job) return <div className="page"><p className="sub">加载中…</p></div>
 
-  const remotion = job.renderer === 'remotion'
+  const remotion = ['remotion', 'previs3d'].includes(job.renderer) // previs3d is a Remotion project too: versions, motion editor
   const previs = job.renderer === 'previs3d'
   const tall = job.ratio === '9:16'
   const showLog = async () => {

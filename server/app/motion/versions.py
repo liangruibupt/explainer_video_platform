@@ -322,7 +322,9 @@ def render_version(job_id: str, d: Path, n: int) -> None:
         rrender.render(workbench.WB, tmp, log, entry="src/remotion/index.ts", comp="Main",
                        props={"project": project, "renderExact": True},
                        public_dir=vd / ".render-public", cwd=workbench.WB,
-                       env={"WB_PROJ": rel})
+                       env={"WB_PROJ": rel},
+                       # 3D previs scenes are WebGL: swangle is the backend that works here
+                       gl="swangle" if (d / "previs" / "plan.json").exists() else None)
         os.replace(tmp, vd / f"v{n}.mp4")
         _update(d, n, status="done", ended=time.time())
     except Exception as e:  # noqa: BLE001 - recorded on the version

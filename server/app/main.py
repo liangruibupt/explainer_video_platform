@@ -5,6 +5,7 @@ import re
 import time
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -17,6 +18,13 @@ app = FastAPI(title="explainer_video_platform")
 WEB = Path(__file__).resolve().parents[2] / "web" / "dist"
 FILES = {"final.mp4", "poster.jpg", "scenes.json", "index.html", "captions.ass",
          "pipeline.log", "words.json", "durations.json"}
+
+
+class SceneIn(BaseModel):
+    model_config = {"extra": "allow"}  # visual, sfx, ... are passed through to scenes.json
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,32}$")
+    title: str = Field(default="", max_length=200)
+    narration: str = Field(min_length=1, max_length=2000)
 
 
 class JobIn(BaseModel):
@@ -33,6 +41,10 @@ class JobIn(BaseModel):
     illustrations: int = Field(default=0, ge=0, le=4)
     clips: int = Field(default=0, ge=0, le=2)
     renderer: str = Field(default="html", pattern=r"^(html|remotion|previs3d)$")
+    # A fixed storyboard instead of the Opus one (acceptance runs, re-makes); previs_plan: a
+    # fixed PrevisPlan for a previs3d job (still statically validated by the plan step).
+    scenes: Optional[list[SceneIn]] = Field(default=None, min_length=1, max_length=30)
+    previs_plan: Optional[dict] = None
 
 
 @app.get("/api/health")
@@ -63,11 +75,17 @@ def create(body: JobIn):
             raise HTTPException(422, "background must be a PNG")
     if body.music not in pipeline.music_choices():
         raise HTTPException(422, f"unknown or not downloaded music: {body.music}")
+    scenes = [s.model_dump() for s in body.scenes] if body.scenes else None
+    if scenes and len({s["id"] for s in scenes}) != len(scenes):
+        raise HTTPException(422, "scene ids must be unique")
+    if body.previs_plan is not None and (body.renderer != "previs3d" or not scenes):
+        raise HTTPException(422, "previs_plan needs renderer=previs3d and fixed scenes")
     return pipeline.create_job(job_id, body.topic.strip(), body.language, body.seconds,
                                body.ratio, body.captions, body.music, body.voice,
                                brief=body.brief.strip(), scene_context=body.scene_context.strip(),
                                background_png=bg, illustrations=body.illustrations,
-                               clips=body.clips, renderer=body.renderer)
+                               clips=body.clips, renderer=body.renderer, scenes=scenes,
+                               previs_plan=body.previs_plan)
 
 
 class ImageIn(BaseModel):
