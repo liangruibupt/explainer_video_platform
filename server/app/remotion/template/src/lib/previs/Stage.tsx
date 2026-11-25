@@ -22,12 +22,12 @@ const Key: React.FC<{ dir: THREE.Vector3; center: THREE.Vector3; r: number; colo
     l.castShadow = shadows;
     l.shadow.mapSize.set(2048, 2048);
     const cam = l.shadow.camera;
-    cam.left = -r * 1.6;
-    cam.right = r * 1.6;
-    cam.top = r * 1.6;
-    cam.bottom = -r * 1.6;
+    cam.left = -r * 3;
+    cam.right = r * 3;
+    cam.top = r * 3;
+    cam.bottom = -r * 3;
     cam.near = r * 0.5;
-    cam.far = r * 8;
+    cam.far = r * 10;
     l.shadow.bias = -0.0004;
     l.shadow.normalBias = r * 0.004;
     cam.updateProjectionMatrix();

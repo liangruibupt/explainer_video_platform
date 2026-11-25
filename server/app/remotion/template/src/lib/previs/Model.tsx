@@ -83,7 +83,12 @@ function build(obj: RObject, gltf: GLTF, sections: RSection[], pal: Palette, loo
         mesh.add(x);
         return x;
       });
-      const cap = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), capMaterial((mesh.material as THREE.MeshStandardMaterial).userData.color));
+      const cm = capMaterial((mesh.material as THREE.MeshStandardMaterial).userData.color);
+      // caps of nested parts are coplanar: later parts (usually the inner ones) win the depth test
+      cm.polygonOffset = true;
+      cm.polygonOffsetFactor = -1;
+      cm.polygonOffsetUnits = -4 * k;
+      const cap = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), cm);
       cap.renderOrder = ro + 1;
       cap.onAfterRender = (r) => r.clearStencil();
       cap.quaternion.setFromUnitVectors(Z, planes[si].normal.clone().negate());

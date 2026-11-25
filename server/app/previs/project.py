@@ -121,6 +121,10 @@ def write_project(job: dict, d: Path, frames: list, w: int, h: int, *, shots: di
     data/timeline.json (card "previs/3d"), swangle config. Sets job['scenes'][i]['card']."""
     proj = Path(d) / "remotion"
     render.copy_template(proj)
+    # copy_template never overwrites; the previs renderer and Root.tsx (Shot-* compositions)
+    # are fixed template files, so a re-written project always gets the current ones
+    for p in [render.TEMPLATE / "src" / "Root.tsx", *(render.TEMPLATE / "src" / "lib" / "previs").glob("*")]:
+        _copy(p, proj / p.relative_to(render.TEMPLATE))
     (proj / "remotion.config.ts").write_text(CONFIG_TS)
     scenes = job["scenes"]
     sdir = proj / "src" / "scenes"
