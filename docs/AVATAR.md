@@ -39,9 +39,35 @@
 
 ### 镜像
 
-`747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261105-014747`：CUDA 12.8.1、Ubuntu 22.04、Python 3.10（InfiniteTalk 用了 3.11 删掉的 `inspect.ArgSpec`）、torch 2.7.1+cu128、xformers 0.0.31.post1、flash-attn 2.8.0.post2（xformers 0.0.31 只接受 ≤2.8.0）、xfuser 0.4.4 + yunchang 0.6.3.post1、pillow 12.3.0，其余版本全部固定在 `requirements.txt`。
+`747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/avatar:20261125-082311`：CUDA 12.8.1、**Ubuntu 24.04、Python 3.12.3**、torch 2.7.1+cu128、xformers 0.0.31.post1、flash-attn 2.8.0.post2（cp312 轮子；xformers 0.0.31 只接受 ≤2.8.0）、xfuser 0.4.4 + yunchang 0.6.3.post1、**pillow 13.0.0**，其余版本全部固定在 `requirements.txt`。上一个镜像是 `20261105-014747`（Ubuntu 22.04、Python 3.10、pillow 12.3.0）。
 
-pillow 从 11.2.1 升到 12.3.0（修掉 12.3.0 之前的漏洞）。没升到 13.0.0：它要求 Python ≥ 3.11，而这个镜像只能用 3.10。worker 只收工作室重新编码过的 PNG（工作室用 pillow 13.0.0 解码），剩下的风险可以接受。上一个镜像是 `20261104-190851`（pillow 11.2.1）。
+### Python 3.12 + pillow 13.0.0（2026-11-25）
+
+pillow 13.0.0 要求 Python ≥ 3.11，所以基础镜像从 `cudnn-devel-ubuntu22.04`（Python 3.10）换成 `cudnn-devel-ubuntu24.04`（系统 Python 3.12，和图生 3D 镜像一样；全部装进 `/opt/venv`，不受 PEP 668 影响）。没用 22.04 + deadsnakes：24.04 实测没有问题，少一个第三方 PPA。
+
+- **代码补丁（只有一处）**：InfiniteTalk@50aa0a94 的 `wan/multitalk.py` 第 3 行 `from inspect import ArgSpec`（3.11 删掉了，文件里从没用到）。Dockerfile 在 clone 之后用 `sed` 删掉这一行（幂等），再用 `grep` 断言两个代码库里都不再出现 `ArgSpec` / `getargspec` / `formatargspec`，否则构建失败。没有 fork。
+- **其它 3.11/3.12 不兼容检查**：两个代码库（固定 sha）全文搜了 `imp`、`distutils`、`asyncio.coroutine`、`collections` 旧别名、`SafeConfigParser`、`pkg_resources`、可变 dataclass 默认值等，只有上面这一处；`python3.12 -W error -m compileall` 两个仓库全部通过。依赖里 humanfriendly / flatbuffers / imageio 的 `distutils`、`imp`、`pkg_resources` 都在 Python 2 或可选分支里，不会执行。
+- **依赖（pip dry-run，manylinux x86_64、cp312，torch 走 cu128 索引）**：所有固定版本都有 cp312 轮子，**一个固定版本都没改**（除了 pillow 12.3.0 → 13.0.0）。例外两个：moviepy 1.0.3 本来就只有源码包（纯 Python）；audio-separator 依赖的 diffq 0.2.4 没有 cp312 轮子，pip 从源码包编译它的小 Cython 扩展（镜像里有 build-essential + python3-dev）。flash-attn 的轮子地址从 cp310 换成 cp312。
+- **构建时导入检查**：`check_imports.py` 以前把 `wan`、`xfuser.core.distributed` 标成 SKIP（它们导入时查 GPU 名字和算力，CPU 构建机上碰到 libcuda 桩）。现在遇到这种情况会在假装有一块 Blackwell（`is_available`、`get_device_name`、`get_device_capability`、`TORCH_CUDA_ARCH_LIST`）的前提下重试一次，`wan.distributed.xdit_context_parallel`（导入 xfuser 和 `wan` 的 attention 模块）在构建时已经是 `ok`；`xfuser.core.distributed` 单独导入仍是 SKIP。`wan` 本身那一行在 `20261125-082311` 的构建日志里被 docker 的 ANSI 颜色码挡住，看不出是 ok 还是 SKIP（没有 FAIL，构建通过），`builder.sh` 已改成先去掉颜色码再摘录。GPU 上容器启动时的完整检查 17 个模块全部 `ok`（包括 `wan`）。
+
+**实测对比**（Python 3.12 镜像 `20261125-082311` vs Python 3.10 镜像（第 5 / 5b 节）。同一张人像 `portrait_16x9.jpg` / `portrait_9x16_live.jpg`（经 `avatar.portrait_png`），Polly Zhiyu `pitch15`，480 快速，seed 42，`infra/avatar/bench/run_bench.py` 的 prompt。us-east-1 的 g7e.4xlarge 当时所有 AZ 都没有容量（Spot 放置分数 1），所以这次测试临时在 **us-east-2a 的 g7e.8xlarge Spot** 上跑（同一块 RTX PRO 6000 96 GB，主机内存 256 GB）。镜像、权重、任务队列仍在 us-east-1，跨区读取；`avatar.json` 的区域和容量顺序没改）：
+
+| 运行 | 镜像 | 输出 | 帧数 / 时长 | 渲染 | 秒/输出秒 | 峰值显存 | 口型相关 / 延迟 | 身份 余弦 首→尾（最低） | ΔE 首→尾 |
+|---|---|---|---|---|---|---|---|---|---|
+| InfiniteTalk 15 秒 16:9 | 3.10（11-04） | 896×448 | 356 / 14.24 s | 420 s 暖（另加载 520 s） | 29.5 | 64.1 GB | 0.16 / +80 ms | 0.95 → 0.79（0.68） | 0.03 |
+| | **3.12** | 896×448 | 356 / 14.24 s | 411 s（899 s 含冷加载 488 s） | **28.8** | 64.0 GB | 0.16 / +120 ms | 0.97 → 0.82（0.67） | 0.04 |
+| InfiniteTalk 15 秒 9:16 | 3.10（E，25.8 s 稿） | 448×832 | — | 614 s | 23.8 | 63.0 GB | — | 0.82 → 0.75（0.62，首/末 1/4 均值） | 0.05 |
+| | **3.12**（`pitch15`） | 448×832 | 356 / 14.24 s | 347 s | **24.3** | 62.8 GB | 0.17 / +120 ms | 0.96 → 0.87（0.67） | 0.02 |
+| LongCat 15 秒 16:9 | 3.10（11-04） | 832×480 | 356 / 14.24 s | 441 s（另拷权重 47 s、加载 16 s） | 30.9 | 66.4 GB | 0.20 / +240 ms | 0.94 → 0.60（0.43） | 0.58 |
+| | **3.12** | 832×480 | 356 / 14.24 s | 394 s（433 s 含拷权重 26 s、加载 13 s） | **27.6** | 67.6 GB | 0.19 / +240 ms | 0.96 → 0.57（0.35） | 0.60 |
+| 工作室端到端，自动分段 55 | 3.10（F，90 秒稿） | 896×448 | 89.89 s，2 段 | 2415 s | 26.9 | 64.1 GB | — | 0.71 → 0.68（0.47） | 接缝 0.21，其余 ≤ 0.09 |
+| | **3.12**（60 秒稿） | 896×448 | 1489 / 59.56 s，2 段（31.9 + 27.6） | 836 + 760 = 1595 s | **26.8** | 64.0 GB | — | 0.71 → 0.75（0.49，接缝那一秒） | 接缝 0.22，其余 ≤ 0.13 |
+
+- 指标用同一套脚本（`analyze.py`、`trace.py`、`seams.py`）。用 `trace.py` 逐秒对比同一条 15 秒片段：InfiniteTalk 3.10 / 3.12 每秒余弦 0.90/0.97、0.81/0.81、0.66/0.67 …… 末秒 0.75/0.82，曲线形状一致；LongCat 3.10 / 3.12 同样在第 10 秒最低（0.38 / 0.35，那一帧闭眼张嘴），末秒 0.54 / 0.57。LongCat 嘴唇变红、身份越往后越偏是模型本身的老问题（第 5 节），3.12 上一样，不是回退。
+- 看帧（`examples/avatar/py312_15s_480_fast_sheet.jpg`，上 InfiniteTalk，下 LongCat，0/3/6/9/12/14 秒）：同一个人、同一件开衫和货架，没有花屏或偏色；InfiniteTalk 动作克制，LongCat 手势和张嘴幅度更大、嘴唇偏红，和 3.10 的对比图一致。口型：按音频能量挑最安静和最响的帧裁嘴部，InfiniteTalk 在停顿处（3.3 s、5.6 s）嘴是合上的，响的地方张开露齿；LongCat 同样张合，但停顿处也有张嘴的帧（它本身口型更夸张）。
+- 工作室端到端：`POST /api/avatars`（multipart：人像上传 + 口播稿 276 字 + Polly Zhiyu，场景「超市货架口播」，默认模型），Polly 合成 59.55 秒，按句末切成 2 段，各自从原人像生成再拼接，视频 59.56 秒（音频 59.55 秒）。接缝（`examples/avatar/py312_studio60_seg55_seam.jpg`，30.92–32.92 秒）和 F 一样：前一段结尾微笑，32.08 秒是叠化的半透明双影，第二段从原人像姿势开始；接缝附近逐帧差最大 1.84（全片典型 0.79，p95 1.66）。两段身份均值 0.70 / 0.71，第二段末 5 秒 0.71，没有漂移。
+- 冷启动（g7e.8xlarge us-east-2）：实例就绪 197 秒（镜像跨区拉取 119 秒，和同区相同），InfiniteTalk 权重 93 GB 跨区 38 秒，加载 488 秒；LongCat 77 GB 26 秒，加载 13 秒。跨区传输：镜像一次（解压后 22 GB，实际传的压缩层更小）+ 两个模型的权重 170 GB。
+- 这次 GPU 用时 64 分钟（09:22–10:26 UTC，一台 g7e.8xlarge Spot），外加两次镜像构建各约 7 分钟和 11 分钟（c7i.4xlarge）。第一次构建失败是 `check_imports.py` 的模拟 GPU 少了 `is_available`，修了再构建。
 
 `20261105-014747` 的验证（2026-11-05，g7e.4xlarge Spot，`portrait_16x9.jpg` 经 `avatar.portrait_png`，Polly Zhiyu `pitch15` 14.96 秒，480 快速，seed 42）：镜像里 `PIL.__version__` = 12.3.0，构建时 `check_imports.py` 通过；InfiniteTalk 896×448、14.92 秒、373 帧，worker 用时 1020 秒（含冷启动加载模型 526 秒，生成约 494 秒），峰值显存 64.0 GB；LongCat 832×480、14.96 秒、374 帧，渲染 448 秒（加载 14 秒），峰值显存 66.9 GB。两条都带完整音轨，中间帧和第 5 节的样片是同一个人、同一场景，没有花屏。
 

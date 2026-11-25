@@ -45,7 +45,8 @@ build() {
   docker push -q "$REPO:$TAG" >> /work/build.out 2>&1 || return 1
   docker image inspect "$REPO:$TAG" --format '{{.Size}}' >> /work/build.out
   # Echo the build-time import check result and key versions into the tail of the log.
-  grep -E '^(ok  |SKIP|FAIL|imports ok)' /work/build.out | tail -30 >> /work/build.out
+  # (docker colours stderr with ANSI codes; strip them so lines after a warning still match)
+  sed 's/\x1b\[[0-9;]*m//g' /work/build.out | grep -E '^(ok  |SKIP|FAIL|imports ok)' | tail -30 >> /work/build.out
   docker run --rm --entrypoint python "$REPO:$TAG" -c \
     "import PIL, torch, sys; print('versions: python', sys.version.split()[0], 'PIL', PIL.__version__, 'torch', torch.__version__)" \
     >> /work/build.out 2>&1

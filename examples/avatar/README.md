@@ -20,6 +20,8 @@
 | `infinitetalk_live90_seg55_480_fast.mp4`、`_sheet.jpg`、`traces/live90_seg55.json` | F：90 秒直播带货自动分段（2 段，接缝 43.2 秒），和不分段的 `infinitetalk_live90_480_fast` 同稿同人像，640 宽 crf 31 |
 | `infinitetalk_live90_seg55_seam.jpg` | F 的接缝：42.2 / 43.0 / 43.36（叠化中）/ 43.72 / 44.2 秒（`infra/avatar/bench/seams.py`） |
 | `infinitetalk_pitch15_916_720_fast.mp4`、`_sheet.jpg`、`traces/pitch15_916_720.json` | G：9:16 720P 快速 15 秒（输出 704×1280，样例缩到 540 宽） |
+| `py312_15s_480_fast_sheet.jpg` | Python 3.12 镜像（2026-11-25）：上 InfiniteTalk，下 LongCat，15 秒 480 快速，0/3/6/9/12/14 秒 |
+| `py312_studio60_seg55_seam.jpg` | Python 3.12 镜像：工作室 60 秒口播自动分段的接缝（30.92–32.92 秒） |
 
 原始文件（未压缩）：`s3://evp-models-747411437379-us-east-1/jobs/avatar-ec2/examples/avatar/`。
 
