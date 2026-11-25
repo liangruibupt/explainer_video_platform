@@ -258,3 +258,17 @@ HTTP：
 4. 独立片段 `shots/s01..s03.mp4` 和成片 `final.mp4` 都能播放，成片长度 = `durations.json` 之和，有字幕、有配音。
 5. 图生 3D：用一个有机形体（例如「一只坐着的猫，高 0.3 米」）从 0 开机跑通，入库后 `meta.size[1]` = 0.3 m ± 2%，能放进布景渲染。记录冷启动和生成时间。
 6. 素材库能看到模型和转台预览；作品页的「镜头」标签能重渲单个镜头。
+
+## 15. 修订记录（集成方）
+
+### 2026-11-25，根据 A（[PR #40](https://github.com/liangruibupt/explainer_video_platform/pull/40)）和 D（[PR #39](https://github.com/liangruibupt/explainer_video_platform/pull/39)）的报告
+
+1. **`size` 冲突**：素材库记录原来用 `size` 存文件字节数。对 `kind = "model"` 的记录，`size` 是包围盒尺寸 `[w,h,d]`（米，同 `ModelMeta`），字节数放在 `bytes`。其他类型的记录不变。界面按类型读。
+2. **`meta.parts[].local`**：每个部件在自己坐标系里的包围盒（A 已实现）。B 的当前姿态检查用它乘上 `rig.partTransforms` 的变换，比用静止姿态的 `bbox` 准。
+3. **`extras.evp_slot`** 可以是槽位名，也可以是 `#rrggbb`（部件写了十六进制颜色时）。渲染器两种都要接受。
+4. **资产校验码**加 `bad_id`（id 不合规）和 `missing_part`（锚点或父部件引用了不存在的部件）。
+5. **A 补的默认约定**：torus 默认平放（轴 y）；extrude 的倒角在轮廓内，声明尺寸是精确的；环形阵列平分角度；锚点写部件 id 时指向这个部件包围盒的中心。
+6. **素材库接口**：`GET /api/assets?kind=model` 要接受 `model`（集成改 `assets/api.py`）；模型记录带 `turntable_url`。
+7. **镜头状态**：`GET /api/jobs/{id}/previs` 里每个镜头的 `status` 取 `queued | running | done | failed | blocked`（`blocked` = 检查有 error 没有渲染）；`report` 是 `{"issues": CheckIssue[]}`。
+8. **四冲程示例**：曲轴盘原来被不透明的曲轴箱挡住，曲轴箱改成半透明（opacity 0.45），缸盖 0.6。
+9. **`core/expr.ts`** 修了 `tsc --strict` 下的 5 个类型错误，行为不变。
