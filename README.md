@@ -50,6 +50,17 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
    - 编辑器右侧有「Opus 助手」对话面板（见 [docs/MOTION_ASSIST_CONTRACT.md](docs/MOTION_ASSIST_CONTRACT.md)）：用一句话改标题、颜色、字幕文字、镜头时长和速度，2–3 秒出结果，点「应用修改」后编辑器即时刷新，可撤销；要改画面结构（如「柱状图换成折线图」）时，Opus 重写这一段代码，经类型检查、静帧和版式检查后给出新静帧，约 80 秒，确认后才替换，可一键撤销。
    - 「配音」面板（见 [docs/REVOICE_CONTRACT.md](docs/REVOICE_CONTRACT.md)）：改了画面数据后，「检查一致性」让 Opus 通读全片的旁白、字幕和画面参数，找出对不上的地方并起草修改；「重新配音改动的段落」只重配改过的段落，同一个 Polly 声音、不变速，整条重新混音，改过的段落用 Whisper 重新对齐字幕，约 15–50 秒；应用后保存为新版本即可出片。每个版本保存自己的配音，切换版本时配音跟着切换。重配前会抽一段没改的旁白重新合成比对，声音若有变化会提示整片重配。
    - 编辑器经 studio 的 `/motion/` 路径访问，同一条端口转发即可。每台机器先运行一次 `infra/motion/setup.sh`。
+9. 可选渲染方式「3D 白模预演」（见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md)）：
+   - Opus 按分镜写规划：带真实尺寸（米）的 3D 资产、布景、每段一个镜头（相机路径、动作、标注、剖切），时间点写成旁白里的字（例如「点火」）。
+   - 资产和配音同时构建；Whisper 字幕出来后，镜头编译器把每个字换算成帧，逐帧检查相机穿模、目标出画、跳变等问题。有 error 的镜头带着报告让 Opus 重写，最多 2 轮，还不行换成自动环绕镜头。
+   - 本机 CPU 用 Remotion + three.js（SwiftShader 软件 WebGL）渲染，每个镜头一个独立片段，再出带字幕和配音的成片。1080p 带阴影每秒约 5–6 帧。
+   - 作品页多一个「镜头」标签：静帧、俯视路径图、检查报告、独立片段，可以单独重渲一个镜头。
+
+### 3D 资产（素材库）
+
+素材库的「3D 模型」标签（见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md) 第 4 节）：
+- 三种来源，都存成带真实尺寸的 GLB：一句话写参数化规格（Opus，机械、建筑、示意结构）；图生 3D（Qwen-Image 概念图 + Hunyuan3D-2，见 [docs/MESH.md](docs/MESH.md)，GPU 实测还没做）；上传 GLB 后按目标尺寸缩放。
+- 构建后校验尺寸、落地、关节活动范围，生成 4 秒转台视频。卡片悬停播放转台，点开是 three.js 查看器，可以拖动自由度滑块（例如曲轴转角）看联动。
 
 ### 单独生成
 
@@ -113,6 +124,9 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | [infra/avatar/](infra/avatar/) | 数字人模块：一个镜像两个模型（InfiniteTalk、LongCat），权重拷贝、构建机、测评脚本 |
 | [infra/budget/](infra/budget/) | AWS 成本告警配置 |
 | [docs/STUDIO.md](docs/STUDIO.md) | 工作室的功能、制作步骤、接口和运行方式 |
+| [server/app/previs/](server/app/previs/) | 3D 白模预演：规划、参数化资产构建、镜头编译和检查、Remotion 工程；示例 [four_stroke](server/app/previs/examples/four_stroke/) |
+| [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md)、[docs/MESH.md](docs/MESH.md) | 3D 白模预演的接口约定和实测；图生 3D 模块 |
+| [infra/previs/](infra/previs/)、[infra/mesh/](infra/mesh/) | 3D 渲染的共享 Node 依赖和基准测试；图生 3D 容器、构建机、权重 |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | 工作流：格式、节点、编排器、缓存、审核、Agent 生成、接口和实测 |
 | [docs/DESIGN.md](docs/DESIGN.md) | 平台总体设计：架构、GPU 后端选择、工作流、对话创作、自我改进、阶段与验收 |
 | [docs/IMAGE.md](docs/IMAGE.md)、[docs/VIDEO.md](docs/VIDEO.md)、[docs/MUSIC.md](docs/MUSIC.md)、[docs/AVATAR.md](docs/AVATAR.md) | 四个生成模块的设计和实测数据（数字人接口约定见 [docs/AVATAR_CONTRACT.md](docs/AVATAR_CONTRACT.md)） |
@@ -127,6 +141,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 3 | 工作流编排 + Agent 生成工作流 | 已完成：节点库、校验、缓存、人工审核、Agent 生成和改图、模板、工作流页面（还没有拖拽编辑和候选数） |
 | 4 | 进阶界面：对话创作、工作流编辑器、设置 | 设计中 |
 | 5 | 差评驱动的 skill 自动改进（以 PR 形式提交，人工批准） | 已完成：不满意按钮、快照与质检、Opus 分析、聚类、起草 PR、改前改后对比（实测见 docs/DESIGN.md 第 8 节） |
+| 6 | 3D 白模预演：参数化 / 图生 3D 资产、按旁白卡点的镜头、逐镜头检查和渲染 | 已完成（图生 3D 等 IAM 授权后实测），见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md) |
 
 ## 来源
 
