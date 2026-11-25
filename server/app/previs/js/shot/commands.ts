@@ -98,8 +98,9 @@ export const SHOT_COMMANDS: Record<string, (argv: string[]) => number> = {
   },
   "fixture-asset": (argv) => {
     const { pos } = opts(argv);
-    const spec = readJson(pos[0]);
-    const b = buildTestAsset(spec.spec ?? spec);
+    const j = readJson(pos[0]); // an AssetSpec, a plan asset {spec}, or a plan (first parametric asset)
+    const spec = j.assets ? j.assets.find((a: { kind: string }) => a.kind === "parametric").spec : (j.spec ?? j);
+    const b = buildTestAsset(spec);
     writeFileSync(pos[1], b.glb);
     writeFileSync(pos[2], JSON.stringify(b.meta, null, 1));
     return 0;

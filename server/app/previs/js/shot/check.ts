@@ -349,6 +349,7 @@ export function plan(shot: RShot, metas: Record<string, ModelMeta>, W = 900, H =
     items.push({ t: "line", pts: [X(r[0]), Z(r[2]), X(r[0] + (r[3] - r[0]) * 0.5), Z(r[2] + (r[5] - r[2]) * 0.5)], color: "#9a948b", width: 1 });
   }
   let keyNo = 0;
+  const stack = new Map<string, number>();
   for (const a of shot.anchors) {
     const r = shot.camera[Math.min(a.frame, N - 1)];
     if (/^camera\.keys\[\d+\]\.at$/.test(a.where)) {
@@ -358,7 +359,10 @@ export function plan(shot: RShot, metas: Record<string, ModelMeta>, W = 900, H =
     } else {
       items.push({ t: "circle", x: X(r[0]), y: Z(r[2]), r: 4, fill: hue(a.frame / Math.max(1, N - 1)), stroke: "#333333" });
       const label = a.anchor.word ?? a.anchor.mark ?? (a.anchor.t !== undefined ? `${a.anchor.t}s` : `f${a.anchor.frame}`);
-      items.push({ t: "text", x: X(r[0]) + 8, y: Z(r[2]) - 6, s: `${label} f${a.frame}`, size: 13, color: "#444444" });
+      const key = `${Math.round(X(r[0]))},${Math.round(Z(r[2]))}`;
+      const k = stack.get(key) ?? 0; // anchors at the same spot are listed one under the other
+      stack.set(key, k + 1);
+      items.push({ t: "text", x: X(r[0]) + 14, y: Z(r[2]) - 6 + 16 * k, s: `${label} f${a.frame}`, size: 13, color: "#444444" });
     }
   }
   items.push({ t: "text", x: 20, y: 30, s: `${shot.id} 俯视图：相机路径（蓝→红 = 时间）、关键帧编号、锚点`, size: 18, color: "#222222" });
