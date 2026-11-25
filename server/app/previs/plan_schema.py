@@ -25,6 +25,9 @@ Issue codes (all "error" unless noted):
   bad_time         a TimeAnchor sets none or several of t / frame / word / mark, or bad values
   anchor_not_found a word anchor's text (with occurrence) is not in the scene's narration
   too_few_keys     a shot has fewer than 2 camera keys
+  time_order       camera keys out of order / at the same time, or an action's until is not
+                   after its at (only where the order is known without durations: mark
+                   start/end and word anchors without offset)
   missing_target   image3d asset without target
   scale_not_1      (warn) set object scale is not 1, real size is lost
 """
@@ -918,6 +921,29 @@ def _time(v, a, where, narration):
               severity="warn")
 
 
+def _time_pos(a, narration):
+    """Order of a TimeAnchor inside the scene without knowing durations: -1 for mark start,
+    the character index for a word (edge end: its last character + 0.5), inf for mark end;
+    None when it cannot be placed (t, frame, an offset, a word that is not found)."""
+    if not isinstance(a, dict) or a.get("offset"):
+        return None
+    if a.get("mark") == "start" and len(a) == 1:
+        return -1.0
+    if a.get("mark") == "end" and len(a) == 1:
+        return math.inf
+    word = a.get("word")
+    if isinstance(word, str) and narration is not None and strip_punct(word):
+        t, wd = strip_punct(narration), strip_punct(word)
+        occ = a.get("occurrence", 1)
+        i = -1
+        for _ in range(occ if _is_int(occ) and occ >= 1 else 1):
+            i = t.find(wd, i + 1)
+            if i < 0:
+                return None
+        return i + len(wd) - 0.5 if a.get("edge") == "end" else float(i)
+    return None
+
+
 def _check_shot(v: _V, sh: dict, w: str, sets: dict, narration):
     st = sets.get(sh.get("set"))
     if st is None:
@@ -969,6 +995,15 @@ def _check_shot(v: _V, sh: dict, w: str, sets: dict, narration):
         _enum(v, k.get("ease"), EASES, f"{kw}.ease")
         if "cut" in k and not isinstance(k["cut"], bool):
             v.add("schema", f"{kw}.cut 应为 true/false", f"{kw}.cut")
+    prev = None
+    for i, k in enumerate(keys):
+        pos = _time_pos(k.get("at") if isinstance(k, dict) else None, narration)
+        if pos is None:
+            continue
+        if prev is not None and pos <= prev[1]:
+            v.add("time_order", f"{w}.camera.keys[{i}] 的时间不晚于 keys[{prev[0]}]，"
+                  "相机关键帧要按时间顺序排列，且不能同时", f"{w}.camera.keys[{i}].at")
+        prev = (i, pos)
     actions = sh.get("actions", []) or []
     if not isinstance(actions, list):
         v.add("schema", f"{w}.actions 应为数组", f"{w}.actions")
@@ -986,6 +1021,9 @@ def _check_shot(v: _V, sh: dict, w: str, sets: dict, narration):
             if op in ("show", "hide"):
                 v.add("schema", f"{aw}：{op} 没有 until", aw)
             _time(v, a["until"], f"{aw}.until", narration)
+            p0, p1 = _time_pos(a.get("at"), narration), _time_pos(a["until"], narration)
+            if p0 is not None and p1 is not None and p1 <= p0:
+                v.add("time_order", f"{aw}：until 不晚于 at", f"{aw}.until")
         if "ease" in a:
             _enum(v, a["ease"], EASES, f"{aw}.ease")
         if skip_refs:
