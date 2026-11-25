@@ -33,6 +33,26 @@
 
 某一段的绘制代码生成失败时，那一段换成标题卡，其余照常出片，并在日志里记一条。
 
+### 渲染方式「3D 白模预演」（`renderer: "previs3d"`）
+
+接口约定见 [PREVIS_CONTRACT.md](PREVIS_CONTRACT.md)。步骤（作品页按这些名字显示）：
+
+| 步骤 | 做法 |
+|---|---|
+| Opus 5.5 写分镜 | 同上 |
+| Opus 5.5 规划 3D 资产和镜头 | `previs/plan.py`：分镜 → `previs/plan.json`（资产、布景、每段一个镜头），静态校验不通过带着错误重写，最多 3 轮。素材库里已有的模型会提供给 Opus 复用 |
+| 构建 3D 资产 | 和配音、字幕同时进行。参数化资产用 `previs.mjs build-asset`，校验失败让 Opus 改规格（最多 2 轮），再渲染转台、Opus 看 4 张静帧做外形检查（有问题重写一次，结果在 `previs/plan_check.json`）；图生 3D 资产走 `mesh_api.run_image3d`；`library` 资产直接用。写 `previs/assets.json` |
+| Polly 合成旁白、混音、Whisper 逐字字幕 | 同上；previs3d 不管字幕开关都跑 Whisper，因为卡点要用 `words.json` |
+| 编译镜头 + 逐帧检查 | 把每个字锚点换算成帧，算出每帧的相机和部件姿态，逐帧检查（第 8 节）。有 error 的镜头带着报告让 Opus 重写，最多 2 轮，还不行换成自动环绕镜头；记在 `previs/shot_fix.json` |
+| 写 Remotion 工程 | `jobs/<id>/remotion/`：模板 + `PrevisShot` 渲染器 + 每段的场景模块 + GLB，字幕、配音、音效同 Remotion 动效卡 |
+| 渲染镜头片段 | 每个镜头的 `Shot-<段id>` 合成 → `shots/<段id>.mp4`（无字幕、无配音）和 5 张静帧 |
+| 渲染成片 | `Main` → `final.mp4`，`--gl=swangle` |
+
+做好的 previs3d 作品可以在动效编辑器里打开（和 Remotion 动效卡一样），导出新版本时用 swangle。
+镜头带 `style.fade_in` 时，第 0 帧是纯背景色（从背景淡入，成片也一样），编辑器刚打开时播放头在第 0 帧，所以预览只有背景色；拖到淡入之后就有模型。截图验收时先把播放头拖过淡入帧。
+
+`POST /api/jobs` 还接受 `scenes`（固定分镜，跳过写分镜，`[{id, title, narration, ...}]`）和 `previs_plan`（固定规划，只用于 previs3d 且必须同时给 `scenes`；只做静态校验，不做外形重写）。验收用的四冲程示例就是这样提交的。
+
 ## 反馈与改进（`/feedback`）
 
 设计见 [DESIGN.md](DESIGN.md) 第 8 节，数据格式见 [PHASE5_CONTRACTS.md](PHASE5_CONTRACTS.md)。
@@ -101,6 +121,8 @@ LLM 每次输出不同，`EVP_FEEDBACK_REPEATS`（1–4，默认 1）设每边�
 | `background_png_b64` | 一张与画面同尺寸的 PNG（base64），画在每一帧的最底层，例如历史地图 |
 | `illustrations` | 0–4，最多用几张 AI 插图（默认 0，不调 GPU） |
 | `clips` | 0–2，最多用几段 AI 视频镜头（默认 0，不调 GPU） |
+
+3D 白模预演和 3D 资产的接口（[PREVIS_CONTRACT.md](PREVIS_CONTRACT.md) 第 11 节）：`POST /api/assets/model/build`（`{spec}`，校验失败 422 带 `issues`）、`POST /api/assets/model/upload`（multipart GLB + `target_axis`、`target_metres`）、`POST /api/assets/model/plan`（`{description}` → 参数化规格，不入库）、`POST /api/assets/model/image3d`（后台任务）、`GET /api/assets?kind=model`、`GET /api/assets/{id}/turntable`；`GET /api/mesh/status`、`GET /api/mesh/tasks[/{id}]`；`GET /api/jobs/{id}/previs`（规划和每个镜头的报告、静帧、俯视图、片段、状态）、`POST /api/jobs/{id}/previs/{段id}/render`（只重渲这一个镜头）、`PUT /api/jobs/{id}/previs/{段id}`（`{shot}` 换一个镜头，返回新的检查报告）。工作流节点：`asset.build`、`asset.image3d`、`agent.previs_plan`、`previs.render`，端口类型 `model`（素材 id）；模板 `wf_previs_explainer`「3D 白模预演讲解视频」。页面：素材库「3D 模型」标签（转台缩略图、查看器、新建 3D 资产）、作品页「镜头」标签、工作台渲染方式「3D 白模预演」。
 
 `music` 取 `GET /api/music` 返回的键：`synth`、`none`、`ai`（YuE2 按主题生成），以及已下载的曲库曲目（如 `guqin`）。`music` 为 `ai` 时，任务的 `job.json` 里会有 `music_style`、`music_file`（或 `music_fallback`）和 `music_source`。
 
@@ -176,6 +198,7 @@ scripts/studio.sh stop
 | `server/app/image.py`、`video.py`、`music.py`、`avatar.py` | 四个 GPU 模块的客户端（`status()`、`generate()`），共用 `gpu_client.py` 和 `gpu_ec2.py` |
 | `server/app/avatar_api.py`、`avatar_node.py` | 数字人页的接口和生成记录；`tts.polly`、`avatar.infinitetalk` 两个工作流节点 |
 | `server/app/images.py`、`media.py` | 图像页、视频页、音乐页的生成记录 |
+| `server/app/previs/` | 3D 白模预演：`plan.py` 规划、`assets_build.py` 资产构建、`shots.py` 镜头编译和渲染、`job.py` 任务里的 previs 步骤、`js/` Node 命令行（`core/` 表达式和骨架、`asset/`、`shot/`） |
 | `server/app/workflows/` | 工作流：`nodes.py` 节点库、`validate.py` 校验、`engine.py` 编排器（缓存、审核、重跑）、`agent.py` Agent 生成和改图、`store.py` 保存、`templates/` 模板 |
 | `server/tests/` | 校验和缓存键的单元测试（pytest，不调 GPU） |
 | `web/` | React + Vite 前端 |

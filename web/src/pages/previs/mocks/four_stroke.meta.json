@@ -1,0 +1,791 @@
+{
+ "kind": "model",
+ "format": "glb",
+ "units": "m",
+ "bbox": {
+  "min": [
+   -0.15000000596046448,
+   2.682209010451686e-9,
+   -0.10999999940395355
+  ],
+  "max": [
+   0.15000000596046448,
+   0.5199999995529652,
+   0.10999999940395355
+  ]
+ },
+ "size": [
+  0.3,
+  0.52,
+  0.22
+ ],
+ "tris": 1700,
+ "parts": [
+  {
+   "id": "crankcase",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.15000000596046448,
+     2.682209010451686e-9,
+     -0.10999999940395355
+    ],
+    "max": [
+     0.15000000596046448,
+     0.23999999731779098,
+     0.10999999940395355
+    ]
+   }
+  },
+  {
+   "id": "cylinder",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.05999999865889549,
+     0.24000000059604643,
+     -0.05999999865889549
+    ],
+    "max": [
+     0.05999999865889549,
+     0.45999999940395353,
+     0.05999999865889549
+    ]
+   }
+  },
+  {
+   "id": "head",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.07999999821186066,
+     0.4600000004470348,
+     -0.07999999821186066
+    ],
+    "max": [
+     0.07999999821186066,
+     0.49999999955296515,
+     0.07999999821186066
+    ]
+   }
+  },
+  {
+   "id": "spark_plug",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.006000000052154064,
+     0.48000000044703484,
+     -0.006000000052154064
+    ],
+    "max": [
+     0.006000000052154064,
+     0.5199999995529652,
+     0.006000000052154064
+    ]
+   }
+  },
+  {
+   "id": "crank",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.05999999865889549,
+     0.14000000134110452,
+     -0.03999999977648258
+    ],
+    "max": [
+     0.05999999865889549,
+     0.2599999986588955,
+     0.019999999552965164
+    ]
+   }
+  },
+  {
+   "id": "crank_pin",
+   "parent": "crank",
+   "bbox": {
+    "min": [
+     -0.012000000104308128,
+     0.23299999989569187,
+     -0.019999999552965164
+    ],
+    "max": [
+     0.012000000104308128,
+     0.2570000001043081,
+     0.019999999552965164
+    ]
+   }
+  },
+  {
+   "id": "piston",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.03799999877810478,
+     0.24500000178813935,
+     -0.03799999877810478
+    ],
+    "max": [
+     0.03799999877810478,
+     0.4349999993294478,
+     0.03799999877810478
+    ]
+   }
+  },
+  {
+   "id": "rod_pivot",
+   "parent": "piston",
+   "bbox": {
+    "min": [
+     -0.00800000037997961,
+     0.24500000178813935,
+     -0.006000000052154064
+    ],
+    "max": [
+     0.00800000037997961,
+     0.40499999821186067,
+     0.006000000052154064
+    ]
+   }
+  },
+  {
+   "id": "rod",
+   "parent": "rod_pivot",
+   "bbox": {
+    "min": [
+     -0.00800000037997961,
+     0.24500000178813935,
+     -0.006000000052154064
+    ],
+    "max": [
+     0.00800000037997961,
+     0.40499999821186067,
+     0.006000000052154064
+    ]
+   }
+  },
+  {
+   "id": "intake_valve",
+   "parent": null,
+   "bbox": {
+    "min": [
+     -0.03200000043213368,
+     0.43799999990500504,
+     -0.014000000432133675
+    ],
+    "max": [
+     -0.003999999567866324,
+     0.4999999993294477,
+     0.014000000432133675
+    ]
+   }
+  },
+  {
+   "id": "intake_valve_head",
+   "parent": "intake_valve",
+   "bbox": {
+    "min": [
+     -0.03200000043213368,
+     0.43799999990500504,
+     -0.014000000432133675
+    ],
+    "max": [
+     -0.003999999567866324,
+     0.44200000009499485,
+     0.014000000432133675
+    ]
+   }
+  },
+  {
+   "id": "exhaust_valve",
+   "parent": null,
+   "bbox": {
+    "min": [
+     0.003999999567866324,
+     0.43799999990500504,
+     -0.014000000432133675
+    ],
+    "max": [
+     0.03200000043213368,
+     0.4999999993294477,
+     0.014000000432133675
+    ]
+   }
+  },
+  {
+   "id": "exhaust_valve_head",
+   "parent": "exhaust_valve",
+   "bbox": {
+    "min": [
+     0.003999999567866324,
+     0.43799999990500504,
+     -0.014000000432133675
+    ],
+    "max": [
+     0.03200000043213368,
+     0.44200000009499485,
+     0.014000000432133675
+    ]
+   }
+  }
+ ],
+ "rig": {
+  "dofs": {
+   "crank": {
+    "min": -1440,
+    "max": 1440,
+    "default": 0,
+    "label": "曲轴转角"
+   }
+  },
+  "drivers": {
+   "cycle": "mod(crank, 720)",
+   "piston_y": "r*cos(crank) + sqrt(rod^2 - (r*sin(crank))^2) - (r + rod)",
+   "rod_ang": "-asin(r*sin(crank)/rod)",
+   "intake_lift": "lift*max(0, sin(cycle))*clamp((360 - cycle)*1000, 0, 1)",
+   "exhaust_lift": "lift*max(0, -sin(cycle))*clamp((cycle - 360)*1000, 0, 1)"
+  },
+  "joints": {
+   "crank": {
+    "type": "hinge",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "dof": "crank"
+   },
+   "piston": {
+    "type": "slide",
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "dof": "piston_y"
+   },
+   "rod_pivot": {
+    "type": "hinge",
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "dof": "rod_ang"
+   },
+   "intake_valve": {
+    "type": "slide",
+    "axis": [
+     0,
+     -1,
+     0
+    ],
+    "dof": "intake_lift"
+   },
+   "exhaust_valve": {
+    "type": "slide",
+    "axis": [
+     0,
+     -1,
+     0
+    ],
+    "dof": "exhaust_lift"
+   }
+  },
+  "params": {
+   "bore": 0.08,
+   "r": 0.045,
+   "rod": 0.16,
+   "lift": 0.008
+  },
+  "rest": {
+   "crankcase": {
+    "at": [
+     0,
+     0.12,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "cylinder": {
+    "at": [
+     0,
+     0.35,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "head": {
+    "at": [
+     0,
+     0.48,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "spark_plug": {
+    "at": [
+     0,
+     0.5,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "crank": {
+    "at": [
+     0,
+     0.2,
+     -0.03
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "crank_pin": {
+    "at": [
+     0,
+     0.045,
+     0.03
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "piston": {
+    "at": [
+     0,
+     0.405,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "rod_pivot": {
+    "at": [
+     0,
+     0,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "rod": {
+    "at": [
+     0,
+     -0.08,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "intake_valve": {
+    "at": [
+     -0.018,
+     0.47,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "intake_valve_head": {
+    "at": [
+     0,
+     -0.03,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "exhaust_valve": {
+    "at": [
+     0.018,
+     0.47,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   },
+   "exhaust_valve_head": {
+    "at": [
+     0,
+     -0.03,
+     0
+    ],
+    "rot": [
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "anchors": {
+  "chamber": [
+   0,
+   0.45,
+   0
+  ],
+  "crank_center": [
+   0,
+   0.2,
+   0
+  ],
+  "piston_top": [
+   0,
+   0.43500000000000005,
+   0
+  ],
+  "intake": [
+   -0.018,
+   0.47,
+   0
+  ],
+  "exhaust": [
+   0.018,
+   0.47,
+   0
+  ],
+  "spark": [
+   0,
+   0.5,
+   0
+  ]
+ },
+ "anchor_parts": {
+  "piston_top": {
+   "part": "piston",
+   "at": [
+    0,
+    0.03,
+    0
+   ]
+  }
+ },
+ "source": {
+  "type": "parametric",
+  "spec": {
+   "id": "four_stroke",
+   "name": "单缸四冲程发动机",
+   "version": 1,
+   "units": "m",
+   "params": {
+    "bore": {
+     "value": 0.08,
+     "min": 0.05,
+     "max": 0.12,
+     "label": "缸径",
+     "unit": "m"
+    },
+    "r": {
+     "value": 0.045,
+     "min": 0.03,
+     "max": 0.06,
+     "label": "曲柄半径（行程的一半）",
+     "unit": "m"
+    },
+    "rod": {
+     "value": 0.16,
+     "min": 0.12,
+     "max": 0.2,
+     "label": "连杆长度",
+     "unit": "m"
+    },
+    "lift": {
+     "value": 0.008,
+     "min": 0.004,
+     "max": 0.012,
+     "label": "气门升程",
+     "unit": "m"
+    }
+   },
+   "dofs": {
+    "crank": {
+     "min": -1440,
+     "max": 1440,
+     "default": 0,
+     "label": "曲轴转角"
+    }
+   },
+   "drivers": {
+    "cycle": "mod(crank, 720)",
+    "piston_y": "r*cos(crank) + sqrt(rod^2 - (r*sin(crank))^2) - (r + rod)",
+    "rod_ang": "-asin(r*sin(crank)/rod)",
+    "intake_lift": "lift*max(0, sin(cycle))*clamp((360 - cycle)*1000, 0, 1)",
+    "exhaust_lift": "lift*max(0, -sin(cycle))*clamp((cycle - 360)*1000, 0, 1)"
+   },
+   "dims": {
+    "w": 0.3,
+    "h": 0.52,
+    "d": 0.22
+   },
+   "parts": [
+    {
+     "id": "crankcase",
+     "shape": "box",
+     "size": [
+      0.3,
+      0.24,
+      0.22
+     ],
+     "at": [
+      0,
+      0.12,
+      0
+     ],
+     "color": "clay"
+    },
+    {
+     "id": "cylinder",
+     "shape": "tube",
+     "r_outer": "bore/2 + 0.02",
+     "r_inner": "bore/2",
+     "h": 0.22,
+     "at": [
+      0,
+      0.35,
+      0
+     ],
+     "color": "glass",
+     "opacity": 0.35
+    },
+    {
+     "id": "head",
+     "shape": "box",
+     "size": [
+      0.16,
+      0.04,
+      0.16
+     ],
+     "at": [
+      0,
+      0.48,
+      0
+     ],
+     "color": "clay"
+    },
+    {
+     "id": "spark_plug",
+     "shape": "cylinder",
+     "r": 0.006,
+     "h": 0.04,
+     "at": [
+      0,
+      0.5,
+      0
+     ],
+     "color": "accent4"
+    },
+    {
+     "id": "crank",
+     "shape": "cylinder",
+     "r": 0.06,
+     "h": 0.02,
+     "axis": "z",
+     "at": [
+      0,
+      0.2,
+      -0.03
+     ],
+     "color": "clay",
+     "joint": {
+      "type": "hinge",
+      "axis": "z",
+      "dof": "crank"
+     }
+    },
+    {
+     "id": "crank_pin",
+     "shape": "cylinder",
+     "parent": "crank",
+     "r": 0.012,
+     "h": 0.04,
+     "axis": "z",
+     "at": [
+      0,
+      "r",
+      0.03
+     ],
+     "color": "accent1"
+    },
+    {
+     "id": "piston",
+     "shape": "cylinder",
+     "r": "bore/2 - 0.002",
+     "h": 0.06,
+     "at": [
+      0,
+      "0.2 + r + rod",
+      0
+     ],
+     "color": "accent3",
+     "joint": {
+      "type": "slide",
+      "axis": "y",
+      "dof": "piston_y"
+     }
+    },
+    {
+     "id": "rod_pivot",
+     "shape": "group",
+     "parent": "piston",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "joint": {
+      "type": "hinge",
+      "axis": "z",
+      "dof": "rod_ang"
+     }
+    },
+    {
+     "id": "rod",
+     "shape": "box",
+     "parent": "rod_pivot",
+     "size": [
+      0.016,
+      "rod",
+      0.012
+     ],
+     "at": [
+      0,
+      "-rod/2",
+      0
+     ],
+     "color": "accent4"
+    },
+    {
+     "id": "intake_valve",
+     "shape": "cylinder",
+     "r": 0.004,
+     "h": 0.06,
+     "at": [
+      -0.018,
+      0.47,
+      0
+     ],
+     "color": "accent2",
+     "joint": {
+      "type": "slide",
+      "axis": [
+       0,
+       -1,
+       0
+      ],
+      "dof": "intake_lift"
+     }
+    },
+    {
+     "id": "intake_valve_head",
+     "shape": "cylinder",
+     "parent": "intake_valve",
+     "r": 0.014,
+     "h": 0.004,
+     "at": [
+      0,
+      -0.03,
+      0
+     ],
+     "color": "accent2"
+    },
+    {
+     "id": "exhaust_valve",
+     "shape": "cylinder",
+     "r": 0.004,
+     "h": 0.06,
+     "at": [
+      0.018,
+      0.47,
+      0
+     ],
+     "color": "accent1",
+     "joint": {
+      "type": "slide",
+      "axis": [
+       0,
+       -1,
+       0
+      ],
+      "dof": "exhaust_lift"
+     }
+    },
+    {
+     "id": "exhaust_valve_head",
+     "shape": "cylinder",
+     "parent": "exhaust_valve",
+     "r": 0.014,
+     "h": 0.004,
+     "at": [
+      0,
+      -0.03,
+      0
+     ],
+     "color": "accent1"
+    }
+   ],
+   "anchors": {
+    "chamber": [
+     0,
+     0.45,
+     0
+    ],
+    "crank_center": [
+     0,
+     0.2,
+     0
+    ],
+    "piston_top": {
+     "part": "piston",
+     "at": [
+      0,
+      0.03,
+      0
+     ]
+    },
+    "intake": "intake_valve",
+    "exhaust": "exhaust_valve",
+    "spark": "spark_plug"
+   }
+  }
+ }
+}

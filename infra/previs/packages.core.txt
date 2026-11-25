@@ -1,0 +1,5 @@
+# P0 core: R3F renderer inside Remotion (versions pinned to remotion 4.0.484 / React 19.2.7)
+@remotion/three@4.0.484
+three@0.178.0
+@react-three/fiber@9.3.0
+@types/three@0.178.0

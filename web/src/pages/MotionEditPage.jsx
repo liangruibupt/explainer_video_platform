@@ -83,7 +83,7 @@ export default function MotionEditPage() {
         const j = await call(`/jobs/${id}`)
         if (!alive) return
         setJob(j)
-        if (j.renderer !== 'remotion' || j.status !== 'done') { setPhase('conflict'); return }
+        if (!['remotion', 'previs3d'].includes(j.renderer) || j.status !== 'done') { setPhase('conflict'); return }
       } catch { /* let the editor call report the problem */ }
       let res
       try {
@@ -228,8 +228,8 @@ export default function MotionEditPage() {
         {phase === 'conflict' && (
           <div className="mv-msg">
             <p>只有已完成的 Remotion 作品才能在动效编辑器中打开。</p>
-            {job && job.renderer !== 'remotion' && <p className="muted">这个作品用的是 Canvas 绘制。可以在工作台把「渲染方式」选为「Remotion 动效卡」重新制作。</p>}
-            {job && job.renderer === 'remotion' && job.status !== 'done' && <p className="muted">这个作品还没有制作完成，完成后再来编辑。</p>}
+            {job && !['remotion', 'previs3d'].includes(job.renderer) && <p className="muted">这个作品用的是 Canvas 绘制。可以在工作台把「渲染方式」选为「Remotion 动效卡」重新制作。</p>}
+            {job && ['remotion', 'previs3d'].includes(job.renderer) && job.status !== 'done' && <p className="muted">这个作品还没有制作完成，完成后再来编辑。</p>}
             {msg && <p className="muted">{msg}</p>}
             <Link className="btn" to={`/jobs/${id}`}>返回作品</Link>
           </div>

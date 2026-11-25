@@ -1,0 +1,16 @@
+{
+  "id": "wf_previs_explainer",
+  "name": "3D 白模预演讲解视频",
+  "description": "主题 → 讲解视频（渲染方式 3D 白模预演：Opus 规划资产和镜头，参数化建模，真实配音卡点）→ 人工审核后保存。",
+  "nodes": [
+    {"id": "n1", "type": "input.text", "params": {"text": "单缸四冲程发动机怎么工作"}},
+    {"id": "n2", "type": "explainer.video", "params": {"seconds": 60, "ratio": "16:9", "renderer": "previs3d", "music": "none"}},
+    {"id": "n3", "type": "review.human", "params": {"note": "看镜头、尺寸和卡点是否对得上旁白"}},
+    {"id": "n4", "type": "output.save", "params": {"title": "3D 白模预演"}}
+  ],
+  "edges": [
+    {"from": "n1.text", "to": "n2.topic"},
+    {"from": "n2.video", "to": "n3.input"},
+    {"from": "n3.output", "to": "n4.work"}
+  ]
+}

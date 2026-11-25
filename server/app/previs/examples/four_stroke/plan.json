@@ -1,0 +1,135 @@
+{
+ "version": 1,
+ "assets": [
+  {
+   "id": "four_stroke",
+   "kind": "parametric",
+   "spec": {
+    "id": "four_stroke",
+    "name": "单缸四冲程发动机",
+    "version": 1,
+    "units": "m",
+    "params": {
+     "bore": {"value": 0.08, "min": 0.05, "max": 0.12, "label": "缸径", "unit": "m"},
+     "r": {"value": 0.045, "min": 0.03, "max": 0.06, "label": "曲柄半径（行程的一半）", "unit": "m"},
+     "rod": {"value": 0.16, "min": 0.12, "max": 0.2, "label": "连杆长度", "unit": "m"},
+     "lift": {"value": 0.008, "min": 0.004, "max": 0.012, "label": "气门升程", "unit": "m"}
+    },
+    "dofs": {
+     "crank": {"min": -1440, "max": 1440, "default": 0, "label": "曲轴转角"}
+    },
+    "drivers": {
+     "cycle": "mod(crank, 720)",
+     "piston_y": "r*cos(crank) + sqrt(rod^2 - (r*sin(crank))^2) - (r + rod)",
+     "rod_ang": "-asin(r*sin(crank)/rod)",
+     "intake_lift": "lift*max(0, sin(cycle))*clamp((360 - cycle)*1000, 0, 1)",
+     "exhaust_lift": "lift*max(0, -sin(cycle))*clamp((cycle - 360)*1000, 0, 1)"
+    },
+    "dims": {"w": 0.3, "h": 0.52, "d": 0.22},
+    "parts": [
+     {"id": "crankcase", "shape": "box", "size": [0.3, 0.24, 0.22], "at": [0, 0.12, 0], "color": "clay", "opacity": 0.45},
+     {"id": "cylinder", "shape": "tube", "r_outer": "bore/2 + 0.02", "r_inner": "bore/2", "h": 0.22, "at": [0, 0.35, 0], "color": "glass", "opacity": 0.35},
+     {"id": "head", "shape": "box", "size": [0.16, 0.04, 0.16], "at": [0, 0.48, 0], "color": "clay", "opacity": 0.6},
+     {"id": "spark_plug", "shape": "cylinder", "r": 0.006, "h": 0.04, "at": [0, 0.5, 0], "color": "accent4"},
+     {"id": "crank", "shape": "cylinder", "r": 0.06, "h": 0.02, "axis": "z", "at": [0, 0.2, -0.03], "color": "clay",
+      "joint": {"type": "hinge", "axis": "z", "dof": "crank"}},
+     {"id": "crank_pin", "shape": "cylinder", "parent": "crank", "r": 0.012, "h": 0.04, "axis": "z", "at": [0, "r", 0.03], "color": "accent1"},
+     {"id": "piston", "shape": "cylinder", "r": "bore/2 - 0.002", "h": 0.06, "at": [0, "0.2 + r + rod", 0], "color": "accent3",
+      "joint": {"type": "slide", "axis": "y", "dof": "piston_y"}},
+     {"id": "rod_pivot", "shape": "group", "parent": "piston", "at": [0, 0, 0],
+      "joint": {"type": "hinge", "axis": "z", "dof": "rod_ang"}},
+     {"id": "rod", "shape": "box", "parent": "rod_pivot", "size": [0.016, "rod", 0.012], "at": [0, "-rod/2", 0], "color": "accent4"},
+     {"id": "intake_valve", "shape": "cylinder", "r": 0.004, "h": 0.06, "at": [-0.018, 0.47, 0], "color": "accent2",
+      "joint": {"type": "slide", "axis": [0, -1, 0], "dof": "intake_lift"}},
+     {"id": "intake_valve_head", "shape": "cylinder", "parent": "intake_valve", "r": 0.014, "h": 0.004, "at": [0, -0.03, 0], "color": "accent2"},
+     {"id": "exhaust_valve", "shape": "cylinder", "r": 0.004, "h": 0.06, "at": [0.018, 0.47, 0], "color": "accent1",
+      "joint": {"type": "slide", "axis": [0, -1, 0], "dof": "exhaust_lift"}},
+     {"id": "exhaust_valve_head", "shape": "cylinder", "parent": "exhaust_valve", "r": 0.014, "h": 0.004, "at": [0, -0.03, 0], "color": "accent1"}
+    ],
+    "anchors": {
+     "chamber": [0, 0.45, 0],
+     "crank_center": [0, 0.2, 0],
+     "piston_top": {"part": "piston", "at": [0, 0.03, 0]},
+     "intake": "intake_valve",
+     "exhaust": "exhaust_valve",
+     "spark": "spark_plug"
+    }
+   }
+  }
+ ],
+ "sets": [
+  {
+   "id": "bench",
+   "name": "工作台",
+   "units": "m",
+   "background": "#e9e6e1",
+   "ground": {"kind": "grid", "size": 4, "color": "#dedad3"},
+   "lights": "studio",
+   "objects": [
+    {"id": "eng", "asset": "@four_stroke", "at": [0, 0, 0], "pose": {"crank": 0}}
+   ],
+   "marks": {
+    "overview": [0.9, 0.55, 1.1],
+    "chamber": "eng.chamber",
+    "engine": "eng"
+   }
+  }
+ ],
+ "shots": [
+  {
+   "id": "s01",
+   "set": "bench",
+   "camera": {
+    "path": "catmull",
+    "keys": [
+     {"at": {"mark": "start"}, "orbit": {"around": "eng.crank_center", "r": 1.4, "az": 40, "el": 18}, "look": [0, 0.28, 0], "lens_mm": 35},
+     {"at": {"mark": "end"}, "orbit": {"around": "eng.crank_center", "r": 1.0, "az": -10, "el": 10}, "look": [0, 0.3, 0], "lens_mm": 40, "ease": "inOutCubic"}
+    ]
+   },
+   "actions": [
+    {"op": "spin", "target": "eng", "dof": "crank", "deg_per_s": 180, "at": {"mark": "start"}},
+    {"op": "label", "text": "活塞", "attach": "eng.piston_top", "side": "right", "at": {"word": "活塞"}, "until": {"mark": "end"}},
+    {"op": "label", "text": "曲轴", "attach": "eng.crank_center", "side": "left", "at": {"word": "曲轴"}, "until": {"mark": "end"}}
+   ],
+   "style": {"look": "clay", "shadows": true, "fade_in": 0.3}
+  },
+  {
+   "id": "s02",
+   "set": "bench",
+   "camera": {
+    "keys": [
+     {"at": {"mark": "start"}, "pos": [0.55, 0.5, 0.75], "look": "eng.chamber", "lens_mm": 50},
+     {"at": {"word": "进气", "offset": -0.3}, "pos": [0.35, 0.48, 0.55], "look": "eng.intake", "lens_mm": 60, "ease": "inOut"},
+     {"at": {"word": "压缩"}, "pos": [0.0, 0.42, 0.62], "look": "eng.chamber", "lens_mm": 50, "ease": "inOut"}
+    ]
+   },
+   "actions": [
+    {"op": "section", "targets": ["eng"], "normal": [0, 0, -1], "offset": 0, "at": {"mark": "start"}, "until": {"mark": "end"}},
+    {"op": "pose", "target": "eng", "dof": "crank", "to": 180, "at": {"word": "进气"}, "until": {"word": "压缩"}, "ease": "linear"},
+    {"op": "highlight", "target": "eng.intake_valve", "color": "#6f9fd8", "at": {"word": "进气"}, "until": {"word": "压缩"}},
+    {"op": "pose", "target": "eng", "dof": "crank", "to": 360, "at": {"word": "压缩"}, "until": {"mark": "end"}, "ease": "linear"},
+    {"op": "dimension", "from": [-0.07, 0.405, 0], "to": [-0.07, 0.315, 0], "text": "行程 90 mm", "at": {"word": "行程"}, "until": {"mark": "end"}}
+   ],
+   "style": {"look": "clay", "shadows": true}
+  },
+  {
+   "id": "s03",
+   "set": "bench",
+   "camera": {
+    "keys": [
+     {"at": {"mark": "start"}, "pos": [0.0, 0.5, 0.6], "look": "eng.chamber", "lens_mm": 50},
+     {"at": {"word": "点火"}, "pos": [0.0, 0.5, 0.42], "look": "eng.spark", "lens_mm": 70, "cut": true},
+     {"at": {"word": "做功", "offset": 0.2}, "pos": [0.6, 0.35, 0.8], "look": "eng.crank_center", "lens_mm": 35, "ease": "out"}
+    ]
+   },
+   "actions": [
+    {"op": "pose", "target": "eng", "dof": "crank", "to": 360, "at": {"mark": "start"}},
+    {"op": "highlight", "target": "eng.spark_plug", "color": "#ffd24a", "at": {"word": "点火"}, "until": {"word": "做功"}},
+    {"op": "pose", "target": "eng", "dof": "crank", "to": 540, "at": {"word": "做功"}, "until": {"word": "排气"}, "ease": "out"},
+    {"op": "pose", "target": "eng", "dof": "crank", "to": 720, "at": {"word": "排气"}, "until": {"mark": "end"}, "ease": "linear"},
+    {"op": "highlight", "target": "eng.exhaust_valve", "color": "#d98c5f", "at": {"word": "排气"}, "until": {"mark": "end"}}
+   ],
+   "style": {"look": "clay", "shadows": true, "fade_out": 0.4}
+  }
+ ]
+}

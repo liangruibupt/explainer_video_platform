@@ -1,0 +1,1 @@
+{"name":"evp-previs-turntable","private":true,"type":"module","description":"Minimal clay turntable for model assets (docs/PREVIS_CONTRACT.md 4.4). node_modules resolves via server/app/previs/js/node_modules -> $EVP_TOOLS/remotion-base/node_modules."}

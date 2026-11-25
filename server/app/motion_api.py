@@ -46,8 +46,9 @@ def _remotion_job(job_id: str) -> tuple[str, dict]:
     job = pipeline.read_job(jid)
     if not job:
         raise HTTPException(404, "没有这个任务")
-    if job.get("renderer") != "remotion" or job.get("status") != "done":
-        raise HTTPException(409, "动效编辑器只能打开已完成的 Remotion 任务（renderer=remotion）")
+    if job.get("renderer") not in ("remotion", "previs3d") or job.get("status") != "done":
+        raise HTTPException(409, "动效编辑器只能打开已完成的 Remotion 或 3D 白模预演任务"
+                                 "（renderer=remotion / previs3d）")
     if not (pipeline.job_dir(jid) / "remotion" / "src" / "workbench.ts").exists():
         raise HTTPException(409, "该任务没有 Remotion 工程（缺少 remotion/src/workbench.ts）")
     return jid, job

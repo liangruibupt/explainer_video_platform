@@ -17,7 +17,7 @@ const PR_STATE = {
   drafting: ['起草中', 'running'], checking: ['对比中', 'running'], draft: ['草稿（未开 PR）', ''],
   open: ['PR 待合并', 'waiting_review'], merged: ['已合并', 'done'], closed: ['已关闭', ''], failed: ['失败', 'failed'],
 }
-const KIND = { job: '讲解视频', workflow: '工作流', image: '图像', video: 'AI 视频', music: '音乐', avatar: '数字人' }
+const KIND = { job: '讲解视频', workflow: '工作流', image: '图像', video: 'AI 视频', music: '音乐', avatar: '数字人', mesh: '图生 3D' }
 const TARGET_URL = {
   job: (t) => `/jobs/${t.id}`, workflow: (t) => `/workflow?run=${t.id}`, image: () => '/image',
   video: () => '/video', music: () => '/music', avatar: () => '/avatar',

@@ -250,6 +250,9 @@ def test_page_off_and_v2v_not_segmented(seggpu, isolate, media):  # noqa: F811
     assert wait(r.json()["id"], 120)["status"] == "done" and len(seggpu.reqs) == 1
     r = post_files({"ref_video": media["mp4"]}, script=LONG, segment_s="30")
     assert r.status_code == 201 and r.json()["segment_s"] == 0 and r.json()["segments"] == 1
+    # let this job finish here: left running, its worker thread submits to the fake GPU of the
+    # next test (gpu_client._gpus is global) and that test counts one request too many
+    wait(r.json()["id"], 120)
     r = post_files({"portrait": media["png"]}, script="你好", segment_s="90")
     assert r.status_code == 422 and "segment_s" in r.json()["detail"]
     e = client.get("/api/avatars/estimate", params={"script": LONG, "segment_s": 30}).json()

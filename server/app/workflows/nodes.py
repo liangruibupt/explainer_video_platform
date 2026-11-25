@@ -30,7 +30,7 @@ from pathlib import Path
 from .. import llm, pipeline
 
 FILE_TYPES = ("image", "audio", "video")
-PORT_TYPES = ("text", "image", "audio", "video", "json", "any")
+PORT_TYPES = ("text", "image", "audio", "video", "json", "model", "any")  # model = library asset id
 INSTRUMENTAL_LYRICS = "[Intro]\n\n[Instrumental]\n\n[Outro]"
 TAIL = llm.MUSIC_TAIL  # "ambient, no drums, instrumental, no vocals"
 
@@ -297,8 +297,10 @@ def _music_yue2(inputs, p, ctx):
               "illustrations": {"type": "integer", "default": 0, "min": 0, "max": 4},
               "clips": {"type": "integer", "default": 0, "min": 0, "max": 2},
               "brief": {"type": "string", "default": ""},
-              "renderer": {"type": "string", "default": "html", "enum": ["html", "remotion"],
-                           "label": "html=Canvas 绘制；remotion=动效卡，可在动效编辑器里改"}},
+              "renderer": {"type": "string", "default": "html",
+                           "enum": ["html", "remotion", "previs3d"],
+                           "label": "html=Canvas 绘制；remotion=动效卡，可在动效编辑器里改；"
+                                    "previs3d=3D 白模预演"}},
       doc="把现有的讲解视频任务作为子任务运行（data/jobs/<id>），返回成片 MP4。"
           "插图、视频镜头、AI 音乐会用到对应 GPU。")
 def _explainer(inputs, p, ctx):
@@ -470,3 +472,13 @@ except ModuleNotFoundError as _e:  # the avatar module is optional
         raise
 else:
     _register_avatar_nodes(NODES)
+
+# 3D previs (docs/PREVIS_CONTRACT.md section 11): asset.build (A), previs.render (B),
+# agent.previs_plan (C), asset.image3d (E). Port type "model" = library asset id.
+from ..assets.model_node import register as _register_model_node  # noqa: E402
+from ..mesh_node import register as _register_mesh_node  # noqa: E402
+from ..previs.node import register as _register_previs_node  # noqa: E402
+from ..previs.plan_node import register as _register_plan_node  # noqa: E402
+
+for _reg in (_register_model_node, _register_previs_node, _register_plan_node, _register_mesh_node):
+    _reg(NODES)

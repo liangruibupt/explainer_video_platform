@@ -32,17 +32,19 @@ POLICY=$(cat <<JSON
  {"Sid":"Jobs","Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],
   "Resource":["arn:aws:s3:::$B_AP/jobs/video/*","arn:aws:s3:::$B_AP/jobs/video-ec2/*",
               "arn:aws:s3:::$B_US/jobs/image-ec2/*","arn:aws:s3:::$B_US/jobs/music-ec2/*",
-              "arn:aws:s3:::$B_US/jobs/avatar-ec2/*"]},
+              "arn:aws:s3:::$B_US/jobs/avatar-ec2/*",
+              "arn:aws:s3:::$B_US/jobs/mesh-ec2/*"]},
  {"Sid":"ListAp","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::$B_AP",
   "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/video/*","jobs/video-ec2/*"]}}},
  {"Sid":"ListUs","Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::$B_US",
-  "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/image-ec2/*","jobs/music-ec2/*","jobs/avatar-ec2/*"]}}},
+  "Condition":{"StringLike":{"s3:prefix":["weights/*","jobs/image-ec2/*","jobs/music-ec2/*","jobs/avatar-ec2/*","jobs/mesh-ec2/*"]}}},
  {"Sid":"EcrAuth","Effect":"Allow","Action":"ecr:GetAuthorizationToken","Resource":"*"},
  {"Sid":"EcrPull","Effect":"Allow","Action":["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability"],
   "Resource":["arn:aws:ecr:ap-south-1:$ACCT:repository/evp/minimax-h3",
               "arn:aws:ecr:us-east-1:$ACCT:repository/evp/qwen-image",
               "arn:aws:ecr:us-east-1:$ACCT:repository/evp/yue2",
-              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/avatar"]}]}
+              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/avatar",
+              "arn:aws:ecr:us-east-1:$ACCT:repository/evp/mesh"]}]}
 JSON
 )
 aws iam put-role-policy --role-name $ROLE --policy-name evp-gpu-worker --policy-document "$POLICY"
@@ -59,8 +61,22 @@ JSON
 )
 aws iam put-role-policy --role-name "$AGENT_ROLE" --policy-name EvpGpuWorkerPassRole --policy-document "$PASS"
 
+# mesh (图生 3D) builder: the temporary x86 builder (infra/mesh/builder.py) runs with the
+# instance profile evp-video-builder; it needs its run prefix and push to evp/mesh only.
+MESH_BUILD=$(cat <<JSON
+{"Version":"2012-10-17","Statement":[
+ {"Sid":"MeshBuildRun","Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],
+  "Resource":"arn:aws:s3:::$B_US/jobs/mesh-build/*"},
+ {"Sid":"MeshEcrPush","Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer",
+  "ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload"],
+  "Resource":"arn:aws:ecr:us-east-1:$ACCT:repository/evp/mesh"}]}
+JSON
+)
+aws iam put-role-policy --role-name evp-video-builder --policy-name evp-builder-mesh --policy-document "$MESH_BUILD"
+
 echo "verify:"
 aws iam get-instance-profile --instance-profile-name $ROLE --query "InstanceProfile.Roles[].RoleName" --output text
 aws iam get-role-policy --role-name $ROLE --policy-name evp-gpu-worker --query PolicyName --output text
 aws iam get-role-policy --role-name "$AGENT_ROLE" --policy-name EvpGpuWorkerPassRole --query PolicyName --output text
+aws iam get-role-policy --role-name evp-video-builder --policy-name evp-builder-mesh --query PolicyName --output text
 echo "done. Set \"instance_profile\": \"$ROLE\" in infra/gpu_ec2/modules/{video,image,music}.json"

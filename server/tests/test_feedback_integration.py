@@ -8,6 +8,7 @@ open?force / close over HTTP. llm.ask, git push and gh are stubbed.
 import json
 import shutil
 import subprocess
+import threading
 import time
 
 import pytest
@@ -111,6 +112,13 @@ def make_three(client, monkeypatch):
             if (store.get(ids[-1]) or {}).get("analysis_id"):
                 break
             time.sleep(0.05)
+    # the third analysis acts on its own in the background (draft with the "not json" stub,
+    # which fails); on a busy box it can still be drafting when the test calls act, which then
+    # returns that in-flight proposal. Wait for the background threads (api._bg) to finish.
+    for _ in range(400):
+        if not any(t.name == "feedback-analysis" and t.is_alive() for t in threading.enumerate()):
+            break
+        time.sleep(0.05)
     return ids
 
 

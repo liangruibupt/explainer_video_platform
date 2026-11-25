@@ -1,0 +1,6 @@
+# Part A (assets): GLB writer/reader that works in plain Node, plus the meshoptimizer simplifier
+# for normalize-glb. @gltf-transform/functions is NOT used (it pulls sharp); A welds and
+# simplifies with meshoptimizer directly.
+@gltf-transform/core@4.5.1
+@gltf-transform/extensions@4.5.1
+meshoptimizer@1.3.0

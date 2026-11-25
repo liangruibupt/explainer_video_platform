@@ -31,8 +31,11 @@ def _check_project(project_id):
 
 
 def _public(m: dict) -> dict:
-    return m | {"url": f"/api/assets/{m['id']}/file",
-                "thumb_url": f"/api/assets/{m['id']}/thumb" if m.get("thumb") else None}
+    out = m | {"url": f"/api/assets/{m['id']}/file",
+               "thumb_url": f"/api/assets/{m['id']}/thumb" if m.get("thumb") else None}
+    if m.get("kind") == "model":  # 3D previs (docs/PREVIS_CONTRACT.md 4.4): model_api serves it
+        out["turntable_url"] = f"/api/assets/{m['id']}/turntable" if m.get("turntable") else None
+    return out
 
 
 def _fail(e: store.AssetError):
@@ -42,7 +45,7 @@ def _fail(e: store.AssetError):
 # ---------------------------------------------------------------- assets
 
 @router.get("/api/assets")
-def asset_list(kind: Optional[Literal["image", "audio", "video"]] = None,
+def asset_list(kind: Optional[Literal["image", "audio", "video", "model"]] = None,
                project_id: Optional[str] = Query(None, pattern=PROJECT_PATTERN)):
     return [_public(m) for m in store.list_all(kind or "", project_id or "")]
 

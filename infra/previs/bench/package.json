@@ -1,0 +1,1 @@
+{"name":"evp-previs-bench","private":true,"type":"module","description":"Greybox render benchmark (docs/PREVIS_CONTRACT.md section 10). node_modules -> $EVP_TOOLS/remotion-base/node_modules (run.sh links it)."}
