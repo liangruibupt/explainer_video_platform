@@ -152,6 +152,9 @@ def test_rewrite_keeps_the_asset_id():
 
 def test_default_build_without_part_a(monkeypatch):
     monkeypatch.setitem(sys.modules, "app.previs.assets_build", None)  # import fails
+    # once A is merged another test may have imported it; `from . import` reads the attribute first
+    import app.previs as pkg
+    monkeypatch.delattr(pkg, "assets_build", raising=False)
     with pytest.raises(plan.BuildUnavailable, match="assets_build"):
         plan.default_build(SPEC)
     with pytest.raises(plan.BuildUnavailable):  # not swallowed into a build issue
