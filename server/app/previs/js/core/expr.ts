@@ -78,17 +78,18 @@ export function evaluate(src: string | number, env: Record<string, number>): num
     if (!Number.isFinite(src)) throw new ExprError("not a finite number", String(src));
     return src;
   }
-  const toks = lex(src);
+  const text: string = src;
+  const toks = lex(text);
   let p = 0;
   const peek = () => toks[p];
   const isOp = (v: string) => peek()?.k === "op" && peek().v === v;
   const expect = (v: string) => {
-    if (!isOp(v)) throw new ExprError(`expected "${v}"`, src);
+    if (!isOp(v)) throw new ExprError(`expected "${v}"`, text);
     p++;
   };
   function primary(): number {
     const t = peek();
-    if (!t) throw new ExprError("unexpected end", src);
+    if (!t) throw new ExprError("unexpected end", text);
     if (t.k === "num") {
       p++;
       return t.v;
@@ -109,7 +110,7 @@ export function evaluate(src: string | number, env: Record<string, number>): num
       if (isOp("(")) {
         p++;
         const f = FUNCS[t.v];
-        if (!f) throw new ExprError(`unknown function ${t.v}`, src);
+        if (!f) throw new ExprError(`unknown function ${t.v}`, text);
         const args: number[] = [];
         if (!isOp(")")) {
           args.push(add());
@@ -119,14 +120,14 @@ export function evaluate(src: string | number, env: Record<string, number>): num
           }
         }
         expect(")");
-        if (args.length < f[0] || args.length > f[1]) throw new ExprError(`${t.v} takes ${f[0]}-${f[1]} args`, src);
+        if (args.length < f[0] || args.length > f[1]) throw new ExprError(`${t.v} takes ${f[0]}-${f[1]} args`, text);
         return f[2](...args);
       }
       if (t.v in env) return env[t.v];
       if (t.v in CONSTS) return CONSTS[t.v];
-      throw new ExprError(`unknown name ${t.v}`, src);
+      throw new ExprError(`unknown name ${t.v}`, text);
     }
-    throw new ExprError(`unexpected "${t.v}"`, src);
+    throw new ExprError(`unexpected "${t.v}"`, text);
   }
   function power(): number {
     const b = primary();
@@ -166,8 +167,8 @@ export function evaluate(src: string | number, env: Record<string, number>): num
     return v;
   }
   const v = add();
-  if (p !== toks.length) throw new ExprError(`unexpected "${(toks[p] as Tok).v}"`, src);
-  if (!Number.isFinite(v)) throw new ExprError("result is not finite", src);
+  if (p !== toks.length) throw new ExprError(`unexpected "${(toks[p] as Tok).v}"`, text);
+  if (!Number.isFinite(v)) throw new ExprError("result is not finite", text);
   return v;
 }
 
