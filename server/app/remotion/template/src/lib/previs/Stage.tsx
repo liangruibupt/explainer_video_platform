@@ -78,7 +78,8 @@ export const Ground: React.FC<{ kind: string; size: number; color: string; grid:
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={shadows} position={[0, -0.0005, 0]}>
-        <planeGeometry args={[size, size]} />
+        {/* the floor runs past the grid so its edge never shows on the horizon */}
+        <planeGeometry args={[Math.max(size * 10, 40), Math.max(size * 10, 40)]} />
         <meshStandardMaterial color={color} roughness={1} metalness={0} />
       </mesh>
       {grid && kind === "grid" && <gridHelper args={[size, div, major, lines]} position={[0, 0.0005, 0]} />}
