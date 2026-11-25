@@ -203,6 +203,8 @@ export function compileShot(inp: CompileInput): Compiled {
   const subjects: Subject[] = [];
   /** pose / spin subjects: the parts that move during the action, filled in after the tracks. */
   const motion: { s: Subject }[] = [];
+  /** show: the subject is the shown object / part from `at` until it is hidden again (or the end). */
+  const shows: { where: string; a: number; key: string; obj: string; part?: string }[] = [];
 
   actions.forEach((act, i) => {
     const w = `actions[${i}]`;
@@ -219,7 +221,7 @@ export function compileShot(inp: CompileInput): Compiled {
           err("unknown_dof", `物体 ${t[0]} 没有自由度 ${act.dof}`, w);
           return;
         }
-        motion.push({ s: { where: w, from: a, to: b, obj: t[0] } });
+        motion.push({ s: { where: w, op: act.op, from: a, to: b, obj: t[0] } });
         const m = dofSegs.get(t[0]) ?? new Map<string, Seg[]>();
         dofSegs.set(t[0], m);
         const l = m.get(act.dof) ?? [];
@@ -234,7 +236,7 @@ export function compileShot(inp: CompileInput): Compiled {
       case "move": {
         const t = target(act.target, w, false);
         if (!t) return;
-        subjects.push({ where: w, from: a, to: b, obj: t[0] });
+        subjects.push({ where: w, op: act.op, from: a, to: b, obj: t[0] });
         const l = moveSegs.get(t[0]) ?? [];
         moveSegs.set(t[0], l);
         l.push({ a, b, to: vec(act.to), rot: act.rot_deg ? (vec(act.rot_deg).map((x) => x * D2R) as V3) : undefined, ease: act.ease });
@@ -248,12 +250,13 @@ export function compileShot(inp: CompileInput): Compiled {
         const l = visSegs.get(key) ?? [];
         visSegs.set(key, l);
         l.push({ a, fade: Math.max(0, Math.round((act.fade ?? 0) * fps)), on: act.op === "show" });
+        if (act.op === "show") shows.push({ where: w, a, key, obj: t[0], part: t[1] });
         break;
       }
       case "highlight": {
         const t = target(act.target, w, true);
         if (!t) return;
-        subjects.push({ where: w, from: a, to: b, obj: t[0], ...(t[1] ? { part: t[1] } : {}) });
+        subjects.push({ where: w, op: act.op, from: a, to: b, obj: t[0], ...(t[1] ? { part: t[1] } : {}) });
         const l = highlights.get(t[0]) ?? [];
         highlights.set(t[0], l);
         l.push({ from: a, to: b, color: act.color ?? "#ffd24a", ...(t[1] ? { part: t[1] } : {}) });
@@ -278,7 +281,7 @@ export function compileShot(inp: CompileInput): Compiled {
       case "explode": {
         const t = target(act.target, w, false);
         if (!t) return;
-        subjects.push({ where: w, from: a, to: b, obj: t[0] });
+        subjects.push({ where: w, op: act.op, from: a, to: b, obj: t[0] });
         const l = explSegs.get(t[0]) ?? [];
         explSegs.set(t[0], l);
         l.push({ a, b, to: act.factor, ease: act.ease });
@@ -288,6 +291,12 @@ export function compileShot(inp: CompileInput): Compiled {
         err("unknown_target", `未知动作 ${(act as { op: string }).op}`, w);
     }
   });
+
+  for (const s of shows) {
+    const hides = [...(visSegs.get(s.key) ?? []), ...(s.part ? visSegs.get(s.obj) ?? [] : [])].filter((x) => !x.on && x.a > s.a).map((x) => x.a);
+    const to = hides.length ? Math.min(...hides) - 1 : last;
+    subjects.push({ where: s.where, op: "show", from: s.a, to, obj: s.obj, ...(s.part ? { part: s.part } : {}) });
+  }
 
   // dof_conflict: two actions drive the same DOF of the same object on a common frame range.
   for (const [o, m] of dofSegs)
@@ -537,7 +546,7 @@ export function compileShot(inp: CompileInput): Compiled {
       for (let f = ov.from; f <= ov.to; f++) tr.push(r6a(apply(worldCache.get(first.follow[0])![f][first.follow[1]], first.follow[2])));
       ov.track = compact(tr);
     } else ov.track = [ov.point];
-    subjects.push({ where: l.where, from: ov.from, to: ov.to, point: ov.track });
+    subjects.push({ where: l.where, op: "label", from: ov.from, to: ov.to, point: ov.track });
   }
   for (const d of dimRefs) {
     const ov = overlays[d.o] as Extract<ResolvedShot["overlays"][number], { kind: "dimension" }>;
@@ -545,7 +554,7 @@ export function compileShot(inp: CompileInput): Compiled {
     const b = point(d.to, ov.from, `${d.where}.to`);
     if (a) ov.a = r6a(a.p) as V3;
     if (b) ov.b = r6a(b.p) as V3;
-    if (a && b) subjects.push({ where: d.where, from: ov.from, to: ov.to, point: [ov.a.map((x, k) => (x + ov.b[k]) / 2)] });
+    if (a && b) subjects.push({ where: d.where, op: "dimension", from: ov.from, to: ov.to, point: [ov.a.map((x, k) => (x + ov.b[k]) / 2)] });
   }
 
   const st = spec.style ?? {};

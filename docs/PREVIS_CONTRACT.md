@@ -143,7 +143,7 @@ E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（�
 
 `node .../previs.mjs compile-shot --plan plan.json --shot sNN --assets <asset_dir_map.json> --words words.json --durations durations.json --size 1920x1080 --out resolved.json`，再 `check-shot resolved.json --assets ... > report.json`。Python 包装：`server/app/previs/shots.py`：`compile_all(job_dir) -> dict`（每个镜头的 `ResolvedShot` 路径和检查报告）。
 
-`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。B 加进 `types.ts` 的字段：`objects[].scale`、`explode_dirs`、`part_visible`（单个部件的显隐）、`highlight[].part`、标注的逐帧 `track`、顶层 `subjects`（检查读的目标列表）。`style.fade_in`/`fade_out` 在 ShotSpec 里是秒，在 ResolvedShot 里是帧。
+`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。B 加进 `types.ts` 的字段：`objects[].scale`、`explode_dirs`、`part_visible`（单个部件的显隐）、`highlight[].part`、标注的逐帧 `track`、顶层 `subjects`（检查读的目标列表，每项带动作的 `op`；`show` 的目标从 `at` 到下一次 `hide` 或镜头结束）。`style.fade_in`/`fade_out` 在 ShotSpec 里是秒，在 ResolvedShot 里是帧。
 
 检查（每帧都查，CPU）：
 
@@ -151,8 +151,8 @@ E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（�
 |---|---|---|
 | `camera_inside` | error | 相机位置在任一部件当前姿态的包围盒里（外扩 2 cm） |
 | `look_out_of_frame` | error | 看向点投影到画面外 |
-| `subject_out_of_frame` | warn | 动作或标注的目标在它生效期间有超过 30% 的帧中心不在画面里（安全框 5%） |
-| `subject_occluded` | warn | 同上期间，从相机到目标中心的射线先碰到别的部件的包围盒，帧数超过 50% |
+| `subject_out_of_frame` | warn / error | 动作或标注的目标在它生效期间有超过 30% 的帧中心不在画面里（安全框 5%）。动作是 `show`、`label`、`highlight`、`dimension`（目的就是让观众看到目标），而且不在画面里的帧 ≥ 90% 时是 **error**，其余是 warn |
+| `subject_occluded` | warn / error | 同上期间，从相机到目标的射线（中心和 6 个面上的采样点，全部）先碰到别的不透明部件的包围盒，帧数超过 50%；标注点或尺寸线中点所在的部件（点在它的包围盒里，外扩 1 cm）不算遮挡。error 的条件同上（这四种动作，≥ 90% 的帧被挡住） |
 | `camera_jump` | error | 非 `cut` 帧之间相机移动超过场景尺寸的 15%，或转向超过 25° |
 | `fast_motion` | warn | 相机角速度超过 90°/秒 |
 | `axis_crossing` | warn | 同一布景的相邻两个镜头，相机分别在主体连线的两侧（越轴） |

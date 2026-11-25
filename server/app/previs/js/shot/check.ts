@@ -7,7 +7,7 @@ import { type Box, boxCenter, objectMatrix, posedBoxes, worldParts, apply } from
 import type { RObject } from "./compile";
 
 /** What an action or overlay is about, for subject_out_of_frame / subject_occluded (compile.ts fills it). */
-export type Subject = { where: string; from: number; to: number; obj?: string; part?: string; parts?: string[]; point?: number[][] };
+export type Subject = { where: string; op?: string; from: number; to: number; obj?: string; part?: string; parts?: string[]; point?: number[][] };
 export type RShot = ResolvedShot & { subjects?: Subject[] };
 
 const D2R = Math.PI / 180;
@@ -15,6 +15,12 @@ const at = <T>(rows: T[], f: number): T => rows[Math.min(f, rows.length - 1)];
 
 export const SAFE = 0.05; // safe frame: 5 % of each side
 export const INSIDE_PAD = 0.02; // camera_inside margin, metres
+/** Actions whose whole point is that the viewer sees the target: out of frame / occluded for
+ * at least FAIL_SHARE of their frames is an error (the shot fails its purpose), else a warning. */
+export const SEEN_OPS = new Set(["show", "label", "highlight", "dimension"]);
+export const FAIL_SHARE = 0.9;
+/** A point subject (label / dimension) on a part's surface is not hidden by that part. */
+export const POINT_PAD = 0.01;
 
 /** The renderer's camera for one camera row (PrevisShot.tsx builds the same). */
 export function cameraAt(row: number[], aspect: number): THREE.PerspectiveCamera {
@@ -231,6 +237,7 @@ export function checkShot(shot: RShot, metas: Record<string, ModelMeta>): CheckI
           const glass = glassOf.get(st.obj.id) ?? new Set<string>();
           for (const [id, b] of boxesOf(st)) {
             if ((mine && own.has(id)) || glass.has(id) || inBox(pos, b, 0)) continue;
+            if (s.point && inBox(c, b, POINT_PAD)) continue; // the part the label / dimension sits on
             const t = rayHit(pos, d, b);
             if (t !== null && t < tol) return true;
           }
@@ -246,10 +253,15 @@ export function checkShot(shot: RShot, metas: Record<string, ModelMeta>): CheckI
   }
   for (const x of subj) {
     if (!x.n) continue;
-    if (x.out / x.n > 0.3)
-      issues.push({ code: "subject_out_of_frame", severity: "warn", where: x.s.where, frame: x.s.from, message: `${x.s.where} 的目标在生效期间有 ${Math.round((100 * x.out) / x.n)}% 的帧不在安全框里` });
-    if (x.occ / x.n > 0.5)
-      issues.push({ code: "subject_occluded", severity: "warn", where: x.s.where, frame: x.s.from, message: `${x.s.where} 的目标在生效期间有 ${Math.round((100 * x.occ) / x.n)}% 的帧被别的部件挡住` });
+    const seen = SEEN_OPS.has(x.s.op ?? "");
+    const sev = (share: number) => (seen && share >= FAIL_SHARE ? "error" : "warn");
+    const tail = (share: number) => (sev(share) === "error" ? `；${x.s.op} 的目标几乎整段看不到，这个镜头达不到目的` : "");
+    const out = x.out / x.n;
+    const occ = x.occ / x.n;
+    if (out > 0.3)
+      issues.push({ code: "subject_out_of_frame", severity: sev(out), where: x.s.where, frame: x.s.from, message: `${x.s.where} 的目标在生效期间有 ${Math.round(100 * out)}% 的帧不在安全框里${tail(out)}` });
+    if (occ > 0.5)
+      issues.push({ code: "subject_occluded", severity: sev(occ), where: x.s.where, frame: x.s.from, message: `${x.s.where} 的目标在生效期间有 ${Math.round(100 * occ)}% 的帧被别的部件挡住${tail(occ)}` });
   }
   const cs = [...shot.cuts].sort((a, b) => a - b);
   for (let i = 1; i < cs.length; i++)

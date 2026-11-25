@@ -192,6 +192,27 @@ def test_shot_rewrite_gives_up_then_orbit(built_job):
     assert json.loads((d / "previs" / "status.json").read_text())["s02"]["status"] == "queued"
 
 
+def test_unseen_label_is_an_error_and_goes_to_the_rewrite_loop(built_job):
+    """A label whose point is never in frame (show/label/highlight/dimension, >= 90 % of its
+    frames) is a check error now, so the shot is sent back to Opus instead of rendering."""
+    job, d = built_job
+    plan = json.loads((d / "previs" / "plan.json").read_text())
+    good = copy.deepcopy(plan["shots"][1])
+    plan["shots"][1]["actions"].append({"op": "label", "text": "飞轮", "attach": [3, 0.3, 0],
+                                        "at": {"mark": "start"}})
+    (d / "previs" / "plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    calls = []
+
+    def ask(system, user, n):
+        calls.append(user)
+        return json.dumps(good, ensure_ascii=False)
+    out = pjob.shots_step(job, d, ask=ask)
+    first = json.loads((d / "previs" / "shot_fix.json").read_text())["s02"]["first_errors"]
+    assert [i["code"] for i in first] == ["subject_out_of_frame"]
+    assert len(calls) == 1 and "subject_out_of_frame" in calls[0] and "show / label" in calls[0]
+    assert out["s02"]["rounds"] == 1 and out["s02"]["errors"] == 0 and not out["s02"]["fallback"]
+
+
 def test_fixed_plan_with_errors_is_refused(tmp_path):
     bad = copy.deepcopy(PLAN)
     bad["shots"] = bad["shots"][:2]  # s03 has no shot
