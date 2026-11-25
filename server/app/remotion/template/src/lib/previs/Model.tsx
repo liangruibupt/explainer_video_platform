@@ -9,6 +9,23 @@ import { row, type RObject, type RSection } from "./types";
 
 type Cut = { si: number; mesh: THREE.Mesh; stencil: THREE.Mesh[]; cap: THREE.Mesh };
 
+/** A back-face shell a few mm larger than the mesh: the glow of a highlighted part. */
+function halo(m: THREE.Mesh): THREE.Mesh {
+  m.geometry.computeBoundingBox();
+  const b = m.geometry.boundingBox!;
+  const size = b.getSize(new THREE.Vector3());
+  const c = b.getCenter(new THREE.Vector3());
+  const d = Math.max(0.004, 0.08 * Math.max(size.x, size.y, size.z));
+  const s = new THREE.Vector3(...[size.x, size.y, size.z].map((x) => (x > 1e-6 ? (x + 2 * d) / x : 1)));
+  const h = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, opacity: 0.6, depthWrite: false }));
+  h.scale.copy(s);
+  h.position.copy(c).sub(c.clone().multiply(s));
+  h.visible = false;
+  h.castShadow = false;
+  h.renderOrder = 5;
+  return h;
+}
+
 interface Built {
   root: THREE.Group;
   caps: THREE.Group;
@@ -19,6 +36,7 @@ interface Built {
   partMeshes: (id: string) => THREE.Mesh[];
   planes: THREE.Plane[];
   cuts: Cut[];
+  halos: Map<THREE.Mesh, THREE.Mesh>;
 }
 
 const Z = new THREE.Vector3(0, 0, 1);
@@ -56,6 +74,13 @@ function build(obj: RObject, gltf: GLTF, sections: RSection[], pal: Palette, loo
     m.geometry.computeBoundingSphere();
     meshes.push(m);
   });
+  const halos = new Map<THREE.Mesh, THREE.Mesh>();
+  if (obj.highlight?.length)
+    for (const m of meshes) {
+      const h = halo(m);
+      m.add(h);
+      halos.set(m, h);
+    }
   const meshSet = new Set(meshes); // the part meshes only, not the stencil helpers added below
   const partMeshes = (id: string) => {
     const out: THREE.Mesh[] = [];
@@ -96,7 +121,7 @@ function build(obj: RObject, gltf: GLTF, sections: RSection[], pal: Palette, loo
       cuts.push({ si, mesh, stencil, cap });
     }
   });
-  return { root, caps, nodes, order, parentPart, meshes, partMeshes, planes, cuts };
+  return { root, caps, nodes, order, parentPart, meshes, partMeshes, planes, cuts, halos };
 }
 
 export const Model: React.FC<{
@@ -154,9 +179,14 @@ export const Model: React.FC<{
       mat.depthWrite = !mat.transparent;
       const c = lit.get(m);
       mat.color.set(mat.userData.color);
-      if (c) mat.color.lerp(new THREE.Color(c), 0.5);
+      if (c) mat.color.set(c); // highlight: the part takes the highlight colour and glows
       mat.emissive.set(c ?? "#000000");
-      mat.emissiveIntensity = c ? 0.9 : 0;
+      mat.emissiveIntensity = c ? 0.45 : 0;
+      const h = b.halos.get(m);
+      if (h) {
+        h.visible = !!c;
+        if (c) (h.material as THREE.MeshBasicMaterial).color.set(c);
+      }
       mat.clippingPlanes = [];
     }
     // sections
