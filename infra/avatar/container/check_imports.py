@@ -22,14 +22,23 @@ def _stub_error(e):
 
 
 def _import_fake_device(m):
-    import torch
-    saved = torch.cuda.get_device_name, torch.cuda.get_device_capability
-    torch.cuda.get_device_name = lambda *a, **k: "NVIDIA RTX PRO 6000 Blackwell (build check)"
-    torch.cuda.get_device_capability = lambda *a, **k: (12, 0)
+    """Import m as if one Blackwell GPU were present: xfuser picks its backend from
+    is_available(), yunchang reads the name / capability, and torch's cpp_extension needs
+    TORCH_CUDA_ARCH_LIST when it cannot count devices."""
+    import os, torch
+    c = torch.cuda
+    saved = c.is_available, c.get_device_name, c.get_device_capability
+    arch_set = "TORCH_CUDA_ARCH_LIST" not in os.environ
+    c.is_available = lambda: True
+    c.get_device_name = lambda *a, **k: "NVIDIA RTX PRO 6000 Blackwell (build check)"
+    c.get_device_capability = lambda *a, **k: (12, 0)
+    os.environ.setdefault("TORCH_CUDA_ARCH_LIST", "12.0")
     try:
         importlib.import_module(m)
     finally:
-        torch.cuda.get_device_name, torch.cuda.get_device_capability = saved
+        c.is_available, c.get_device_name, c.get_device_capability = saved
+        if arch_set:
+            os.environ.pop("TORCH_CUDA_ARCH_LIST", None)
 
 
 bad = []
