@@ -22,6 +22,7 @@
 | `infra/mesh/stage_weights.py` | HF → S3，固定 commit，逐个文件下载、上传、核对大小后删除（本机就能跑，最多占一个文件的磁盘） |
 | `infra/mesh/builder.py` + `builder.sh` | 临时 x86 构建机（c7i.4xlarge，150 GB gp3，关机即终止，90 分钟硬上限），构建并推送 `evp/mesh:<tag>` |
 | `infra/mesh/bench.py` | 从 0 实例实测：概念图（或固定图片）→ 依次跑各个用例，结果写 `data/mesh_smoke/results.json` |
+| `infra/mesh/compare.py` | 对比两次 `bench.py` 的输出（用时、面数、显存、GLB 包围盒），超出 1% / 5% 时退出码 1 |
 | `infra/mesh/set_still.py` | 把一个入库的模型放进一次性布景（可带四冲程发动机作比例参照），经 B 的编译检查后渲染一张静帧 |
 | `infra/mesh/preview/render.sh` | 本机渲染 GLB 预览静帧（Remotion + `@remotion/three`，`--gl=swangle`） |
 | `infra/mesh/iam/` | 本模块需要的两条内联策略（工作机、构建机） |
@@ -52,7 +53,7 @@
 
 ## 4. 镜像
 
-当前 `evp/mesh:20261125-061845`（ECR 仓库 `evp/mesh`，`scanOnPush`，v2 清单，压缩后 10.6 GB）。CUDA 12.8.1 + cuDNN devel、Ubuntu 22.04、Python 3.10、torch 2.7.1+cu128。固定的版本见 `requirements.txt`，其中：
+当前 `evp/mesh:20261125-072302`（ECR 仓库 `evp/mesh`，`scanOnPush`，v2 清单，压缩后 10.7 GB）。CUDA 12.8.1 + cuDNN devel、**Ubuntu 24.04、Python 3.12**（系统自带的 python3，装进 `/opt/venv`，所以不受 PEP 668 限制）、torch 2.7.1+cu128、pillow 13.0.0（要求 Python ≥ 3.11，所以从 3.10 换到 3.12）。上一版 `20261125-061845` 是 Ubuntu 22.04 / Python 3.10 / pillow 12.3.0，对比见第 5 节末尾。固定的版本见 `requirements.txt`，其中：
 
 - `diffusers==0.31.0`（新版会调用 torch 2.6+ 的 API）、`huggingface-hub==0.28.1`、`transformers==4.48.3`（hy3dgen 要求 ≥ 4.48）。
 - `xatlas`、`rembg`、`onnxruntime`、`omegaconf`、`pygltflib`、`pymeshlab`、`trimesh`。
@@ -70,7 +71,7 @@
 
 ## 5. 实测（2026-11-25，us-east-1）
 
-镜像 `evp/mesh:20261125-061845`（10.6 GB 压缩，构建约 9 分钟）。输入是图像模块按第 1 节的模板出的「一只坐着的猫」概念图（1440×1440，seed 42），每个用例 seed 42、30 步、`octree_resolution` 256、`guidance` 5.0。两轮都从 0 实例开始，按 2mini → 2.0 → 贴图的顺序在同一台工作机上连着跑，所以第一个用例含冷启动，后面的用例含第一次加载那个模型的时间。
+镜像 `evp/mesh:20261125-061845`（Python 3.10，10.6 GB 压缩，构建约 9 分钟；3.12 镜像的重跑见本节末尾）。输入是图像模块按第 1 节的模板出的「一只坐着的猫」概念图（1440×1440，seed 42），每个用例 seed 42、30 步、`octree_resolution` 256、`guidance` 5.0。两轮都从 0 实例开始，按 2mini → 2.0 → 贴图的顺序在同一台工作机上连着跑，所以第一个用例含冷启动，后面的用例含第一次加载那个模型的时间。
 
 <img src="media/previs/mesh_cat_concept.jpg" width="200"> <img src="media/previs/mesh_cat_variants.jpg" width="640">
 
@@ -114,6 +115,22 @@ GLB 大小：白模约 1.1 MB；带贴图 4.4–4.9 MB（2048² 底色贴图）�
 
 1. **白色地面被重建成一块底板。** 图像模块输出的 PNG 是 RGBA，透明度最低 181（几乎不透明），适配层把「有透明度小于 255 的像素」当成已经抠好的图，跳过了 rembg（第一轮 `rembg_s` 都是 0），结果概念图里的白色地面变成了猫脚下一块破碎的底板（`raw_faces` 也少了 9 万）。改成：至少 1% 的像素几乎全透明（alpha ≤ 16）才算抠图；工作室端 `mesh.prepare_image()` 同样规则，不算抠图的 RGBA 先铺到白底上转成 RGB。镜像重建为 `20261125-061845`，第二轮 `rembg_s` 0.1–0.2 秒，底板消失。
 2. **第一次构建失败**：`custom_rasterizer` 用 `--no-build-isolation` 构建，venv 里没有 `wheel`（`invalid command 'bdist_wheel'`）。Dockerfile 先装 `setuptools==75.8.0`、`wheel==0.45.1`。
+
+### Python 3.10 → 3.12（2026-11-25）
+
+镜像换成 Ubuntu 24.04 / Python 3.12 / pillow 13.0.0（`evp/mesh:20261125-072302`）后，用同一张概念图、seed 42，从 0 实例重跑了三个用例（按需 g7.2xlarge，us-east-1a）。`requirements.txt` 里除 pillow 以外的固定版本都有 cp312 的 x86_64 wheel（`pip install --dry-run --platform manylinux… --python-version 3.12 --only-binary=:all:` 解析出 79 个包），所以都没改；只有 omegaconf 依赖的 antlr4-python3-runtime 4.9.3 仍是源码包，和 3.10 时一样在构建时编译。构建时的导入检查全部通过，包括 hy3dgen.shapegen / texgen 和两个 Paint 扩展（`mesh_processor.cpython-312-x86_64-linux-gnu.so`）。
+
+| 用例 | 工作机用时 3.10 → 3.12 | 原始面数 3.10 → 3.12 | 减面后 | 峰值显存 3.10 → 3.12 | 包围盒尺寸差 |
+|---|---|---|---|---|---|
+| 2mini（冷启动：提交到拿到 GLB 357 → 335 秒） | 13.8 → 13.8 秒 | 455,270 → 455,270 | 60,000 | 5.6 → 5.6 GB | 0.00% |
+| 2.0 | 36.3 → 36.2 秒 | 513,854 → 513,854 | 60,000 | 10.5 → 10.5 GB | 0.00% |
+| 2mini + 贴图 | 37.5 → 36.0 秒 | 455,270 → 455,270 | 40,000 | 22.1 → 22.2 GB | 0.00% |
+
+几何没有变化：面数一样，包围盒逐位相同（`infra/mesh/compare.py` 从 GLB 的 POSITION min/max 读出），文件的哈希不同。2.0 白模在 3.10 和 3.12 下的渲染图 PSNR 是 79 dB（肉眼看不出差别）。去背景这条路也重新跑过（输入的 RGBA 不算抠图，铺白底后在工作机上跑 rembg，`rembg_s` 0.1–0.2 秒），没有底板。冷启动：拉镜像 138 秒，拷权重 48 秒，开机到 `/ping` 256 秒，和 3.10 一样。
+
+<img src="media/previs/mesh_py310_vs_py312.jpg" width="900">
+
+左：Python 3.10 镜像；右：Python 3.12 镜像，2mini + Paint 贴图，相机在 +Z 和 +X。
 
 ### 复现
 
