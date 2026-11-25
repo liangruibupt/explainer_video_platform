@@ -198,7 +198,10 @@ export interface ShotSpec {
 export interface PrevisPlan {
   version: 1;
   assets: (
-    | { id: string; kind: "parametric"; spec: AssetSpec }
+    // extends: "asset_..." id of a parametric library model. The built spec is that model's spec
+    // with `spec` merged on top (params / dofs / drivers / anchors by name, parts by id, dims and
+    // the rest from `spec`); the planner writes the merged spec back into `spec`.
+    | { id: string; kind: "parametric"; spec: AssetSpec; extends?: string }
     | { id: string; kind: "image3d"; prompt: string; target: TargetSize; image_asset?: string }
     | { id: string; kind: "library"; asset: string }
   )[];
@@ -252,7 +255,7 @@ export interface ResolvedShot {
   /** Every anchor as resolved, for the review page and the checks. */
   anchors: { where: string; anchor: TimeAnchor; frame: number; word_time?: number }[];
   /** What actions and overlays point at, for subject_out_of_frame / subject_occluded (check.ts). */
-  subjects?: { where: string; from: number; to: number; obj?: string; part?: string; parts?: string[]; point?: number[][] }[];
+  subjects?: { where: string; op?: string; from: number; to: number; obj?: string; part?: string; parts?: string[]; point?: number[][] }[];
 }
 
 // ---------- Check report ----------

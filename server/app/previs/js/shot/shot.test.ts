@@ -249,6 +249,62 @@ test("subject_occluded", () => {
   assert.ok(!codes(runO(s)).includes("subject_occluded"));
 });
 
+/** The fixture engine with an opaque crankcase, for the severity tests. */
+const opaqueMetas = () => {
+  const spec = JSON.parse(JSON.stringify((PLAN.assets[0] as { spec: { parts: { id: string; opacity?: number }[] } }).spec));
+  spec.parts.find((p: { id: string }) => p.id === "crankcase").opacity = 1;
+  return { eng: buildTestAsset(spec).meta };
+};
+const runWith = (m: Record<string, ModelMeta>, shot: ShotSpec) => {
+  const c = compile(shot.id, withShot(shot));
+  return [...c.issues, ...checkShot(c.shot as RShot, m)];
+};
+const sevOf = (xs: CheckIssue[], code: string) => xs.filter((x) => x.code === code).map((x) => x.severity);
+
+test("subject checks are errors when a show / label / highlight / dimension target is (almost) never seen", () => {
+  const opaque = opaqueMetas();
+  const low = (s: ShotSpec) => (s.camera.keys.forEach((k) => ((k.look = "eng.crank_center"), (k.pos = [0.3, 0.12, 0.9]))), s);
+  // highlight of the crank inside an opaque crankcase: 100 % occluded -> error
+  assert.deepEqual(sevOf(runWith(opaque, low(base({ actions: [{ op: "highlight", target: "eng.crank", at: { mark: "start" } }] }))), "subject_occluded"), ["error"]);
+  // show of the same part: error too
+  assert.deepEqual(sevOf(runWith(opaque, low(base({ actions: [{ op: "show", target: "eng.crank", at: { mark: "start" } }] }))), "subject_occluded"), ["error"]);
+  // a pose whose moving parts are hidden stays a warning (the motion is not the shot's purpose)
+  const pose = sevOf(runWith(opaque, low(base({ actions: [{ op: "pose", target: "eng", dof: "crank", to: 0.01, at: { mark: "start" }, until: { mark: "end" } }] }))), "subject_occluded");
+  assert.ok(pose.every((x) => x === "warn"), JSON.stringify(pose));
+  // a label far outside the frame for the whole shot: error
+  assert.deepEqual(sevOf(run(base({ actions: [{ op: "label", text: "远处", attach: [3, 0.3, 0], at: { mark: "start" } }] })), "subject_out_of_frame"), ["error"]);
+  // out of frame for about half of its frames: still a warning
+  const s = base({ actions: [{ op: "label", text: "远处", attach: [3, 0.3, 0], at: { mark: "start" } }] });
+  s.camera.keys = [
+    { at: { mark: "start" }, pos: [0.6, 0.5, 0.9], look: "eng.chamber" },
+    { at: { t: 3 }, pos: [0.6, 0.5, 0.9], look: "eng.chamber", ease: "hold" },
+    { at: { t: 3.4 }, pos: [3.6, 0.5, 2.2], look: [3, 0.3, 0], cut: true },
+    { at: { mark: "end" }, pos: [3.6, 0.5, 2.2], look: [3, 0.3, 0] },
+  ];
+  const half = run(s);
+  const sev = sevOf(half, "subject_out_of_frame");
+  assert.deepEqual(sev, ["warn"], JSON.stringify(half.filter((x) => x.code === "subject_out_of_frame")));
+});
+
+test("show subject runs until the next hide; a label point on a part is not hidden by that part", () => {
+  const opaque = opaqueMetas();
+  const c = compile("s02", withShot(base({ actions: [
+    { op: "show", target: "eng.crank", at: { mark: "start" } },
+    { op: "hide", target: "eng.crank", at: { t: 2 } },
+  ] })));
+  const sub = (c.shot as RShot).subjects!.find((x) => x.op === "show")!;
+  assert.equal(sub.from, 0);
+  assert.equal(sub.to, 59);
+  assert.equal(sub.part, "crank");
+  // a label 6 cm inside the opaque crankcase box (like a label on a flywheel rim): not occluded
+  const inside = runWith(opaque, base({ actions: [{ op: "label", text: "曲轴", attach: [0, 0.12, 0.05], at: { mark: "start" } }] }));
+  assert.ok(!codes(inside).includes("subject_occluded"), JSON.stringify(inside));
+  // a point behind the crankcase, camera low in front: occluded, and an error for a label
+  const behind = base({ actions: [{ op: "label", text: "后面", attach: [0, 0.12, -0.16], at: { mark: "start" } }] });
+  behind.camera.keys.forEach((k) => ((k.look = "eng.crank_center"), (k.pos = [0.05, 0.12, 0.9])));
+  assert.deepEqual(sevOf(runWith(opaque, behind), "subject_occluded"), ["error"]);
+});
+
 test("camera_jump and fast_motion", () => {
   const s = base();
   s.camera.keys = [

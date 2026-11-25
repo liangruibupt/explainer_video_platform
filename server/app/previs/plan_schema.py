@@ -30,7 +30,14 @@ Issue codes (all "error" unless noted):
                    start/end and word anchors without offset)
   missing_target   image3d asset without target
   scale_not_1      (warn) set object scale is not 1, real size is lost
+  linked_parts     (warn) an object with one free-rotation DOF is animated next to another
+                   animated object in the same shot: parts that move together should be
+                   parts of ONE asset (see _check_linked)
+
+A parametric asset may carry "extends": "<library id>" of a parametric library model; its
+spec is then checked (and built) as merge_spec(library spec, plan spec).
 """
+import copy
 import math
 import re
 
@@ -487,6 +494,7 @@ def _check_spec(v: _V, spec, w: str) -> dict:
     # dims
     dims = spec.get("dims")
     if _obj(v, dims, f"{w}.dims"):
+        size = []
         for f in ("w", "h", "d"):
             if f not in dims:
                 v.add("schema", f"缺少 {w}.dims.{f}", f"{w}.dims")
@@ -494,6 +502,12 @@ def _check_spec(v: _V, spec, w: str) -> dict:
                 x = _expr(v, dims[f], pnames, f"{w}.dims.{f}", env)
                 if x is not None and x <= 0:
                     v.add("bad_shape_param", f"{w}.dims.{f} 应大于 0", f"{w}.dims.{f}")
+                size.append(x)
+        if len(size) == 3 and all(x is not None and x > 0 for x in size):
+            # shortcut: assumes the rest pose is centred on x/z and stands on y = 0 (what the
+            # builder's floating / below_ground checks enforce for y); good enough for the
+            # linked_parts distance test, not for anything that needs the real bbox
+            info["bbox"] = ([-size[0] / 2, 0.0, -size[2] / 2], [size[0] / 2, size[1], size[2] / 2])
         if "tol" in dims and not (_is_num(dims["tol"]) and dims["tol"] > 0):
             v.add("schema", f"{w}.dims.tol 应为正数", f"{w}.dims.tol")
     # parts
@@ -643,8 +657,76 @@ def library_info(a: dict) -> dict:
     for k in (a.get("anchor_parts") or {}):
         if k not in anchor_names:
             anchor_names.append(k)
-    return {"id": a.get("id"), "name": a.get("name", ""), "size": a.get("size"),
-            "dofs": dofs, "parts": part_ids, "anchors": anchor_names}
+    out = {"id": a.get("id"), "name": a.get("name", ""), "size": a.get("size"),
+           "dofs": dofs, "parts": part_ids, "anchors": anchor_names}
+    src = a.get("source") or {}
+    if isinstance(a.get("spec"), dict):  # slim dict that already carries the spec
+        out["spec"] = a["spec"]
+    elif src.get("type") == "parametric" and isinstance(src.get("spec"), dict):
+        out["spec"] = src["spec"]
+    bb = a.get("bbox")
+    if isinstance(bb, dict) and isinstance(bb.get("min"), list) and isinstance(bb.get("max"), list):
+        out["bbox"] = (list(bb["min"]), list(bb["max"]))
+    return out
+
+
+# ---------- extends: a parametric asset built on a library model's spec
+
+
+def merge_spec(base: dict, spec: dict) -> dict:
+    """The spec of a parametric asset that extends a library model (contract 5): the library
+    model's spec with the plan's spec on top. params / dofs / drivers / anchors: merged by
+    name (the plan wins, new drivers are evaluated after the base ones); parts: base parts in
+    order, a plan part with the same id replaces it, new parts are appended; dims and
+    max_tris: the plan's when given. id / name / version / units come from the plan's spec.
+    Idempotent: merging an already merged spec again gives the same spec."""
+    out = copy.deepcopy(base)
+    spec = copy.deepcopy(spec)
+    for k in ("params", "dofs", "drivers", "anchors"):
+        if isinstance(spec.get(k), dict):
+            m = dict(out.get(k) or {})
+            m.update(spec[k])
+            out[k] = m
+    parts = [p for p in out.get("parts") or [] if isinstance(p, dict)]
+    index = {p.get("id"): i for i, p in enumerate(parts)}
+    for p in spec.get("parts") or []:
+        if isinstance(p, dict) and p.get("id") in index:
+            parts[index[p["id"]]] = p
+        else:
+            parts.append(p)
+    out["parts"] = parts
+    for k, v in spec.items():
+        if k not in ("params", "dofs", "drivers", "anchors", "parts"):
+            out[k] = v
+    return out
+
+
+def resolve_extends(plan, library_assets=()) -> list:
+    """Replace the spec of every parametric asset with "extends": "<library id>" by the merged
+    spec (merge_spec), in place. Returns issues for an unknown or non-parametric base."""
+    v = _V()
+    if not isinstance(plan, dict) or not isinstance(plan.get("assets"), list):
+        return v.issues
+    lib = {}
+    for a in library_assets or ():
+        info = library_info(a)
+        if info["id"]:
+            lib[info["id"]] = info
+    for a in plan["assets"]:
+        if not isinstance(a, dict) or "extends" not in a:
+            continue
+        w = f"assets.{a.get('id')}.extends"
+        if a.get("kind") != "parametric":
+            v.add("schema", f"{w}：只有 parametric 资产可以写 extends", w)
+            continue
+        base = lib.get(a["extends"]) if isinstance(a["extends"], str) else None
+        if base is None:
+            v.add("unknown_asset", f"{w}：素材库里没有 {a['extends']!r}", w)
+        elif not isinstance(base.get("spec"), dict):
+            v.add("unknown_asset", f"{w}：素材库模型 {a['extends']} 不是参数化资产，没有规格可以扩展", w)
+        elif isinstance(a.get("spec"), dict):
+            a["spec"] = merge_spec(base["spec"], a["spec"])
+    return v.issues
 
 
 # ---------- whole plan
@@ -656,6 +738,9 @@ def validate(plan, scenes, library_assets=()) -> list:
     v = _V()
     if not _obj(v, plan, "plan"):
         return v.issues
+    if any(isinstance(a, dict) and "extends" in a for a in plan.get("assets") or []):
+        plan = copy.deepcopy(plan)  # check the merged specs without changing the caller's plan
+        v.issues.extend(resolve_extends(plan, library_assets))
     if plan.get("version") != 1:
         v.add("schema", "plan.version 应为 1", "version")
     lib = {}
@@ -707,16 +792,13 @@ def validate(plan, scenes, library_assets=()) -> list:
                 v.add("unknown_asset", f"素材库里没有 {ref!r}", f"{w}.asset")
                 info = {"dofs": {}, "parts": set(), "anchors": set(), "unknown": True}
             else:
-                li = lib[ref]
-                info = {"dofs": li["dofs"], "parts": set(li["parts"]),
-                        "anchors": set(li["anchors"])}
+                info = _lib_ref_info(lib[ref])
         else:
             v.add("schema", f"{w}.kind 应为 parametric / image3d / library", f"{w}.kind")
             info = {"dofs": {}, "parts": set(), "anchors": set(), "unknown": True}
         assets[f"@{aid}"] = info
     for lid, li in lib.items():
-        assets.setdefault(lid, {"dofs": li["dofs"], "parts": set(li["parts"]),
-                                "anchors": set(li["anchors"])})
+        assets.setdefault(lid, _lib_ref_info(li))
     # sets
     sets = {}
     slist = plan.get("sets")
@@ -759,8 +841,105 @@ def validate(plan, scenes, library_assets=()) -> list:
     for sid in scene_ids:
         if sid not in seen:
             v.add("missing_shot", f"分镜段 {sid} 没有镜头", f"shots.{sid}")
+    _check_linked(v, slist, shots, assets)
     return v.issues
 
+
+def _lib_ref_info(li: dict) -> dict:
+    info = {"dofs": li["dofs"], "parts": set(li["parts"]), "anchors": set(li["anchors"])}
+    if li.get("bbox"):
+        info["bbox"] = li["bbox"]
+    elif isinstance(li.get("size"), list) and len(li["size"]) == 3:
+        w, h, d = (float(x) for x in li["size"])
+        info["bbox"] = ([-w / 2, 0.0, -d / 2], [w / 2, h, d / 2])
+    return info
+
+
+LINK_GAP = 0.05  # metres: objects closer than this (or half the smaller one's size) are "near"
+ROTARY_SPAN = 360  # a DOF whose range spans a full turn or more is a free rotation
+
+
+def _world_box(o: dict, info: dict):
+    """Set-space AABB of a set object from its asset's rest-pose box; None when unknown.
+    shortcut: any rotation is covered by the box's largest horizontal half extent, so the box
+    is never too small; upgrade to rotated corners if near-misses matter."""
+    bb = info.get("bbox")
+    at = o.get("at") or [0, 0, 0]
+    if not bb or not (isinstance(at, list) and len(at) == 3 and all(_is_num(c) for c in at)):
+        return None
+    lo, hi = [float(c) for c in bb[0]], [float(c) for c in bb[1]]
+    if any(_is_num(c) and c for c in (o.get("rot_deg") or [])):
+        r = max(abs(lo[0]), abs(hi[0]), abs(lo[2]), abs(hi[2]))
+        lo, hi = [-r, lo[1], -r], [r, hi[1], r]
+    s = o.get("scale", 1) if _is_num(o.get("scale", 1)) else 1
+    return ([at[k] + s * lo[k] for k in range(3)], [at[k] + s * hi[k] for k in range(3)])
+
+
+def _box_gap(a, b) -> float:
+    return math.sqrt(sum(max(0.0, b[0][k] - a[1][k], a[0][k] - b[1][k]) ** 2 for k in range(3)))
+
+
+def _rotary(d) -> bool:
+    return (isinstance(d, dict) and _is_num(d.get("min")) and _is_num(d.get("max"))
+            and d["max"] - d["min"] >= ROTARY_SPAN)
+
+
+def _check_linked(v: _V, slist, shots, assets):
+    """linked_parts (warn): parts that move together drawn as separate set objects. Fires when,
+    in one shot, object B (an asset with exactly one DOF, a free rotation of a full turn or
+    more) is posed or spun while another object A of the same set is posed or spun on a free
+    rotation DOF too, and their boxes are less than max(LINK_GAP, half of B's largest size)
+    apart. A flywheel on its own stand beside an engine whose crank turns, or two separate
+    gears, are the cases this catches; two machines far apart, a turntable next to something
+    static, or a door swinging next to a turning crank are not flagged."""
+    sets = {}
+    for s in slist:
+        if isinstance(s, dict) and isinstance(s.get("objects"), list):
+            objs = {}
+            for o in s["objects"]:
+                if isinstance(o, dict) and isinstance(o.get("asset"), str) and o.get("id"):
+                    info = assets.get(o["asset"])
+                    if info and not info.get("unknown"):
+                        objs[o["id"]] = (o, info)
+            sets[s.get("id")] = objs
+    flagged = set()
+    for sh in shots:
+        if not isinstance(sh, dict) or sh.get("set") not in sets:
+            continue
+        objs = sets[sh["set"]]
+        moved = {}  # object id -> DOFs posed / spun in this shot
+        for a in sh.get("actions") or []:
+            if isinstance(a, dict) and a.get("op") in ("pose", "spin") and a.get("target") in objs:
+                moved.setdefault(a["target"], set()).add(a.get("dof"))
+        # the add-on (fewer parts) is named first when both objects qualify
+        for b_id, b_dofs in sorted(moved.items(), key=lambda kv: len(objs[kv[0]][1]["parts"])):
+            ob, ib = objs[b_id]
+            dofs = ib["dofs"]
+            if len(dofs) != 1:
+                continue
+            (name, d), = dofs.items()
+            if name not in b_dofs or not _rotary(d):
+                continue
+            bb = _world_box(ob, ib)
+            if bb is None:
+                continue
+            reach = max(LINK_GAP, 0.5 * max(bb[1][k] - bb[0][k] for k in range(3)))
+            for a_id in moved:
+                if a_id == b_id or frozenset((b_id, a_id)) in flagged:
+                    continue
+                ba = _world_box(*objs[a_id])
+                if ba is None or not any(_rotary(objs[a_id][1]["dofs"].get(n))
+                                         for n in moved[a_id]):
+                    continue
+                gap = _box_gap(ba, bb)
+                if gap < reach:
+                    flagged.add(frozenset((b_id, a_id)))
+                    v.add("linked_parts",
+                          f"镜头 {sh.get('id')}：物体 {b_id}（只有一个转动自由度 {name}）和同样在动的物体 "
+                          f"{a_id} 相距只有 {gap * 100:.0f} cm，看起来是一起运动的部件却是两个独立物体、"
+                          f"各有各的自由度。把 {b_id} 的部件做进 {a_id} 的资产（参数化资产可以用 extends "
+                          f"扩展素材库模型），用关节接到同一个自由度或它的驱动量上",
+                          f"sets.{sh['set']}.objects.{b_id}", severity="warn")
 
 def _check_set(v: _V, s: dict, w: str, assets: dict) -> dict:
     """Returns {objects: {id: asset info}, marks: set}."""

@@ -16,7 +16,8 @@ type Num = number | string;            // string = expression over params, e.g. 
 type Vec3 = [Num, Num, Num];
 interface PrevisPlan { version: 1; assets: Asset[]; sets: SetSpec[]; shots: ShotSpec[] }
 type Asset =
-  | { id: string; kind: "parametric"; spec: AssetSpec }       // spec.id must equal id
+  | { id: string; kind: "parametric"; spec: AssetSpec;        // spec.id must equal id
+      extends?: string }   // "asset_..." id of a PARAMETRIC library model: spec is merged on top of its spec
   | { id: string; kind: "image3d"; prompt: string; target: { axis: "w"|"h"|"d"|"longest"; metres: number } }
   | { id: string; kind: "library"; asset: string };            // "asset_..." id from the library list
 interface AssetSpec {
@@ -97,6 +98,24 @@ Drivers may use params, DOFs and earlier drivers. Nothing else (no ?:, no compar
   spec). Organic shapes (animals, sculptures, plants, people as props) -> "image3d" with a
   short Chinese prompt for ONE object and a real-size target, e.g. {"axis": "h", "metres": 0.3}.
   An object already in the library below -> "library" (reuse it; do not rebuild it).
+- A library model cannot be changed. When the story needs a part it does not have and the
+  model has a "spec" (it is parametric), write a NEW parametric asset that extends it:
+  {"id": "...", "kind": "parametric", "extends": "asset_...", "spec": {id, name, version: 1,
+  units: "m", dims, parts: [the NEW parts only], and only the params / dofs / drivers /
+  anchors you add}}. The system merges your spec on top of the library spec (same names:
+  yours win; a part with an existing id replaces it; new parts are appended), so every
+  existing part id, DOF, driver and anchor keeps working. dims must be the size of the
+  WHOLE merged model (recompute w/h/d with the new parts). Use this asset instead of the
+  library one in the set. A library model without "spec" cannot be extended.
+- Parts that move together (a flywheel or pulley on a crankshaft, meshing gears, a linkage,
+  a cam and its follower) MUST be parts of ONE asset, jointed to the same DOF or to a driver
+  of it (a gear pair: the second gear's hinge uses the same DOF with scale = -teeth ratio),
+  so they can never drift apart. Never place them as separate set objects, each with its own
+  DOF animated by its own action. Example: a flywheel for the library engine is a part with
+  "joint": {"type": "hinge", "axis": "z", "dof": "crank"} at the crank axis, in an asset
+  that extends the engine.
+- A part a shot names (shows, labels, highlights) must be where the camera can see it: not
+  behind or inside an opaque housing on the camera's side, unless a section cuts it open.
 - Real size. Build at true scale in metres; never rely on object scale (scale must stay 1).
 - The builder checks: dims within 2% of the built rest-pose bounding box; the lowest point of
   the rest pose at y = 0 (+-1 mm, not below, not floating); every driver finite over the DOF
@@ -145,5 +164,5 @@ __EXAMPLE_SCENES__
 Plan:
 __EXAMPLE_PLAN__
 
-## Library models you may use (kind "library", or directly as "asset_..." in a set)
+## Library models you may use (kind "library", directly as "asset_..." in a set, or as "extends" of a parametric asset when they have a "spec")
 __LIBRARY__

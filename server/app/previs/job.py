@@ -31,7 +31,12 @@ __SID__ (same id and set; keep the word anchors that still work; change what the
 Check reports use the codes of contract section 8: camera_inside = the camera is inside a part
 box (move it farther out); look_out_of_frame = the look point projects outside the frame;
 camera_jump = a non-cut camera move over 15 % of the scene size or 25 degrees in one frame (add
-"cut": true or smooth the keys); anchor_not_found = the word is not in this scene's narration."""
+"cut": true or smooth the keys); anchor_not_found = the word is not in this scene's narration;
+subject_out_of_frame / subject_occluded = the target of a show / label / highlight / dimension
+action (named by actions[i]) is outside the frame or behind another opaque part for nearly all
+of its frames, so the viewer never sees what the narration names: aim and place the camera so
+the target is in frame and nothing opaque stands between them (move around the occluding
+part, cut it open with a section, or start the action when the target is in view)."""
 
 
 def _read(p: Path, default=None):

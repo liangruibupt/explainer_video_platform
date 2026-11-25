@@ -79,13 +79,15 @@ def _example_plan() -> dict:
 
 
 def library_summary(library_assets) -> list:
-    """What the model sees of each library model: id, name, size, DOFs, anchors, parts."""
+    """What the model sees of each library model: id, name, size, DOFs, anchors, parts, and
+    for a parametric one (source.type parametric) its full AssetSpec, so a plan asset can
+    extend it ("extends") instead of placing missing parts beside it."""
     out = []
     for a in library_assets or ():
         i = library_info(a)
         if i["id"]:
-            out.append({k: i[k] for k in ("id", "name", "size", "dofs", "anchors", "parts")
-                        if i.get(k)})
+            out.append({k: i[k] for k in ("id", "name", "size", "dofs", "anchors", "parts",
+                                          "spec") if i.get(k)})
     return out
 
 
@@ -132,6 +134,9 @@ def previs_plan(scenes, topic, ratio="16:9", library_assets=(), *, ask=None,
         text = ask(system, user, PLAN_TOKENS)
         try:
             plan = parse(text)
+            # "extends" assets get the merged spec in place (idempotent), so plan.json holds
+            # exactly the spec that is built; resolve issues are reported again by validate
+            plan_schema.resolve_extends(plan, library_assets)
             issues = validate(plan, scenes, library_assets)
         except (ValueError, json.JSONDecodeError) as e:
             plan, issues = None, [{"code": "format", "severity": "error",
@@ -342,6 +347,7 @@ def build_assets(plan: dict, scenes=None, library_assets=(), *, build=None, ask=
     {assets: {id: {...}}, asset_ids: {"@id": library id}, plan_issues: [...]}."""
     build = build or default_build
     report = {"assets": {}, "asset_ids": {}}
+    plan_schema.resolve_extends(plan, library_assets)  # a fixed plan may carry extends too
     for a in plan.get("assets", []):
         if a.get("kind") != "parametric":
             continue

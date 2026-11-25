@@ -119,6 +119,8 @@ E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（�
 - 参数化资产构建失败（A 的退出码 2）时，把 `CheckIssue` 发回去重写这个资产，最多 2 轮。
 - 外形检查：构建成功后（任务带固定规划时跳过）渲染 4 张转台静帧，Opus 视觉调用判断「像不像 X、比例对不对」，有明显问题重写一次。结果记在 `plan_check.json`。
 - 资产 `kind`：机械、建筑、示意结构用 `parametric`；有机形体（动物、雕塑、植物）用 `image3d`，必须写 `target`（例如 `{"axis": "h", "metres": 0.3}`）；素材库里已有的用 `library`。
+- **扩展素材库模型**：素材库模型不能改。参数化的素材库模型（`meta.source.type = "parametric"`）会把完整规格 `source.spec` 一起给规划器。故事需要它没有的部件时，规划写一个新的参数化资产 `{"id", "kind": "parametric", "extends": "<素材库 id>", "spec": {...}}`：`spec` 叠加在素材库规格上（`plan_schema.merge_spec`：`params`、`dofs`、`drivers`、`anchors` 按名字合并，同名以规划为准，新驱动量排在原有的后面；`parts` 按 id 替换，新部件追加；`dims` 等其他字段取规划的）。规划器拿到回答后就把合并后的完整规格写回 `spec`（`resolve_extends`，可重复执行），所以存下来的 `plan.json` 自己就是完整的；`extends` 只留作来源记录。`extends` 指向不存在或不是参数化的模型 → `unknown_asset` 错误。
+- **一起运动的部件是同一个资产**：飞轮和曲轴、啮合的齿轮、连杆机构这类一起动的部件必须是同一个资产的部件，用关节接到同一个自由度或它的驱动量上，不能做成布景里各有各的自由度的独立物体。静态校验 `linked_parts`（warn）抓这种写法：同一个镜头里，一个只有一个自由度、而且是整圈以上转动（范围 ≥ 360°）的物体被 `pose`/`spin`，同时同一布景里另一个物体也在一个整圈转动的自由度上动（例如曲轴），两者的包围盒（资产静止尺寸放到物体位置，有旋转时按最大水平半径放大）间距小于 `max(5 cm, 前者最大尺寸的一半)`。
 
 ## 6. 布景 `SetSpec`
 
@@ -141,7 +143,7 @@ E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（�
 
 `node .../previs.mjs compile-shot --plan plan.json --shot sNN --assets <asset_dir_map.json> --words words.json --durations durations.json --size 1920x1080 --out resolved.json`，再 `check-shot resolved.json --assets ... > report.json`。Python 包装：`server/app/previs/shots.py`：`compile_all(job_dir) -> dict`（每个镜头的 `ResolvedShot` 路径和检查报告）。
 
-`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。B 加进 `types.ts` 的字段：`objects[].scale`、`explode_dirs`、`part_visible`（单个部件的显隐）、`highlight[].part`、标注的逐帧 `track`、顶层 `subjects`（检查读的目标列表）。`style.fade_in`/`fade_out` 在 ShotSpec 里是秒，在 ResolvedShot 里是帧。
+`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。B 加进 `types.ts` 的字段：`objects[].scale`、`explode_dirs`、`part_visible`（单个部件的显隐）、`highlight[].part`、标注的逐帧 `track`、顶层 `subjects`（检查读的目标列表，每项带动作的 `op`；`show` 的目标从 `at` 到下一次 `hide` 或镜头结束）。`style.fade_in`/`fade_out` 在 ShotSpec 里是秒，在 ResolvedShot 里是帧。
 
 检查（每帧都查，CPU）：
 
@@ -149,8 +151,8 @@ E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（�
 |---|---|---|
 | `camera_inside` | error | 相机位置在任一部件当前姿态的包围盒里（外扩 2 cm） |
 | `look_out_of_frame` | error | 看向点投影到画面外 |
-| `subject_out_of_frame` | warn | 动作或标注的目标在它生效期间有超过 30% 的帧中心不在画面里（安全框 5%） |
-| `subject_occluded` | warn | 同上期间，从相机到目标中心的射线先碰到别的部件的包围盒，帧数超过 50% |
+| `subject_out_of_frame` | warn / error | 动作或标注的目标在它生效期间有超过 30% 的帧中心不在画面里（安全框 5%）。动作是 `show`、`label`、`highlight`、`dimension`（目的就是让观众看到目标），而且不在画面里的帧 ≥ 90% 时是 **error**，其余是 warn |
+| `subject_occluded` | warn / error | 同上期间，从相机到目标的射线（中心和 6 个面上的采样点，全部）先碰到别的不透明部件的包围盒，帧数超过 50%；标注点或尺寸线中点所在的部件（点在它的包围盒里，外扩 1 cm）不算遮挡。error 的条件同上（这四种动作，≥ 90% 的帧被挡住） |
 | `camera_jump` | error | 非 `cut` 帧之间相机移动超过场景尺寸的 15%，或转向超过 25° |
 | `fast_motion` | warn | 相机角速度超过 90°/秒 |
 | `axis_crossing` | warn | 同一布景的相邻两个镜头，相机分别在主体连线的两侧（越轴） |
@@ -272,4 +274,5 @@ HTTP：
 
 - **2026-11-25，A（[#40](https://github.com/liangruibupt/explainer_video_platform/pull/40)）、D（[#39](https://github.com/liangruibupt/explainer_video_platform/pull/39)）**：模型记录的 `size` 是米、字节数在 `bytes`；`meta.parts[].local`；`evp_slot` 可以是 `#rrggbb`；校验码加 `bad_id`、`missing_part`；A 补的几何默认约定；`?kind=model` 和 `turntable_url`；镜头 `status` 取值和 `report` 结构；四冲程示例曲轴箱改半透明（0.45）、缸盖 0.6；`core/expr.ts` 修 `tsc --strict` 的 5 个类型错误（行为不变）。
 - **2026-11-25，C（[#42](https://github.com/liangruibupt/explainer_video_platform/pull/42)）**：目标和点的写法（第 7 节）；静态校验加 `time_order`；`occurrence` 按可重叠匹配计数。
+- **2026-11-25，修复「联动部件拆成独立物体」**（分支 `previs/fix-linked-parts`）：参数化资产加 `extends`（第 5 节，`types.ts`、`plan_schema.py` 同步）；规划器拿到参数化素材库模型的完整规格；静态校验加 `linked_parts`（warn）；镜头检查 `subject_out_of_frame`、`subject_occluded` 在目标几乎整段看不到时升为 error（第 8 节），`show` 也算检查目标，标注点所在的部件不再算遮挡。
 - **2026-11-25，B（[#43](https://github.com/liangruibupt/explainer_video_platform/pull/43)）、E（[#41](https://github.com/liangruibupt/explainer_video_platform/pull/41)）和集成**：`types.ts` 加 B 的 ResolvedShot 字段和 A 的 `parts[].local`、`bytes`；淡入淡出编译后是帧；缓动和 `until` 的默认值；剖切保留侧；`cli.ts` 引入 `SHOT_COMMANDS`，B 的测试用 GLB 生成器只留给 JS 单元测试，作业和 Python 测试都用 A 的 `build-asset`；GL 改成每次渲染传 `gl="swangle"`（`render.render()` 新增参数），不再给每个工程写 swangle 配置；镜头检查有 error 时的 Opus 重写和环绕兜底放在 `previs/job.py`；任务带固定规划时不做外形重写；E 的额外路由和任务中心来源；A 的转台没有换成 B 的渲染器（需要为转台单独生成工程，不是小改动）。
