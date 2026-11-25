@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
       && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 
-RUN pip install -U pip==25.2 && pip install --index-url https://download.pytorch.org/whl/cu128 \
+# wheel + a current setuptools: the --no-build-isolation extension builds below need both.
+RUN pip install -U pip==25.2 setuptools==75.8.0 wheel==0.45.1 && pip install --index-url https://download.pytorch.org/whl/cu128 \
       torch==2.7.1 torchvision==0.22.1
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
