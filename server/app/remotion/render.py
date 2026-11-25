@@ -60,9 +60,14 @@ def typecheck(proj: Path, log: Path | None = None, timeout: int = 180) -> None:
     _run([_bin("tsc"), "-p", "tsconfig.json"], proj, log, timeout)
 
 
-def still(proj: Path, frame: int, out: Path, log: Path | None = None, timeout: int = 300) -> None:
-    _run([_bin("remotion"), "still", "src/index.ts", "Main", out, f"--frame={frame}",
-          "--log=error"], proj, log, timeout)
+def still(proj: Path, frame: int, out: Path, log: Path | None = None, timeout: int = 300,
+          *, comp: str = "Main", gl: str | None = None) -> None:
+    """gl: Chromium GL backend. None = Remotion's default. 3D previs (WebGL) needs "swangle":
+    "angle" cannot create a WebGL context on this box (docs/PREVIS_CONTRACT.md section 10)."""
+    args = [_bin("remotion"), "still", "src/index.ts", comp, out, f"--frame={frame}", "--log=error"]
+    if gl:
+        args.append(f"--gl={gl}")
+    _run(args, proj, log, timeout)
 
 
 STILLS_JS = Path(__file__).parent / "stills.cjs"
@@ -70,7 +75,7 @@ STILLS_CONCURRENCY = int(os.environ.get("EVP_STILLS_CONCURRENCY", "2"))
 
 
 def stills(proj: Path, frames: list, outs: list, log: Path | None = None,
-           timeout: int = 900) -> dict:
+           timeout: int = 900, *, comp: str = "Main", gl: str = "angle") -> dict:
     """Render many stills of one project with ONE bundle and ONE browser (stills.cjs) instead of
     one `remotion still` process per frame. frames[k] -> outs[k] (PNG, same pixels as still()).
     Returns {frame: error text} for frames that failed (empty = all rendered); raises
@@ -83,7 +88,10 @@ def stills(proj: Path, frames: list, outs: list, log: Path | None = None,
         for f, o in zip(frames, outs):  # the old path: one `remotion still` process per frame
             try:
                 o.unlink(missing_ok=True)
-                still(proj, int(f), o.resolve(), log)
+                # pass comp/gl only when not the old defaults: same call as before for 2D jobs
+                kw = {k: v for k, v in (("comp", comp), ("gl", gl))
+                      if v != {"comp": "Main", "gl": "angle"}[k]}
+                still(proj, int(f), o.resolve(), log, **kw)
             except Exception as e:  # noqa: BLE001
                 errs[int(f)] = str(e)
         return errs
@@ -92,9 +100,9 @@ def stills(proj: Path, frames: list, outs: list, log: Path | None = None,
         o.unlink(missing_ok=True)
     jf = (proj / ".check" / "stills.job.json").resolve()
     jf.parent.mkdir(parents=True, exist_ok=True)
-    jf.write_text(json.dumps({"proj": str(proj.resolve()), "comp": "Main",
+    jf.write_text(json.dumps({"proj": str(proj.resolve()), "comp": comp,
                               "bundle": str((proj / ".check" / "bundle").resolve()),
-                              "gl": "angle", "concurrency": STILLS_CONCURRENCY,
+                              "gl": gl, "concurrency": STILLS_CONCURRENCY,
                               "frames": [{"frame": int(f), "out": str(o.resolve())}
                                          for f, o in zip(frames, outs)]}))
     r = subprocess.run([os.environ.get("NODE", "node"), str(STILLS_JS), str(BASE / "node_modules"),
