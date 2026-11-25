@@ -1,6 +1,6 @@
 # 3D 白模预演（previs）：接口约定
 
-分支 `previs/p0-contract`（P0）。这份文件固定并行各部分（A–E）和集成之间的接口，只能由集成方修改。需要改的部分写进你的报告，不要自己改这份文件和 `server/app/previs/js/core/`。
+P0 定稿，集成（分支 `previs/integration`）时按 A–E 的报告修订进正文，修订记录见第 15 节。这份文件固定各部分之间的接口，改动由集成方做。
 
 ## 1. 目标和已定的决定
 
@@ -48,6 +48,7 @@ TypeScript 定义在 `server/app/previs/js/core/types.ts` 的 `AssetSpec`（固�
 - `anchors`：命名点，镜头可以看向它、在上面挂标注。可以是部件 id、坐标，或 `{part, at}`（跟着部件动）。
 - 颜色用调色板槽位 `clay accent1..accent4 glass` 或 `#rrggbb`。槽位到颜色的映射由渲染器决定（B），所以整片配色一致。
 - v1 没有布尔运算。要看内部用镜头的 `section`（剖切平面）；空心件用 `tube`。
+- 默认约定：torus 默认平放（轴 y）；extrude 的倒角在轮廓内，声明尺寸是精确的；环形阵列平分角度；锚点写部件 id 时指向这个部件包围盒的中心。
 
 ### 4.2 表达式（`core/expr.ts`，固定，已测试）
 
@@ -63,22 +64,23 @@ TypeScript 定义在 `server/app/previs/js/core/types.ts` 的 `AssetSpec`（固�
 ### 4.4 模型资产在素材库里的存法
 
 - `data/assets/<id>/file.glb` + `meta.json` + `thumb.jpg`（转台第一帧）+ `turntable.mp4`（4 秒 360°，720p）。参数化资产另存 `spec.json`。
+- 素材库记录原来用 `size` 存文件字节数。`kind = "model"` 的记录里 `size` 是包围盒尺寸 `[w,h,d]`（米，同 `ModelMeta`），字节数放在 `bytes`；其他类型不变，界面按类型读。`GET /api/assets?kind=model` 列出模型，记录带 `turntable_url`。
 - `store.KINDS` 加 `"model"`，`FORMATS` 加 `"glb": ("model", ("glb",), "model/gltf-binary")`，按文件头 `glTF` 识别。`MAX_BYTES` 对 model 也是 200 MB。
-- `meta.json` 除了现有字段，再加 `ModelMeta`（`types.ts`）：`bbox`、`size`、`tris`、`parts`（每个部件的静止包围盒）、`rig`（`dofs`、`drivers`、`joints`、`params`、`rest`）、`anchors`、`anchor_parts`、`source`。
-- GLB 规则：glTF 2.0 二进制，单位米，节点名 = 部件 id，每个部件一个 mesh（或 group 节点）。部件的静止姿态写在 `meta.rig.rest` 里，GLB 里的节点变换也是静止姿态。材质是 `MeshStandardMaterial` 能读的 PBR，颜色槽位写在材质的 `extras.evp_slot`。v1 没有贴图（图生 3D 的贴图版本见 4.6）。
+- `meta.json` 除了现有字段，再加 `ModelMeta`（`types.ts`）：`bbox`、`size`、`tris`、`parts`（每个部件的静止包围盒 `bbox`，和部件自己坐标系里的包围盒 `local`；镜头检查用 `local` 乘当前姿态的变换）、`rig`（`dofs`、`drivers`、`joints`、`params`、`rest`）、`anchors`、`anchor_parts`、`source`。
+- GLB 规则：glTF 2.0 二进制，单位米，节点名 = 部件 id，每个部件一个 mesh（或 group 节点）。部件的静止姿态写在 `meta.rig.rest` 里，GLB 里的节点变换也是静止姿态。材质是 `MeshStandardMaterial` 能读的 PBR，颜色槽位写在材质的 `extras.evp_slot`：槽位名，或部件写了十六进制颜色时的 `#rrggbb`，渲染器两种都接受。v1 没有贴图（图生 3D 的贴图版本见 4.6）。
 
 ### 4.5 构建、规范化和校验（A）
 
-Node 命令行，所有部分都通过它调用：`node server/app/previs/js/dist/previs.mjs <命令>`（用 `server/app/previs/js/build.sh` 由 esbuild 打包；Python 包装在 `server/app/previs/assets_build.py`）：
+Node 命令行，所有部分都通过它调用：`node server/app/previs/js/dist/previs.mjs <命令>`（A 的资产命令，加上 B 的 `compile-shot`、`check-shot`、`plan-image`：`cli.ts` 引入 B 的 `SHOT_COMMANDS`；`fixture-asset` 只给 JS 单元测试用）（用 `server/app/previs/js/build.sh` 由 esbuild 打包；Python 包装在 `server/app/previs/assets_build.py`）：
 
 | 命令 | 输入 → 输出 |
 |---|---|
 | `build-asset <spec.json> <out.glb> <meta.json>` | 规格 → GLB + meta；退出码 0 = 成功，2 = 校验失败（错误写到标准输出，一行一个 JSON `CheckIssue`） |
 | `normalize-glb <in.glb> <out.glb> <meta.json> --target <axis>:<metres> [--max-tris N]` | 任意 GLB（图生 3D、上传）→ 按目标尺寸等比缩放，底面落到 y = 0，水平居中，减面到 `max_tris`（默认 60000），整体一个部件 `body` |
 | `validate-asset <glb> <meta.json>` | 只校验 |
-| `turntable <glb> <meta.json> <out_dir>` | `thumb.jpg` + `turntable.mp4`（经 B 的渲染器，第 9 节） |
+| `turntable <glb> <meta.json> <out_dir>` | `thumb.jpg` + `turntable.mp4`（A 自己的最小 R3F 转台合成，`--gl=swangle`，没有改用 B 的渲染器） |
 
-资产校验码：`expr_error`、`unknown_parent`、`cycle`、`duplicate_id`、`bad_shape_param`（半径 ≤ 0、内径 ≥ 外径等）、`dims_mismatch`（超过 `tol`）、`below_ground`（静止姿态最低点 < −1 mm）、`floating`（最低点 > 1 mm）、`dof_range`（在自由度范围内的 9 个采样姿态下，任何驱动量出现 NaN 或部件飞出 `dims` 的 3 倍范围）、`too_many_tris`、`bad_anchor`、`nan`。
+资产校验码：`bad_id`（id 不合规）、`missing_part`（锚点或父部件引用了不存在的部件）、`expr_error`、`unknown_parent`、`cycle`、`duplicate_id`、`bad_shape_param`（半径 ≤ 0、内径 ≥ 外径等）、`dims_mismatch`（超过 `tol`）、`below_ground`（静止姿态最低点 < −1 mm）、`floating`（最低点 > 1 mm）、`dof_range`（在自由度范围内的 9 个采样姿态下，任何驱动量出现 NaN 或部件飞出 `dims` 的 3 倍范围）、`too_many_tris`、`bad_anchor`、`nan`。
 
 Python：`assets_build.build(spec: dict, project_id=None) -> dict`（返回素材库记录）、`assets_build.normalize(raw_glb: Path, target: dict, source: dict, name: str, project_id=None) -> dict`。
 
@@ -104,6 +106,8 @@ Python：`assets_build.build(spec: dict, project_id=None) -> dict`（返回素�
 
 响应：`{"ok": true, "files": {"glb_b64": [<s3 key>]}, "meta": {"model", "render_s", "faces", "textured", "peak_vram_gb"}}`。
 
+E 另加了 `/api/mesh/status` 和 `/api/mesh/tasks[/{id}[/{file}|/retry]]`（任务列表不放在 `/api/assets/model/image3d` 下，避免和 `/api/assets/{id}/{name}` 冲突），任务进任务中心（类型 `mesh`）。带贴图时先减到 4 万面再跑 Paint。
+
 工作室端 `server/app/mesh.py`：`status()`（和 `image.status()` 同样的结构）、`generate(image: bytes, model="", texture=False, seed=42, **kw) -> bytes`（GLB 原始文件，没有规范化）。`asset.image3d` 节点和 `POST /api/assets/model/image3d` 先用 `image.generate()` 按提示词出概念图（提示词模板：「单个物体，纯白背景，三分之二侧视角，完整不裁切，无投影，画面中没有任何文字」），再 `mesh.generate()`，最后 `assets_build.normalize()`。
 
 ## 5. 规划：分镜 → 资产、布景、镜头（C）
@@ -111,9 +115,9 @@ Python：`assets_build.build(spec: dict, project_id=None) -> dict`（返回素�
 一个任务的规划写成 `PrevisPlan`（`types.ts`），存到 `jobs/<id>/previs/plan.json`。
 
 - `previs_plan(scenes, topic, ratio, library_assets=[]) -> PrevisPlan`，在 `server/app/previs/plan.py`。Opus 5.5 拿到分镜（每段的 `narration`）、这份约定的第 3–7 节、示例 `four_stroke`、可用的素材库模型（id、名字、尺寸、自由度、锚点）。
-- 静态校验 `plan.validate(plan, scenes) -> list[CheckIssue]`（纯 Python，不渲染）：JSON 结构、id 引用（资产、布景、物体、锚点、标记点、自由度）、每个分镜段正好一个镜头、每个 `word` 锚点在这一段的旁白里能找到（含 `occurrence`）、每个镜头至少两个相机关键帧、`scale` 不是 1 时警告。不通过就带着错误清单重写，最多 3 轮，做法同 `workflows/agent.py`。
+- 静态校验 `plan.validate(plan, scenes) -> list[CheckIssue]`（纯 Python，不渲染）：JSON 结构、id 引用（资产、布景、物体、锚点、标记点、自由度）、每个分镜段正好一个镜头、每个 `word` 锚点在这一段的旁白里能找到（含 `occurrence`）、每个镜头至少两个相机关键帧、`time_order`（相机关键帧时间顺序反了，或动作的 `until` 不在 `at` 之后，在不需要时长就能判断时报错）、`scale` 不是 1 时警告。不通过就带着错误清单重写，最多 3 轮，做法同 `workflows/agent.py`。
 - 参数化资产构建失败（A 的退出码 2）时，把 `CheckIssue` 发回去重写这个资产，最多 2 轮。
-- 外形检查：构建成功后渲染 4 张转台静帧，Opus 视觉调用判断「像不像 X、比例对不对」，有明显问题重写一次。结果记在 `plan_check.json`。
+- 外形检查：构建成功后（任务带固定规划时跳过）渲染 4 张转台静帧，Opus 视觉调用判断「像不像 X、比例对不对」，有明显问题重写一次。结果记在 `plan_check.json`。
 - 资产 `kind`：机械、建筑、示意结构用 `parametric`；有机形体（动物、雕塑、植物）用 `image3d`，必须写 `target`（例如 `{"axis": "h", "metres": 0.3}`）；素材库里已有的用 `library`。
 
 ## 6. 布景 `SetSpec`
@@ -124,19 +128,20 @@ Python：`assets_build.build(spec: dict, project_id=None) -> dict`（返回素�
 
 见 `types.ts`，示例里有三个镜头（`s01` 环绕介绍、`s02` 剖切看进气和压缩、`s03` 点火处切近景）。
 
-- **点**（`PointRef`）：`[x,y,z]`、标记点名、`"物体"`（物体原点）、`"物体.锚点"`。跟着部件动的锚点每帧重新算。
-- **相机关键帧**：`pos` 或 `orbit {around, r, az, el}`（度；az 从 +Z 向 +X 转），`look`，`lens_mm`（全画幅等效，默认 35，竖直视角按 24 mm 高的画幅算），`roll`，`ease`（进入这一帧的缓动），`cut`（硬切，不从上一帧插值）。`path` 默认 `catmull`（位置用 Catmull-Rom 中心参数化，看向点和焦距线性插值，都经过缓动）。
-- **动作**：`pose`（把自由度在 `at` 到 `until` 间插值到 `to`）、`spin`（匀速转）、`move`、`show`/`hide`、`highlight`、`label`、`dimension`（尺寸标注线）、`section`（剖切平面，只切 `targets`）、`explode`（按部件到物体中心的方向分开）。同一个自由度在同一帧被两个动作控制 → `dof_conflict` 错误。
+- **点**（`PointRef`，用于 `look`、`pos`、`orbit.around`、`label.attach`、`dimension.from/to`）：`[x,y,z]`、标记点名、`"物体"`（物体原点）、`"物体.锚点"`，只认锚点名，不认部件 id。跟着部件动的锚点每帧重新算。
+- **目标**：`show`、`hide`、`highlight`、`section` 的目标可以是 `物体` 或 `物体.部件`（例如 `eng.intake_valve`）；`pose`、`spin`、`move`、`explode` 的目标只能是物体。
+- **相机关键帧**：`pos` 或 `orbit {around, r, az, el}`（度；az 从 +Z 向 +X 转），`look`，`lens_mm`（全画幅等效，默认 35，竖直视角按 24 mm 高的画幅算），`roll`，`ease`（进入这一帧的缓动，默认 `inOut`），`cut`（硬切，不从上一帧插值）。`path` 默认 `catmull`（位置用 Catmull-Rom 中心参数化，看向点和焦距线性插值，都经过缓动）。
+- **动作**（`pose`、`move`、`explode` 没写 `until` 时在 `at` 跳到目标；`spin` 和标注类没写 `until` 时持续到镜头结束；剖切保留 `dot(normal, p) >= offset` 的一侧）：`pose`（把自由度在 `at` 到 `until` 间插值到 `to`）、`spin`（匀速转）、`move`、`show`/`hide`、`highlight`、`label`、`dimension`（尺寸标注线）、`section`（剖切平面，只切 `targets`）、`explode`（按部件到物体中心的方向分开）。同一个自由度在同一帧被两个动作控制 → `dof_conflict` 错误。
 - **时间锚点** `TimeAnchor`，只能写一种：
   - `t`（镜头内秒）、`frame`（镜头内帧）、`mark: start|end`；
-  - `word`：在这一段旁白里找这串字（不含标点，`occurrence` 从 1 开始），`edge: start` 取第一个字的 `start`，`end` 取最后一个字的 `end`，减去段起点，再加 `offset` 秒，四舍五入到帧，夹到 `[0, frames-1]`。
+  - `word`：在这一段旁白里找这串字（不含标点，`occurrence` 从 1 开始，按**可以重叠**的匹配计数，C 的校验和 B 的换算一致），`edge: start` 取第一个字的 `start`，`end` 取最后一个字的 `end`，减去段起点，再加 `offset` 秒，四舍五入到帧，夹到 `[0, frames-1]`。
   - 找不到 → `anchor_not_found` 错误；被夹住 → `anchor_clamped` 警告。
 
 ## 8. 镜头编译和检查（B）
 
 `node .../previs.mjs compile-shot --plan plan.json --shot sNN --assets <asset_dir_map.json> --words words.json --durations durations.json --size 1920x1080 --out resolved.json`，再 `check-shot resolved.json --assets ... > report.json`。Python 包装：`server/app/previs/shots.py`：`compile_all(job_dir) -> dict`（每个镜头的 `ResolvedShot` 路径和检查报告）。
 
-`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。
+`ResolvedShot`（`types.ts`）是渲染器的唯一输入：每一帧的相机 `[px,py,pz, lx,ly,lz, vfov, roll]`、每个物体每一帧的变换和每个部件的局部变换（由 `rig.partTransforms` 算出）、标注、剖切、所有锚点换算出来的帧号。渲染器不做任何时间或姿态计算，只按帧读数组。数组里不变的量只存一个元素。B 加进 `types.ts` 的字段：`objects[].scale`、`explode_dirs`、`part_visible`（单个部件的显隐）、`highlight[].part`、标注的逐帧 `track`、顶层 `subjects`（检查读的目标列表）。`style.fade_in`/`fade_out` 在 ShotSpec 里是秒，在 ResolvedShot 里是帧。
 
 检查（每帧都查，CPU）：
 
@@ -153,7 +158,9 @@ Python：`assets_build.build(spec: dict, project_id=None) -> dict`（返回素�
 | `dof_conflict`、`unknown_dof`、`unknown_target`、`unknown_point` | error | |
 | `cut_too_close` | warn | 两次硬切间隔小于 1 秒 |
 
-有 error 的镜头不渲染；C 的规划循环会把报告发回去改（最多 2 轮），还不行就用一个自动的环绕镜头代替，并在报告里写明。
+有 error 的镜头不渲染。`server/app/previs/job.py` 把规划和这个镜头的报告发给 Opus 重写（最多 2 轮，每轮先过静态校验再重新编译），还不行就换成自动的环绕镜头（绕布景第一个物体，半径 = 最大尺寸 × 2.4，方位 30° → 100°，仰角 20°，没有动作），结果记在 `previs/shot_fix.json`。
+
+镜头状态（`previs/status.json`、`GET /api/jobs/{id}/previs`）取 `queued | running | done | failed | blocked`（`blocked` = 检查有 error，没有渲染）；`report` 是 `{"issues": CheckIssue[]}`。
 
 另外每个镜头输出一张**俯视图** `previs/sNN.plan.png`：从上往下画布景（部件包围盒）、相机路径（颜色表示时间）、关键帧编号和每个锚点的位置，供审核页使用。
 
@@ -174,7 +181,7 @@ public/previs/<asset_id>.glb    复制，不能用软链接（Remotion 的静态
 - GLB 用 `useLoader(GLTFLoader, staticFile(...))` 加载，加载完之前要 `delayRender`，确保第一帧就有模型。渲染器把部件的 `MeshStandardMaterial` 换成黏土材质：哑光，颜色按 `evp_slot` 查调色板。调色板 `clay #c9c4bb`、`accent1 #d98c5f`、`accent2 #6f9fd8`、`accent3 #8cc084`、`accent4 #d8c46f`、`glass` 是半透明 `#a9b8c6`。
 - 剖切用 three.js 的 `clippingPlanes`（局部剖切，只作用于 `targets`），剖面用 stencil 填实（做法同 math-visualizations 的 raup-shell 页面）。
 - 标注和尺寸线用 HTML 叠在画布上（不在 WebGL 里），文字用 Noto Sans CJK SC，避开字幕区（下方 18%）。
-- **GL 后端必须用 `swangle`**：`render.render()` 用 Remotion 默认值就能渲染 WebGL；`render.stills()` 和 `render.still()` 原来写死 `angle`，在本机建不出 WebGL 上下文，P0 已经给它们加了 `gl=` 参数（`comp=` 也是），previs 调用时传 `gl="swangle"`。默认值不变，其他渲染方式不受影响。
+- **GL 后端必须用 `swangle`**：模板的 `remotion.config.ts` 设的是 `angle`，在本机建不出 WebGL 上下文。`render.render()`、`render.stills()`、`render.still()` 都有 `gl=` 参数，previs 调用时传 `gl="swangle"`（命令行的 `--gl=swangle` 覆盖配置文件，工程里的配置文件不改）；默认值不变，其他渲染方式不受影响。动效编辑器给 previs3d 任务导出新版本时也传 `swangle`。
 - 每个镜头渲染 5 张静帧（同 Remotion 的版面检查），交给现有的 Opus 版面检查；这里只记录，不自动重写（v1）。
 - 共享安装：`infra/previs/setup.sh` 把 `infra/previs/packages.*.txt` 里的包（固定版本）装进 `$EVP_TOOLS/remotion-base`。每个部分在自己的 `packages.<部分>.txt` 里加包，不要改别人的文件。P0 已经装好 `@remotion/three 4.0.484`、`three 0.178.0`、`@react-three/fiber 9.3.0`、`@types/three 0.178.0`。
 
@@ -259,22 +266,10 @@ HTTP：
 5. 图生 3D：用一个有机形体（例如「一只坐着的猫，高 0.3 米」）从 0 开机跑通，入库后 `meta.size[1]` = 0.3 m ± 2%，能放进布景渲染。记录冷启动和生成时间。
 6. 素材库能看到模型和转台预览；作品页的「镜头」标签能重渲单个镜头。
 
-## 15. 修订记录（集成方）
+## 15. 修订记录
 
-### 2026-11-25，根据 A（[PR #40](https://github.com/liangruibupt/explainer_video_platform/pull/40)）和 D（[PR #39](https://github.com/liangruibupt/explainer_video_platform/pull/39)）的报告
+上面各节已经按下面的修订改好。
 
-1. **`size` 冲突**：素材库记录原来用 `size` 存文件字节数。对 `kind = "model"` 的记录，`size` 是包围盒尺寸 `[w,h,d]`（米，同 `ModelMeta`），字节数放在 `bytes`。其他类型的记录不变。界面按类型读。
-2. **`meta.parts[].local`**：每个部件在自己坐标系里的包围盒（A 已实现）。B 的当前姿态检查用它乘上 `rig.partTransforms` 的变换，比用静止姿态的 `bbox` 准。
-3. **`extras.evp_slot`** 可以是槽位名，也可以是 `#rrggbb`（部件写了十六进制颜色时）。渲染器两种都要接受。
-4. **资产校验码**加 `bad_id`（id 不合规）和 `missing_part`（锚点或父部件引用了不存在的部件）。
-5. **A 补的默认约定**：torus 默认平放（轴 y）；extrude 的倒角在轮廓内，声明尺寸是精确的；环形阵列平分角度；锚点写部件 id 时指向这个部件包围盒的中心。
-6. **素材库接口**：`GET /api/assets?kind=model` 要接受 `model`（集成改 `assets/api.py`）；模型记录带 `turntable_url`。
-7. **镜头状态**：`GET /api/jobs/{id}/previs` 里每个镜头的 `status` 取 `queued | running | done | failed | blocked`（`blocked` = 检查有 error 没有渲染）；`report` 是 `{"issues": CheckIssue[]}`。
-8. **四冲程示例**：曲轴盘原来被不透明的曲轴箱挡住，曲轴箱改成半透明（opacity 0.45），缸盖 0.6。
-9. **`core/expr.ts`** 修了 `tsc --strict` 下的 5 个类型错误，行为不变。
-
-### 2026-11-25，根据 C（[PR #42](https://github.com/liangruibupt/explainer_video_platform/pull/42)）的报告
-
-10. **目标和点的写法**：`show`、`hide`、`highlight`、`section` 的目标可以是 `物体` 或 `物体.部件`（例如 `eng.intake_valve`）；`pose`、`spin`、`move`、`explode` 的目标只能是物体。点（`look`、`pos`、`orbit.around`、`label.attach`、`dimension.from/to`）是坐标、标记点、`物体` 或 `物体.锚点`，只认锚点名，不认部件 id。
-11. **`time_order` 检查**（加到第 5 节的静态校验里）：相机关键帧的时间顺序反了，或动作的 `until` 不在 `at` 之后，在不需要时长就能判断时报错。
-12. **同一个词出现多次**：`occurrence` 按去掉标点后的旁白里**可以重叠**的匹配计数，C 的校验和 B 的锚点换算一致。
+- **2026-11-25，A（[#40](https://github.com/liangruibupt/explainer_video_platform/pull/40)）、D（[#39](https://github.com/liangruibupt/explainer_video_platform/pull/39)）**：模型记录的 `size` 是米、字节数在 `bytes`；`meta.parts[].local`；`evp_slot` 可以是 `#rrggbb`；校验码加 `bad_id`、`missing_part`；A 补的几何默认约定；`?kind=model` 和 `turntable_url`；镜头 `status` 取值和 `report` 结构；四冲程示例曲轴箱改半透明（0.45）、缸盖 0.6；`core/expr.ts` 修 `tsc --strict` 的 5 个类型错误（行为不变）。
+- **2026-11-25，C（[#42](https://github.com/liangruibupt/explainer_video_platform/pull/42)）**：目标和点的写法（第 7 节）；静态校验加 `time_order`；`occurrence` 按可重叠匹配计数。
+- **2026-11-25，B（[#43](https://github.com/liangruibupt/explainer_video_platform/pull/43)）、E（[#41](https://github.com/liangruibupt/explainer_video_platform/pull/41)）和集成**：`types.ts` 加 B 的 ResolvedShot 字段和 A 的 `parts[].local`、`bytes`；淡入淡出编译后是帧；缓动和 `until` 的默认值；剖切保留侧；`cli.ts` 引入 `SHOT_COMMANDS`，B 的测试用 GLB 生成器只留给 JS 单元测试，作业和 Python 测试都用 A 的 `build-asset`；GL 改成每次渲染传 `gl="swangle"`（`render.render()` 新增参数），不再给每个工程写 swangle 配置；镜头检查有 error 时的 Opus 重写和环绕兜底放在 `previs/job.py`；任务带固定规划时不做外形重写；E 的额外路由和任务中心来源；A 的转台没有换成 B 的渲染器（需要为转台单独生成工程，不是小改动）。

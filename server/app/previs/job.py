@@ -86,10 +86,14 @@ def _image3d(d: Path, a: dict, note) -> dict:
 def assets_step(job: dict, d: Path, plan: dict, note: Callable[[str], None] = lambda m: None,
                 shape: bool = True) -> dict:
     """Build every asset of the plan into the library and write previs/assets.json.
-    Parametric: C's build_assets (A's builder, rewrite loop, shape check) -> plan_check.json.
+    Parametric: C's build_assets (A's builder, rewrite loop, shape check unless the plan is
+    fixed) -> plan_check.json.
     image3d: E's run_image3d. library: the given id. Returns {"@id": library id}."""
     from ..assets import store
     d = Path(d)
+    # a fixed plan (job created with previs_plan) is authoritative: no Opus shape rewrite, the
+    # camera keys were written for exactly these dimensions
+    shape = shape and not job.get("fixed_plan")
     report = pplan.build_assets(plan, job["scenes"], library_models(), shape=shape,
                                 check_path=d / "previs" / "plan_check.json")
     ids = dict(report["asset_ids"])
