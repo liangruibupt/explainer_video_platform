@@ -14,7 +14,8 @@ Job dir files (jobs/<id>/):
   previs/status.json           per shot: status (queued|running|done|failed|blocked), render
                                seconds, errors
 
-The compiler / checker is node: js/dist/shot.mjs (built from js/shot/*.ts by js/shot/build.sh).
+The compiler / checker is node: js/dist/previs.mjs compile-shot | check-shot | plan-image
+(js/cli.ts, built by js/build.sh through assets_build.ensure_dist()).
 """
 from __future__ import annotations
 
@@ -32,23 +33,16 @@ from ..remotion import render
 from . import project as pproject
 
 JS = Path(__file__).parent / "js"
-BUNDLE = JS / "dist" / "shot.mjs"
 NODE = os.environ.get("NODE", "node")
 FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 GL = "swangle"  # the only WebGL backend that works on this box (contract section 10)
-_build_lock = threading.Lock()
 _render_lock = threading.Lock()  # one previs render at a time per process
 
 
 def bundle() -> Path:
-    """Build js/dist/shot.mjs when missing or older than any source under js/shot or js/core."""
-    with _build_lock:
-        srcs = [p for d in ("shot", "core") for p in (JS / d).glob("*.ts")]
-        newest = max((p.stat().st_mtime for p in srcs), default=0)
-        if not BUNDLE.exists() or BUNDLE.stat().st_mtime < newest:
-            subprocess.run(["bash", str(JS / "shot" / "build.sh")], check=True, capture_output=True,
-                           text=True, timeout=300)
-        return BUNDLE
+    """dist/previs.mjs (A's cli.ts, which dispatches B's SHOT_COMMANDS), rebuilt when stale."""
+    from . import assets_build
+    return assets_build.ensure_dist()
 
 
 def node(*args, timeout: int = 600) -> subprocess.CompletedProcess:
@@ -225,7 +219,7 @@ def render_shot(job_dir: Path, sid: str, *, stills: bool = True, log: Path | Non
     with _render_lock:
         t0 = time.time()
         try:
-            render.render(proj, out, log, comp=pproject.comp_id(sid))
+            render.render(proj, out, log, comp=pproject.comp_id(sid), gl=GL)
         except Exception as e:  # noqa: BLE001
             _status(d, {sid: {"status": "failed", "error": str(e)}})
             raise
@@ -247,5 +241,5 @@ def render_main(job_dir: Path, log: Path | None = None) -> dict:
     d = Path(job_dir)
     with _render_lock:
         t0 = time.time()
-        render.render(d / "remotion", d / "final.mp4", log or (d / "previs" / "render.log"))
+        render.render(d / "remotion", d / "final.mp4", log or (d / "previs" / "render.log"), gl=GL)
     return {"video": str(d / "final.mp4"), "seconds": round(time.time() - t0, 1)}

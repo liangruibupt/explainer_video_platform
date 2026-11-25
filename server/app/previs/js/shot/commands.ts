@@ -1,6 +1,5 @@
-// Part B commands for the previs CLI (docs/PREVIS_CONTRACT.md section 8). A's js/cli.ts can
-// import SHOT_COMMANDS and dispatch to them; until then shot/main.ts is the entry
-// (bundled to js/dist/shot.mjs by shot/build.sh).
+// Part B commands for the previs CLI (docs/PREVIS_CONTRACT.md section 8). js/cli.ts imports
+// SHOT_COMMANDS and dispatches to them (node js/dist/previs.mjs <command>, built by js/build.sh).
 //
 //   compile-shot --plan plan.json --shot s02 --assets assets.json --words words.json
 //                --durations durations.json --size 1920x1080 --out s02.json

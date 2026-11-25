@@ -125,9 +125,12 @@ def stills(proj: Path, frames: list, outs: list, log: Path | None = None,
 
 def render(proj: Path, out: Path, log: Path | None = None, *, entry: str = "src/index.ts",
            comp: str = "Main", props: dict | None = None, public_dir: Path | None = None,
-           cwd: Path | None = None, env: dict | None = None, timeout: int = 3600) -> None:
+           cwd: Path | None = None, env: dict | None = None, timeout: int = 3600,
+           gl: str | None = None) -> None:
     """Render a composition to H.264 + AAC. `cwd`/`entry`/`public_dir`/`env` let part C render
-    the workbench's own entry with an edited project as props."""
+    the workbench's own entry with an edited project as props. gl: Chromium GL backend; None =
+    the project's remotion.config.ts ("angle"). 3D previs (WebGL) passes "swangle", the only
+    backend that creates a WebGL context on this box (docs/PREVIS_CONTRACT.md section 10)."""
     out = Path(out)
     raw = out.with_name(out.stem + ".raw" + out.suffix)
     args = [_bin("remotion"), "render", entry, comp, raw, f"--concurrency={CONCURRENCY}",
@@ -138,6 +141,8 @@ def render(proj: Path, out: Path, log: Path | None = None, *, entry: str = "src/
         args.append(f"--props={pf}")
     if public_dir is not None:
         args.append(f"--public-dir={public_dir}")
+    if gl:
+        args.append(f"--gl={gl}")
     _run(args, cwd or proj, log, timeout, env=env)
     _fix_audio_priming(raw, out, log)
 

@@ -25,17 +25,6 @@ PALETTE = {"clay": "#c9c4bb", "accent1": "#d98c5f", "accent2": "#6f9fd8", "accen
            "accent4": "#d8c46f", "glass": "#a9b8c6"}
 INK = "#2b2924"
 CARD = "previs/3d"
-# The template's remotion.config.ts sets the GL backend to "angle", which cannot create a
-# WebGL context on this box (contract section 10). A previs project overrides it to swangle.
-CONFIG_TS = """import { Config } from "@remotion/cli/config";
-
-// 3D previs project (app/previs/project.py): WebGL needs the swangle backend on this box
-// (docs/PREVIS_CONTRACT.md section 10); otherwise the template's settings.
-Config.setVideoImageFormat("jpeg");
-Config.setChromiumOpenGlRenderer("swangle");
-Config.setConcurrency(2);
-Config.setOverwriteOutput(true);
-"""
 
 
 def comp_id(scene_id: str) -> str:
@@ -118,14 +107,14 @@ def write_previs(proj: Path, shots: dict, glbs: dict) -> list[str]:
 def write_project(job: dict, d: Path, frames: list, w: int, h: int, *, shots: dict, glbs: dict,
                   log: Callable[[str], None] = lambda m: None) -> Path:
     """A complete previs3d project in d/'remotion': template, previs files, scenes/index.ts,
-    data/timeline.json (card "previs/3d"), swangle config. Sets job['scenes'][i]['card']."""
+    data/timeline.json (card "previs/3d"). Sets job['scenes'][i]['card']. The template's
+    remotion.config.ts stays: renders pass gl="swangle" (shots.GL) on the command line."""
     proj = Path(d) / "remotion"
     render.copy_template(proj)
     # copy_template never overwrites; the previs renderer and Root.tsx (Shot-* compositions)
     # are fixed template files, so a re-written project always gets the current ones
     for p in [render.TEMPLATE / "src" / "Root.tsx", *(render.TEMPLATE / "src" / "lib" / "previs").glob("*")]:
         _copy(p, proj / p.relative_to(render.TEMPLATE))
-    (proj / "remotion.config.ts").write_text(CONFIG_TS)
     scenes = job["scenes"]
     sdir = proj / "src" / "scenes"
     for p in sdir.glob("*.tsx"):  # the template's sample scene

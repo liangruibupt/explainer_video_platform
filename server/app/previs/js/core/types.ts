@@ -97,7 +97,9 @@ export interface ModelMeta {
   bbox: { min: V3; max: V3 }; // rest pose, asset space, metres
   size: V3; // bbox max - min
   tris: number;
-  parts: { id: string; parent: string | null; bbox: { min: V3; max: V3 } }[]; // rest pose
+  bytes?: number; // GLB file size in the library record (`size` is the bbox size for models)
+  /** bbox: rest pose, asset space. local: the part's own frame (multiply by rig.partTransforms for any pose); null for an empty group. */
+  parts: { id: string; parent: string | null; bbox: { min: V3; max: V3 }; local?: { min: V3; max: V3 } | null }[];
   rig: {
     dofs: Record<string, { min: number; max: number; default: number; label?: string }>;
     drivers: Record<string, string>;
@@ -188,7 +190,7 @@ export interface ShotSpec {
   set: string; // set id
   camera: { keys: CameraKey[]; path?: "catmull" | "linear" };
   actions?: Action[];
-  style?: { look?: "clay" | "flat" | "wire"; shadows?: boolean; outline?: boolean; fade_in?: number; fade_out?: number };
+  style?: { look?: "clay" | "flat" | "wire"; shadows?: boolean; outline?: boolean; fade_in?: number; fade_out?: number }; // fades in seconds
 }
 
 // ---------- Plan (what the agent writes for one job) ----------
@@ -234,18 +236,23 @@ export interface ResolvedShot {
     xform: number[][];
     /** Per frame part-local transforms from the rig: part id -> per-frame [px,py,pz,rx,ry,rz]; one entry = constant. */
     parts: Record<string, number[][]>;
-    highlight?: { from: number; to: number; color: string }[];
+    scale?: number; // uniform set-object scale (default 1)
+    highlight?: { from: number; to: number; color: string; part?: string }[]; // part: one part (and children) only
     explode?: number[]; // per frame factor, or one entry
+    explode_dirs?: Record<string, V3>; // object-space offset per part for factor 1
+    part_visible?: Record<string, number[]>; // show / hide of single parts: per-frame 0..1, one entry = constant
   }[];
   overlays: (
-    | { kind: "label"; from: number; to: number; text: string; point: V3; side: "left" | "right" | "top"; follow?: string }
+    | { kind: "label"; from: number; to: number; text: string; point: V3; side: "left" | "right" | "top"; follow?: string; track?: number[][] } // track: per-frame world point from `from` to `to`
     | { kind: "dimension"; from: number; to: number; a: V3; b: V3; text: string }
   )[];
   sections: { from: number; to: number; targets: string[]; normal: V3; offset: number }[];
   set: { background: string; ground: { kind: string; size: number; color: string }; lights: string };
-  style: { look: string; shadows: boolean; outline: boolean; fade_in: number; fade_out: number };
+  style: { look: string; shadows: boolean; outline: boolean; fade_in: number; fade_out: number }; // fades in FRAMES here (seconds in ShotSpec)
   /** Every anchor as resolved, for the review page and the checks. */
   anchors: { where: string; anchor: TimeAnchor; frame: number; word_time?: number }[];
+  /** What actions and overlays point at, for subject_out_of_frame / subject_occluded (check.ts). */
+  subjects?: { where: string; from: number; to: number; obj?: string; part?: string; parts?: string[]; point?: number[][] }[];
 }
 
 // ---------- Check report ----------

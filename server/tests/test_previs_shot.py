@@ -1,6 +1,7 @@
 """Part B of 3D previs: shot compile + checks (shots.py), project writer (project.py), HTTP
 routes (api.py) and the previs.render node (node.py). Uses the four_stroke fixture and the
-test-only asset builder (node shot.mjs fixture-asset) until part A's builder lands."""
+real asset builder (part A's build-asset, the same one jobs use); the test-only builder in
+js/shot/testkit.ts is only used by the JS unit tests."""
 import json
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app import pipeline
 from app.previs import api, node, project, shots
+from app.remotion import render
 
 EX = Path(__file__).resolve().parents[1] / "app" / "previs" / "examples" / "four_stroke"
 
@@ -20,9 +22,10 @@ EX = Path(__file__).resolve().parents[1] / "app" / "previs" / "examples" / "four
 @pytest.fixture(scope="module")
 def asset_dir(tmp_path_factory):
     d = tmp_path_factory.mktemp("asset_four")
-    r = subprocess.run(["node", str(shots.bundle()), "fixture-asset", str(EX / "plan.json"),
+    (d / "spec.json").write_text(json.dumps(json.loads((EX / "plan.json").read_text())["assets"][0]["spec"]))
+    r = subprocess.run(["node", str(shots.bundle()), "build-asset", str(d / "spec.json"),
                         str(d / "file.glb"), str(d / "meta.json")], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == 0, r.stderr + r.stdout
     return d
 
 
@@ -128,7 +131,8 @@ def test_write_project(asset_dir, tmp_path):
     assert [s["duration"] for s in tl["scenes"]] == json.loads((EX / "durations.json").read_text())
     assert tl["scenes"][0]["card"] == "previs/3d"
     assert "Shot-" in (proj / "src" / "Root.tsx").read_text()
-    assert "swangle" in (proj / "remotion.config.ts").read_text()
+    # GL backend is passed per render (render.render(gl="swangle")), the template config stays
+    assert (proj / "remotion.config.ts").read_text() == (render.TEMPLATE / "remotion.config.ts").read_text()
     assert (proj / "src" / "lib" / "previs" / "PrevisShot.tsx").exists()
     assert project.comp_id("s01") == "Shot-s01" and project.comp_id("a_b") == "Shot-a-b"
 

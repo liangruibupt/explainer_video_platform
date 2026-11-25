@@ -1,6 +1,6 @@
 // previs command line (docs/PREVIS_CONTRACT.md 4.5): node dist/previs.mjs <command> ...
-// Built by build.sh. Part A's asset commands are here; part B adds its shot commands to COMMANDS
-// (the integrator resolves the merge).
+// Built by build.sh. Part A's asset commands are here; part B's shot commands (compile-shot,
+// check-shot, plan-image, fixture-asset) come from shot/commands.ts SHOT_COMMANDS.
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import type { CheckIssue, ModelMeta } from "./core/types";
@@ -9,6 +9,7 @@ import { writeGlb } from "./asset/glb";
 import { DEFAULT_NORMALIZE_TRIS, normalizeGlb, parseTarget } from "./asset/normalize";
 import { turntable } from "./asset/turntable";
 import { validateAsset } from "./asset/validate";
+import { SHOT_COMMANDS } from "./shot/commands";
 
 const json = (p: string) => JSON.parse(readFileSync(p, "utf8"));
 const write = (p: string, v: unknown) => writeFileSync(p, JSON.stringify(v, null, 1));
@@ -83,6 +84,10 @@ export const COMMANDS: Record<string, [string, Cmd]> = {
     },
   ],
 };
+
+for (const [name, fn] of Object.entries(SHOT_COMMANDS)) {
+  COMMANDS[name] = ["(see shot/commands.ts)", async (args) => fn(args)];
+}
 
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...args] = argv;

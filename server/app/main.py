@@ -32,7 +32,7 @@ class JobIn(BaseModel):
     background_png_b64: str = Field(default="", max_length=12_000_000)
     illustrations: int = Field(default=0, ge=0, le=4)
     clips: int = Field(default=0, ge=0, le=2)
-    renderer: str = Field(default="html", pattern=r"^(html|remotion)$")
+    renderer: str = Field(default="html", pattern=r"^(html|remotion|previs3d)$")
 
 
 @app.get("/api/health")
@@ -447,6 +447,12 @@ for _part in ("assist_api", "scene_edit_api", "revoice_api", "consistency_api"):
         if _e.name != f"app.motion.{_part}":
             raise
         _logging.getLogger(__name__).info("motion %s not present", _part)
+
+
+# 3D previs (docs/PREVIS_CONTRACT.md section 11): model assets (A), shots (B), planning (C),
+# image-to-3D (E).
+for _mod in ("app.assets.model_api", "app.previs.api", "app.previs.plan_api", "app.mesh_api"):
+    app.include_router(_importlib.import_module(_mod).router)
 
 
 if WEB.exists():
