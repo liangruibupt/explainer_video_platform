@@ -131,6 +131,20 @@ def test_request_matches_contract_defaults():
         "hunyuan3d-2", True, 7, 50, 20000)
 
 
+def test_prepare_image_flattens_opaque_rgba(serve):
+    """Qwen-Image returns RGBA with alpha 181-255: not a cut-out, so it is flattened on white
+    and the worker runs background removal (live test 2026-11-25: a floor slab otherwise)."""
+    im = Image.new("RGBA", (400, 400), (255, 255, 255, 255))
+    im.putpixel((5, 5), (255, 255, 255, 181))
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    out = Image.open(io.BytesIO(mesh.prepare_image(b.getvalue())))
+    assert out.mode == "RGB"
+    assert not serve.has_cutout_alpha(im)
+    assert serve.has_cutout_alpha(Image.new("RGBA", (100, 100), (0, 0, 0, 0)))
+    assert not serve.has_cutout_alpha(Image.new("RGB", (100, 100)))
+
+
 def test_prepare_image_keeps_alpha_and_shrinks():
     out = Image.open(io.BytesIO(mesh.prepare_image(png(3000, 1500, "RGBA", (0, 0, 0, 0)))))
     assert out.mode == "RGBA" and max(out.size) == mesh.SEND_EDGE

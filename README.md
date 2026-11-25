@@ -59,7 +59,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 ### 3D 资产（素材库）
 
 素材库的「3D 模型」标签（见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md) 第 4 节）：
-- 三种来源，都存成带真实尺寸的 GLB：一句话写参数化规格（Opus，机械、建筑、示意结构）；图生 3D（Qwen-Image 概念图 + Hunyuan3D-2，见 [docs/MESH.md](docs/MESH.md)，GPU 实测还没做）；上传 GLB 后按目标尺寸缩放。
+- 三种来源，都存成带真实尺寸的 GLB：一句话写参数化规格（Opus，机械、建筑、示意结构）；图生 3D（Qwen-Image 概念图 + Hunyuan3D-2mini，见 [docs/MESH.md](docs/MESH.md)：g7.2xlarge 从 0 冷启动约 6 分钟，热机一个模型约 14 秒）；上传 GLB 后按目标尺寸缩放。
 - 构建后校验尺寸、落地、关节活动范围，生成 4 秒转台视频。卡片悬停播放转台，点开是 three.js 查看器，可以拖动自由度滑块（例如曲轴转角）看联动。
 
 ### 单独生成
@@ -141,7 +141,7 @@ scripts/studio.sh start    # 打开 http://127.0.0.1:8765
 | 3 | 工作流编排 + Agent 生成工作流 | 已完成：节点库、校验、缓存、人工审核、Agent 生成和改图、模板、工作流页面（还没有拖拽编辑和候选数） |
 | 4 | 进阶界面：对话创作、工作流编辑器、设置 | 设计中 |
 | 5 | 差评驱动的 skill 自动改进（以 PR 形式提交，人工批准） | 已完成：不满意按钮、快照与质检、Opus 分析、聚类、起草 PR、改前改后对比（实测见 docs/DESIGN.md 第 8 节） |
-| 6 | 3D 白模预演：参数化 / 图生 3D 资产、按旁白卡点的镜头、逐镜头检查和渲染 | 已完成（图生 3D 等 IAM 授权后实测），见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md) |
+| 6 | 3D 白模预演：参数化 / 图生 3D 资产、按旁白卡点的镜头、逐镜头检查和渲染 | 已完成，见 [docs/PREVIS_CONTRACT.md](docs/PREVIS_CONTRACT.md)、图生 3D 实测见 [docs/MESH.md](docs/MESH.md) |
 
 ## 来源
 

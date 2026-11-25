@@ -27,7 +27,7 @@ TIMEOUT_S = 3600
 # extra worker parameters generate(**kw) accepts: name -> (cast, lo, hi)
 PARAMS = {"remove_bg": (bool, None, None), "octree_resolution": (int, 64, 512),
           "steps": (int, 1, 100), "guidance": (float, 0.0, 20.0), "max_faces": (int, 500, 500000)}
-COLD_MIN, USD_PER_HOUR = 8.0, 2.24
+COLD_MIN, USD_PER_HOUR = 6.0, 2.52  # measured fallbacks (docs/MESH.md 5)
 
 
 class MeshError(ValueError):
@@ -76,6 +76,13 @@ def status() -> dict:
     return dict(gpu_client.status(MODULE), **base)
 
 
+def is_cutout(im) -> bool:
+    """RGBA image with at least 1 % (nearly) transparent pixels, i.e. a real cut-out (same
+    rule as the worker adapter's has_cutout_alpha)."""
+    hist = im.getchannel("A").histogram()
+    return sum(hist[:17]) >= 0.01 * im.size[0] * im.size[1]
+
+
 def prepare_image(raw: bytes) -> bytes:
     """Check an input image (png / jpg / webp) and return it as PNG, alpha kept (a cut-out
     skips background removal on the worker), long edge at most SEND_EDGE."""
@@ -97,6 +104,12 @@ def prepare_image(raw: bytes) -> bytes:
                 raise MeshError(f"图片太大（长边最多 {IMAGE_MAX_EDGE}px）")
             alpha = im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info)
             im = im.convert("RGBA" if alpha else "RGB")
+            if alpha and not is_cutout(im):
+                # opaque-ish RGBA (Qwen-Image output): flatten on white so the worker's
+                # background removal runs; only a real cut-out keeps its alpha
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im, mask=im.getchannel("A"))
+                im = bg
             if max(w, h) > SEND_EDGE:
                 im.thumbnail((SEND_EDGE, SEND_EDGE), Image.LANCZOS)
             out = io.BytesIO()
