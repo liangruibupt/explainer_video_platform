@@ -1,5 +1,5 @@
 numpy==1.26.4
-diffusers==0.31.0
+diffusers==0.38.0
 huggingface-hub==0.28.1
 transformers==4.48.3
 tokenizers==0.21.0
