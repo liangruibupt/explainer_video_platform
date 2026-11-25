@@ -11,7 +11,8 @@ Job dir files (jobs/<id>/):
   previs/<sid>.plan.png/.svg   top-down plan image
   previs/stills/<sid>.f<N>.png 5 layout stills       (render_shot)
   shots/<sid>.mp4              standalone shot clip  (render_shot)
-  previs/status.json           per shot: status, render seconds, errors
+  previs/status.json           per shot: status (queued|running|done|failed|blocked), render
+                               seconds, errors
 
 The compiler / checker is node: js/dist/shot.mjs (built from js/shot/*.ts by js/shot/build.sh).
 """
@@ -220,7 +221,7 @@ def render_shot(job_dir: Path, sid: str, *, stills: bool = True, log: Path | Non
     out = d / "shots" / f"{sid}.mp4"
     out.parent.mkdir(exist_ok=True)
     log = log or (d / "previs" / "render.log")
-    _status(d, {sid: {"status": "rendering", "started": time.time()}})
+    _status(d, {sid: {"status": "running", "started": time.time()}})
     with _render_lock:
         t0 = time.time()
         try:

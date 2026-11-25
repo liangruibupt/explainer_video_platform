@@ -1,7 +1,10 @@
 """HTTP routes for a job's 3D previs shots (docs/PREVIS_CONTRACT.md section 11, part B).
 
-  GET  /api/jobs/{id}/previs                   plan + per shot: resolved_url, report, stills,
-                                               plan_png, clip_url, status
+  GET  /api/jobs/{id}/previs                   plan + per shot: resolved_url, report
+                                               ({"issues": [...]}), stills, plan_png, clip_url,
+                                               status: queued|running|done|failed|blocked
+                                               (blocked = check errors, not rendered; a shot not
+                                               rendered yet reads queued), seconds
   POST /api/jobs/{id}/previs/{scene}/render    recompile + re-render this one shot (background)
   PUT  /api/jobs/{id}/previs/{scene}           {"shot": ShotSpec} replaces the shot, recompiles,
                                                returns the new check report (no render)
@@ -30,6 +33,7 @@ JOB_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
 SCENE_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
 NAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,80}")
 MEDIA = {".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".mp4": "video/mp4"}
+STATUSES = ("queued", "running", "done", "failed", "blocked")
 _busy: set = set()
 _lock = threading.Lock()
 
@@ -76,25 +80,31 @@ def _prev(plan: dict, scene: str) -> str | None:
 def get_previs(job_id: str):
     d = _job(job_id)
     plan = _plan(d)
-    status = _read(d / "previs" / "status.json", {}) or {}
+    stmap = _read(d / "previs" / "status.json", {}) or {}
     base = f"/api/jobs/{job_id}/previs"
     out = []
     for s in plan["shots"]:
         sid = s["id"]
-        st = dict(status.get(sid, {}))
+        st = dict(stmap.get(sid, {}))
         stills = sorted((d / "previs" / "stills").glob(f"{sid}.f*.png"),
                         key=lambda p: int(p.stem.rsplit(".f", 1)[1]))
         has = lambda n: (d / "previs" / n).exists()  # noqa: E731
+        report = _read(d / "previs" / f"{sid}.report.json", [])
+        clip = (d / "shots" / f"{sid}.mp4").exists()
+        status = st.get("status")
         if (str(d), sid) in _busy:
-            st["status"] = "rendering"
+            status = status if status in ("queued", "running") else "queued"
+        elif status not in STATUSES or (status == "done" and not clip):
+            status = ("blocked" if any(i["severity"] == "error" for i in report)
+                      else "done" if clip else "queued")
         out.append({
             "scene": sid,
             "resolved_url": f"{base}/files/{sid}.json" if has(f"{sid}.json") else None,
-            "report": _read(d / "previs" / f"{sid}.report.json", []),
+            "report": {"issues": report},
             "stills": [f"{base}/stills/{p.name}" for p in stills],
             "plan_png": f"{base}/files/{sid}.plan.png" if has(f"{sid}.plan.png") else None,
-            "clip_url": f"{base}/{sid}/clip" if (d / "shots" / f"{sid}.mp4").exists() else None,
-            "status": st.get("status") or ("compiled" if has(f"{sid}.json") else "pending"),
+            "clip_url": f"{base}/{sid}/clip" if clip else None,
+            "status": status,
             "seconds": st.get("seconds"),
         })
     return {"plan": plan, "shots": out}
@@ -157,8 +167,10 @@ def put_scene(job_id: str, scene: str, body: dict = Body(...)):
         r = shots.compile_shot(d, scene, prev=_prev(plan, scene), plan=plan)
     except RuntimeError as e:
         raise HTTPException(422, f"compile failed: {e}") from e
-    shots._status(d, {scene: {"status": "compiled", "errors": r["errors"], "warnings": r["warnings"]}})
-    return {"scene": scene, "report": r["report"], "errors": r["errors"], "warnings": r["warnings"]}
+    # the shot changed: its old clip no longer matches; blocked when it has check errors
+    shots._status(d, {scene: {"status": "blocked" if r["errors"] else "queued",
+                              "errors": r["errors"], "warnings": r["warnings"]}})
+    return {"scene": scene, "report": {"issues": r["report"]}, "errors": r["errors"], "warnings": r["warnings"]}
 
 
 def _file(p: Path) -> FileResponse:

@@ -106,9 +106,12 @@ export function posedBoxes(meta: ModelMeta, world: Record<string, THREE.Matrix4>
     const w = world[p.id];
     const r = rest[p.id];
     if (!w || !r) continue;
-    const s = p.bbox;
+    // meta.parts[].local (contract 15.2): the box in the part's own frame, mapped by the posed
+    // matrix; older metas only have the rest-pose asset-space bbox: posed * rest^-1
+    const local = (p as { local?: Box }).local;
+    const s = local ?? p.bbox;
     if (s.max[0] - s.min[0] <= 0 && s.max[1] - s.min[1] <= 0 && s.max[2] - s.min[2] <= 0) continue; // group
-    out[p.id] = transformBox(s, w.clone().multiply(r.clone().invert()));
+    out[p.id] = local ? transformBox(local, w) : transformBox(s, w.clone().multiply(r.clone().invert()));
   }
   return out;
 }

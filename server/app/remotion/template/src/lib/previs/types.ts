@@ -22,6 +22,7 @@ export interface RObject {
   highlight?: RHighlight[];
   explode?: number[];
   explode_dirs?: Record<string, V3>; // object-space offset per part for factor 1
+  part_visible?: Record<string, number[]>; // show / hide of single parts (and their children)
 }
 
 export type ROverlay =

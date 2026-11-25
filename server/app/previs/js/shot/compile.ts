@@ -8,7 +8,10 @@
 //   section without `until` last to the shot's end.
 // - A target that is first touched by `show` starts hidden.
 // - style.fade_in / fade_out are seconds in the shot spec and FRAMES in the ResolvedShot.
+// - Targets (contract 15.10): show / hide / highlight / section take "obj" or "obj.part";
+//   pose / spin / move / explode only "obj". Points take coordinates, marks, "obj", "obj.anchor".
 // - Extra fields on the ResolvedShot (the renderer reads them, the core type does not have them):
+//   objects[].part_visible (show / hide of single parts),
 //   objects[].scale, objects[].explode_dirs (object-space offset per part for factor 1),
 //   highlight[].part (highlight one part instead of the whole object),
 //   label overlays' `track` (per-frame world points from `from` to `to`, one entry = constant).
@@ -33,12 +36,13 @@ import type {
   WordEntry,
 } from "../core/types";
 import { catmull, ease, lensToVfov, lerp, lerp3 } from "./ease";
-import { apply, explodeDirs, objectMatrix, restMatrices, worldParts } from "./pose";
+import { apply, explodeDirs, objectMatrix, worldParts } from "./pose";
 import type * as THREE from "three";
 import type { Subject } from "./check";
 
 export const FPS = 30;
-export const PUNCT = /[\s\p{P}\p{S}]/gu;
+/** The punctuation captions.py strips (skills/explainer-video-pipeline/scripts/captions.py PUNCT). */
+export const PUNCT = /[\s，。、！？；：,.!?;:“”"'（）()…—-]/g;
 export const stripPunct = (s: string) => s.replace(PUNCT, "");
 
 export interface AssetInfo {
@@ -72,6 +76,8 @@ export interface Compiled {
 export type RObject = ResolvedShot["objects"][number] & {
   scale?: number;
   explode_dirs?: Record<string, V3>;
+  /** show / hide of single parts: part id -> per-frame visibility 0..1 (one entry = constant). */
+  part_visible?: Record<string, number[]>;
   highlight?: { from: number; to: number; color: string; part?: string }[];
 };
 
@@ -236,10 +242,11 @@ export function compileShot(inp: CompileInput): Compiled {
       }
       case "show":
       case "hide": {
-        const t = target(act.target, w, false);
+        const t = target(act.target, w, true);
         if (!t) return;
-        const l = visSegs.get(t[0]) ?? [];
-        visSegs.set(t[0], l);
+        const key = t[1] ? `${t[0]}.${t[1]}` : t[0];
+        const l = visSegs.get(key) ?? [];
+        visSegs.set(key, l);
         l.push({ a, fade: Math.max(0, Math.round((act.fade ?? 0) * fps)), on: act.op === "show" });
         break;
       }
@@ -365,11 +372,15 @@ export function compileShot(inp: CompileInput): Compiled {
         })),
       ),
     );
-    const vis = visSegs.get(o.id) ?? [];
-    const visible = chain(
-      vis.length && [...vis].sort((p, q) => p.a - q.a)[0].on ? 0 : 1,
-      vis.map((s) => ({ a: s.a, b: s.a + s.fade, value: (v0: number, f: number) => lerp(v0, s.on ? 1 : 0, ramp(s.a, s.a + s.fade, "linear", f)) })),
-    );
+    const visTrack = (vis: { a: number; fade: number; on: boolean }[]) =>
+      chain(
+        vis.length && [...vis].sort((p, q) => p.a - q.a)[0].on ? 0 : 1,
+        vis.map((s) => ({ a: s.a, b: s.a + s.fade, value: (v0: number, f: number) => lerp(v0, s.on ? 1 : 0, ramp(s.a, s.a + s.fade, "linear", f)) })),
+      );
+    const visible = visTrack(visSegs.get(o.id) ?? []);
+    const partVisible: Record<string, number[]> = {};
+    for (const [k, segs] of visSegs)
+      if (k.startsWith(`${o.id}.`)) partVisible[k.slice(o.id.length + 1)] = compact(visTrack(segs).map((x) => [r6(x)])).map((x) => x[0]);
     const xform = Array.from({ length: N }, (_, f) => r6a([...six.map((t) => t[f]), visible[f]]));
     const ex = explSegs.get(o.id);
     const explode = ex ? chain(0, ex.map((s) => ({ a: s.a, b: s.b, value: (v0: number, f: number) => lerp(v0, s.to, ramp(s.a, s.b, s.ease, f)) }))).map(r6) : null;
@@ -391,6 +402,7 @@ export function compileShot(inp: CompileInput): Compiled {
       ...(highlights.get(o.id) ? { highlight: highlights.get(o.id) } : {}),
       ...(explode ? { explode: compact(explode.map((x) => [x])).map((x) => x[0]), explode_dirs: explodeDirs(meta) } : {}),
       ...(scale !== 1 ? { scale } : {}),
+      ...(Object.keys(partVisible).length ? { part_visible: partVisible } : {}),
     };
     rObjects.push(ro);
   }
@@ -431,13 +443,8 @@ export function compileShot(inp: CompileInput): Compiled {
     const ap = meta.anchor_parts?.[k];
     if (ap && world[ap.part]) return { p: apply(world[ap.part], ap.at), follow: [o, ap.part, ap.at] };
     if (meta.anchors?.[k]) return { p: apply(om, meta.anchors[k]) };
-    const part = meta.parts.find((x) => x.id === k);
-    if (part && world[k]) {
-      // part centre: rest box centre in the part's own frame
-      const rest = restLocalCenter(meta, k);
-      return { p: apply(world[k], rest), follow: [o, k, rest] };
-    }
-    err("unknown_point", `物体 ${o} 没有锚点或部件 ${k}`, where);
+    // contract section 15.10: points name anchors only, never part ids
+    err("unknown_point", `物体 ${o} 没有锚点 ${k}${meta.rig.rest[k] ? "（这是部件 id；点只能写锚点名）" : ""}`, where);
     return null;
   };
 
@@ -571,12 +578,4 @@ export function compileShot(inp: CompileInput): Compiled {
     subjects,
   };
   return { shot, issues };
-}
-
-/** Centre of a part's rest box (asset space) mapped into the part's own frame. */
-function restLocalCenter(meta: ModelMeta, id: string): V3 {
-  const b = meta.parts.find((x) => x.id === id)!.bbox;
-  const c: V3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2];
-  const m = restMatrices(meta)[id];
-  return m ? apply(m.clone().invert(), c) : c;
 }

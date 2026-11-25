@@ -230,14 +230,23 @@ test("subject_out_of_frame", () => {
 });
 
 test("subject_occluded", () => {
-  // the crank sits inside the solid crankcase box: hidden without a section, visible with one
+  // with an OPAQUE crankcase (the fixture's is see-through, opacity 0.45) the crank inside it is
+  // hidden without a section and visible with one
+  const spec = JSON.parse(JSON.stringify((PLAN.assets[0] as { spec: { parts: { id: string; opacity?: number }[] } }).spec));
+  spec.parts.find((p: { id: string }) => p.id === "crankcase").opacity = 1;
+  const opaque = { eng: buildTestAsset(spec).meta };
+  const runO = (shot: ShotSpec) => {
+    const c = compile(shot.id, withShot(shot));
+    return [...c.issues, ...checkShot(c.shot as RShot, opaque)];
+  };
   const s = base({ actions: [{ op: "highlight", target: "eng.crank", at: { mark: "start" } }] });
   s.camera.keys.forEach((k) => ((k.look = "eng.crank_center"), (k.pos = [0.3, 0.12, 0.9]))); // low, in front
-  assert.ok(codes(run(s)).includes("subject_occluded"));
+  assert.ok(codes(runO(s)).includes("subject_occluded"));
+  assert.ok(!codes(run(s)).includes("subject_occluded"), "see-through crankcase does not occlude");
   // section away the front of the crankcase (kept: z <= 0); the crank (z -0.04..-0.02) is then visible
   s.actions!.push({ op: "section", targets: ["eng"], normal: [0, 0, -1], offset: 0, at: { mark: "start" } });
   s.camera.keys.forEach((k) => (k.pos = [0, 0.12, 0.9]));
-  assert.ok(!codes(run(s)).includes("subject_occluded"));
+  assert.ok(!codes(runO(s)).includes("subject_occluded"));
 });
 
 test("camera_jump and fast_motion", () => {
@@ -304,6 +313,61 @@ test("dof_conflict, unknown_dof, unknown_target, unknown_point", () => {
     }),
   );
   assert.ok(!codes(ok).includes("dof_conflict"));
+});
+
+test("targets and points (contract 15.10): part targets for show/hide/highlight/section only, anchors only as points", () => {
+  const c = compile(
+    "s02",
+    withShot(
+      base({
+        actions: [
+          { op: "pose", target: "eng.crank", dof: "crank", to: 90, at: { t: 1 } },
+          { op: "label", text: "活塞", attach: "eng.piston", at: { t: 1 } },
+          { op: "label", text: "活塞顶", attach: "eng.piston_top", at: { t: 1 } },
+          { op: "section", targets: ["eng.cylinder"], normal: [0, 0, -1], offset: 0, at: { t: 0 } },
+        ],
+      }),
+    ),
+  );
+  assert.deepEqual(codes(c.issues).sort(), ["unknown_point", "unknown_target"]);
+  assert.deepEqual(c.shot.sections[0].targets, ["eng.cylinder"]);
+});
+
+test("show / hide of a single part: per-frame part visibility, hidden part leaves the checks", () => {
+  const s = base({ actions: [{ op: "hide", target: "eng.crankcase", at: { t: 1 }, fade: 0.5 }, { op: "show", target: "eng.crankcase", at: { t: 4 } }] });
+  s.camera.keys.forEach((k) => (k.pos = [0, 0.12, 0])); // inside the crankcase
+  const c = compile("s02", withShot(s));
+  assert.deepEqual(c.issues, []);
+  const v = (c.shot.objects[0] as { part_visible?: Record<string, number[]> }).part_visible!.crankcase;
+  assert.equal(v[0], 1);
+  assert.equal(v[30 + 15], 0);
+  assert.equal(v[120], 1);
+  assert.ok(v[37] > 0 && v[37] < 1, "fades over 0.5 s");
+  const inside = checkShot(c.shot as RShot, metas).filter((i) => i.code === "camera_inside");
+  assert.equal(inside.length, 1);
+  assert.ok(/共|有 (\d+) 帧/.test(inside[0].message));
+  const n = Number(/有 (\d+) 帧/.exec(inside[0].message)![1]);
+  assert.ok(n < c.shot.frames - 60, `hidden frames not counted (${n})`);
+});
+
+test("occurrence counts overlapping matches", () => {
+  const words: WordEntry[] = [..."啊啊啊，啊"].map((t, i) => ({ scene: "s02", text: t, start: 1 + i * 0.5, end: 1.5 + i * 0.5 }));
+  const durs = [0, 300, 10];
+  const mk = (occurrence: number) =>
+    compileShot({
+      plan: withShot(base({ actions: [{ op: "highlight", target: "eng", at: { word: "啊啊", occurrence } }] })),
+      shot: "s02",
+      assets: ASSETS,
+      words,
+      durations: durs,
+      order: SCENES.map((x) => x.id),
+      width: 1920,
+      height: 1080,
+    });
+  assert.equal(mk(1).shot.anchors[0].word_time, 1);
+  assert.equal(mk(2).shot.anchors[0].word_time, 1.5); // overlapping: starts at the 2nd 啊
+  assert.equal(mk(3).shot.anchors[0].word_time, 2); // across the stripped "，"
+  assert.deepEqual(codes(mk(4).issues), ["anchor_not_found"]);
 });
 
 // ---------------------------------------------------------------- testkit + plan drawing

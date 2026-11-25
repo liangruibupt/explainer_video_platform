@@ -107,15 +107,18 @@ export function buildTestAsset(spec: AssetSpec): Built {
     world[id] = par ? wm(par).clone().multiply(l) : l;
     return world[id];
   };
-  const parts: ModelMeta["parts"] = [];
+  const parts: (ModelMeta["parts"][number] & { local: { min: V3; max: V3 } })[] = [];
+  const localBox: Record<string, { min: V3; max: V3 }> = {};
   const all = new THREE.Box3();
   let tris = 0;
   for (const p of spec.parts) {
     const g = geos[p.id];
     const w = wm(p.id);
     let box: { min: V3; max: V3 };
+    let local: { min: V3; max: V3 } = { min: [0, 0, 0], max: [0, 0, 0] };
     if (g) {
       g.computeBoundingBox();
+      local = { min: g.boundingBox!.min.toArray() as V3, max: g.boundingBox!.max.toArray() as V3 };
       const b = g.boundingBox!.clone().applyMatrix4(w);
       all.union(b);
       box = { min: b.min.toArray() as V3, max: b.max.toArray() as V3 };
@@ -124,14 +127,18 @@ export function buildTestAsset(spec: AssetSpec): Built {
       const o = new THREE.Vector3().setFromMatrixPosition(w).toArray() as V3;
       box = { min: o, max: [...o] as V3 };
     }
-    parts.push({ id: p.id, parent: p.parent ?? null, bbox: box });
+    parts.push({ id: p.id, parent: p.parent ?? null, bbox: box, local });
+    localBox[p.id] = local;
   }
   const anchors: Record<string, V3> = {};
   const anchor_parts: ModelMeta["anchor_parts"] = {};
   for (const [k, a] of Object.entries(spec.anchors ?? {})) {
     if (typeof a === "string") {
-      anchor_parts[k] = { part: a, at: [0, 0, 0] };
-      anchors[k] = new THREE.Vector3().applyMatrix4(wm(a)).toArray() as V3;
+      // a part id: the centre of that part's box (contract 15.5)
+      const lb = localBox[a];
+      const c: V3 = lb ? [(lb.min[0] + lb.max[0]) / 2, (lb.min[1] + lb.max[1]) / 2, (lb.min[2] + lb.max[2]) / 2] : [0, 0, 0];
+      anchor_parts[k] = { part: a, at: c };
+      anchors[k] = new THREE.Vector3(...c).applyMatrix4(wm(a)).toArray() as V3;
     } else if (Array.isArray(a)) anchors[k] = v3(a);
     else {
       const at = v3(a.at);

@@ -168,14 +168,19 @@ export const Model: React.FC<{
       }
     }
     // materials: opacity (show/hide fades), highlight
+    const pv = new Map<THREE.Mesh, number>(); // single-part show / hide
+    for (const [pid, v] of Object.entries(obj.part_visible ?? {}))
+      for (const m of b.partMeshes(pid)) pv.set(m, Math.min(pv.get(m) ?? 1, row(v, frame)));
     const lit = new Map<THREE.Mesh, string>();
     for (const h of obj.highlight ?? [])
       if (frame >= h.from && frame <= h.to) for (const m of h.part ? b.partMeshes(h.part) : b.meshes) lit.set(m, h.color);
     for (const m of b.meshes) {
       const mat = m.material as THREE.MeshStandardMaterial;
       const base = mat.userData.baseOpacity as number;
-      mat.opacity = base * vis;
-      mat.transparent = mat.userData.glass || vis < 1;
+      const mv = vis * (pv.get(m) ?? 1);
+      m.visible = mv > 0.001;
+      mat.opacity = base * mv;
+      mat.transparent = mat.userData.glass || mv < 1;
       mat.depthWrite = !mat.transparent;
       const c = lit.get(m);
       mat.color.set(mat.userData.color);
@@ -202,7 +207,7 @@ export const Model: React.FC<{
       const pl = b.planes[c.si];
       sphere.copy(c.mesh.geometry.boundingSphere!).applyMatrix4(c.mesh.matrixWorld);
       const dist = pl.distanceToPoint(sphere.center);
-      const on = active[c.si] && b.root.visible && Math.abs(dist) < sphere.radius;
+      const on = active[c.si] && b.root.visible && c.mesh.visible && Math.abs(dist) < sphere.radius;
       c.cap.visible = on;
       if (!on) continue;
       pl.projectPoint(sphere.center, c.cap.position);

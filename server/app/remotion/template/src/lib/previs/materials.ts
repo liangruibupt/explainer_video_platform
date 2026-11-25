@@ -23,7 +23,9 @@ export function slotOf(m: THREE.Material): string {
 export function clayMaterial(src: THREE.Material, pal: Palette, look: string, objColor?: string): THREE.MeshStandardMaterial {
   const slot = slotOf(src);
   const base = (src as THREE.MeshStandardMaterial).color?.getHexString?.();
-  const color = slot === "clay" && objColor ? objColor : (pal as Record<string, string>)[slot] ?? (base ? `#${base}` : pal.clay);
+  // evp_slot is a slot name or "#rrggbb" (contract 15.3)
+  const color =
+    slot === "clay" && objColor ? objColor : /^#[0-9a-fA-F]{6}$/.test(slot) ? slot : (pal as Record<string, string>)[slot] ?? (base ? `#${base}` : pal.clay);
   const glass = slot === "glass" || src.opacity < 1;
   const opacity = glass ? (src.opacity < 1 ? src.opacity : GLASS_OPACITY) : 1;
   const m = new THREE.MeshStandardMaterial({

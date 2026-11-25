@@ -161,6 +161,7 @@ def test_api_get_put_render(asset_dir, client, monkeypatch):
     assert [s["scene"] for s in body["shots"]] == ["s01", "s02", "s03"]
     s2 = body["shots"][1]
     assert s2["resolved_url"] and s2["plan_png"] and s2["clip_url"] is None
+    assert s2["status"] == "queued" and isinstance(s2["report"]["issues"], list)
     assert client.get(s2["plan_png"]).headers["content-type"] == "image/png"
     assert client.get(f"/api/jobs/{jid}/previs/files/..%2Fjob.json").status_code == 404
     assert client.get("/api/jobs/bad/previs").status_code == 404
@@ -172,7 +173,10 @@ def test_api_get_put_render(asset_dir, client, monkeypatch):
     shot["camera"]["keys"][0]["pos"] = [0, 0.12, 0]
     r = client.put(f"/api/jobs/{jid}/previs/s02", json={"shot": shot})
     assert r.status_code == 200 and r.json()["errors"] >= 1
-    assert "camera_inside" in {i["code"] for i in r.json()["report"]}
+    assert "camera_inside" in {i["code"] for i in r.json()["report"]["issues"]}
+    s2 = client.get(f"/api/jobs/{jid}/previs").json()["shots"][1]
+    assert s2["status"] == "blocked"
+    assert "camera_inside" in {i["code"] for i in s2["report"]["issues"]}
     saved = json.loads((d / "previs" / "plan.json").read_text())["shots"][1]
     assert saved["camera"]["keys"][0]["pos"] == [0, 0.12, 0]
     assert (d / "previs" / "plan.prev.json").exists()
@@ -189,6 +193,7 @@ def test_api_get_put_render(asset_dir, client, monkeypatch):
     assert client.post(f"/api/jobs/{jid}/previs/s03/render").status_code == 202
     t[1][0](*t[1][1])
     assert calls == ["s03"]
+    assert {s["status"] for s in client.get(f"/api/jobs/{jid}/previs").json()["shots"]} <= set(api.STATUSES)
     assert (d / "remotion" / "src" / "data" / "previs" / "s03.json").exists()
 
 

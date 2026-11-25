@@ -55,7 +55,9 @@ export function frameState(shot: ResolvedShot, metas: Record<string, ModelMeta>,
     const local: Record<string, number[]> = {};
     for (const [id, rows] of Object.entries(o.parts)) local[id] = at(rows, f);
     const world = worldParts(meta, local, objectMatrix(x, o.scale ?? 1), o.explode ? at(o.explode, f) : 0);
-    out.push({ obj: o, meta, visible: x[6] ?? 1, world, boxes: posedBoxes(meta, world) });
+    const boxes = posedBoxes(meta, world);
+    for (const [pid, v] of Object.entries(o.part_visible ?? {})) if (at(v, f) < 0.5) for (const d of descendants(meta, pid)) delete boxes[d];
+    out.push({ obj: o, meta, visible: x[6] ?? 1, world, boxes });
   }
   return out;
 }
