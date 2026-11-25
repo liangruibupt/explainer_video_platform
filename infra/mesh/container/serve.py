@@ -155,6 +155,16 @@ def parse(req: dict) -> dict:
             "seed": _num(req, "seed", 42, int), "max_faces": _num(req, "max_faces", 60000, int)}
 
 
+def has_cutout_alpha(im) -> bool:
+    """A real cut-out: at least 1 % of the pixels (nearly) fully transparent. Qwen-Image PNGs
+    are RGBA with a few semi-transparent pixels (alpha >= 181) on a white background; treating
+    those as cut-outs skipped rembg and the white floor was reconstructed as a slab."""
+    if im.mode not in ("RGBA", "LA"):
+        return False
+    hist = im.getchannel("A").histogram()
+    return sum(hist[:17]) >= 0.01 * im.size[0] * im.size[1]
+
+
 def _image(raw: bytes, remove_bg: bool):
     """RGBA PIL image of the single object; background removed unless it already has alpha."""
     from PIL import Image, UnidentifiedImageError
@@ -165,8 +175,7 @@ def _image(raw: bytes, remove_bg: bool):
         raise HTTPException(400, f"cannot decode image: {e}") from None
     if max(im.size) > 4096:
         raise HTTPException(400, "image longer than 4096 px")
-    has_alpha = im.mode in ("RGBA", "LA") and im.getchannel("A").getextrema()[0] < 255
-    if has_alpha or not remove_bg:
+    if has_cutout_alpha(im) or not remove_bg:
         return im.convert("RGBA"), 0.0
     t0 = time.time()
     rembg, _ = _load("rembg")
