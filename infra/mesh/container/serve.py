@@ -68,14 +68,42 @@ class VramPeak:
         return round(self.peak / 2**30, 1)
 
 
+REMBG_MODEL = "u2net"
+U2NET_MD5 = "60024c5c889badc19c04ad937298a77b"  # same value the Dockerfile checks
+
+
+def _no_download(*a, **k):
+    raise RuntimeError(f"rembg tried to download a model at runtime: {a[:1]}")
+
+
+def make_rembg(new_session=None):
+    """Background remover pinned to the u2net model baked into the image (U2NET_HOME).
+    rembg >= 2.0.86 defaults to bria-rmbg (1 GB, downloaded at first use, licence not
+    checked), and hy3dgen.rembg.BackgroundRemover() calls new_session() with no name, so the
+    session is created here with an explicit name and downloads are disabled."""
+    import hashlib
+    import pooch
+    from rembg import new_session as _ns, remove
+    pooch.retrieve = _no_download  # rembg fetches every model through pooch.retrieve
+    path = os.path.join(os.environ.get("U2NET_HOME", ""), f"{REMBG_MODEL}.onnx")
+    with open(path, "rb") as f:
+        if hashlib.md5(f.read()).hexdigest() != U2NET_MD5:
+            raise RuntimeError(f"{path}: md5 mismatch")
+    sess = (new_session or _ns)(REMBG_MODEL)
+    used = type(sess).download_models() if hasattr(type(sess), "download_models") else path
+    if os.path.realpath(used) != os.path.realpath(path):
+        raise RuntimeError(f"rembg uses {used}, expected {path}")
+    log("rembg session", REMBG_MODEL, path)
+    return lambda im: remove(im, session=sess, bgcolor=[255, 255, 255, 0])
+
+
 def _load(key):
     """Load one pipeline once: a shape model name, 'paint' or 'rembg'."""
     if key in _pipes:
         return _pipes[key], 0.0
     t0 = time.time()
     if key == "rembg":
-        from hy3dgen.rembg import BackgroundRemover
-        p = BackgroundRemover()
+        p = make_rembg()
     elif key == "paint":
         from hy3dgen.texgen import Hunyuan3DPaintPipeline
         p = Hunyuan3DPaintPipeline.from_pretrained(PAINT[0], subfolder=PAINT[1])

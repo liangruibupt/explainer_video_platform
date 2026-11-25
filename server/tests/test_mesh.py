@@ -364,6 +364,40 @@ def serve():
     return mod
 
 
+def test_adapter_rembg_pinned_to_u2net(serve, monkeypatch, tmp_path):
+    """The adapter asks rembg for 'u2net' (the md5-checked model in the image), never the
+    rembg >= 2.0.86 default bria-rmbg, and disables downloads."""
+    import hashlib
+    import sys
+    import types
+    onnx = tmp_path / "u2net.onnx"
+    onnx.write_bytes(b"fake model")
+    monkeypatch.setenv("U2NET_HOME", str(tmp_path))
+    monkeypatch.setattr(serve, "U2NET_MD5", hashlib.md5(b"fake model").hexdigest())
+    pooch = types.ModuleType("pooch")
+    pooch.retrieve = lambda *a, **k: "downloaded"
+    rembg = types.ModuleType("rembg")
+    rembg.remove = lambda im, session=None, bgcolor=None: ("cut", session)
+    asked = []
+
+    class Session:
+        @classmethod
+        def download_models(cls):
+            return str(onnx)
+
+    rembg.new_session = lambda name: asked.append(name) or Session()
+    monkeypatch.setitem(sys.modules, "pooch", pooch)
+    monkeypatch.setitem(sys.modules, "rembg", rembg)
+    fn = serve.make_rembg()
+    assert asked == ["u2net"]
+    assert fn("img")[0] == "cut"
+    with pytest.raises(RuntimeError, match="download"):
+        pooch.retrieve("https://example/bria.onnx")
+    onnx.write_bytes(b"other")
+    with pytest.raises(RuntimeError, match="md5"):
+        serve.make_rembg()
+
+
 def test_adapter_parse(serve):
     b64 = base64.b64encode(png()).decode()
     p = serve.parse({"image_b64": b64})
