@@ -84,10 +84,11 @@ export default function Workbench() {
               <option value={2}>最多 2 段</option>
             </select>
           </label>
-          <label className="opt" title="Remotion：每段用 video-shotcraft 动效卡写成 Remotion 场景，完成后可在动效编辑器里改文字、颜色和时长">渲染方式
+          <label className="opt" title="Remotion：每段用 video-shotcraft 动效卡写成 Remotion 场景，完成后可在动效编辑器里改文字、颜色和时长。3D 白模预演：把带真实尺寸的白模摆进布景，相机和动作卡到旁白的字，每段渲染成独立镜头，适合机械、建筑和过程演示">渲染方式
             <select value={renderer} onChange={(e) => setRenderer(e.target.value)}>
               <option value="html">Canvas 绘制（默认）</option>
               <option value="remotion">Remotion 动效卡（可在编辑器里改）</option>
+              <option value="previs3d">3D 白模预演（真实尺寸，按镜头渲染）</option>
             </select>
           </label>
           <label className="toggle">
