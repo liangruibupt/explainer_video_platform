@@ -46,6 +46,7 @@ ENV PYTHONPATH=/app:/opt/hunyuan3d HY3DGEN_MODELS=/opt/ml/model HF_HUB_DISABLE_S
 # Import check at build time (CPU only, libcuda stub): catches dependency breakage before a
 # GPU is paid for. serve.py re-runs it on the GPU at startup.
 RUN mkdir -p /tmp/stub && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /tmp/stub/libcuda.so.1 \
- && LD_LIBRARY_PATH=/tmp/stub:/usr/local/cuda/lib64/stubs python check_imports.py && rm -rf /tmp/stub
+ && LD_LIBRARY_PATH=/tmp/stub:/usr/local/cuda/lib64/stubs python check_imports.py \
+ && LD_LIBRARY_PATH=/tmp/stub:/usr/local/cuda/lib64/stubs python -c "import serve; serve.make_rembg()" && rm -rf /tmp/stub
 EXPOSE 8080
 ENTRYPOINT ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

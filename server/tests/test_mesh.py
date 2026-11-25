@@ -344,7 +344,7 @@ def test_module_config_shape():
     assert cfg["name"] == "evp-mesh-worker" and cfg["tags"] == {"project": "explainer-video",
                                                                 "module": "mesh"}
     assert cfg["idle_shutdown_s"] == 900 and cfg["hard_cap_s"] == 14400
-    assert cfg["outputs"] == {"glb_b64": "glb"} and cfg["default_model"] in mesh.MODELS
+    assert cfg["outputs"] == {"glb_b64": "glb", "cutout_b64": "png"} and cfg["default_model"] in mesh.MODELS
     assert cfg["weights"].startswith("s3://evp-models-747411437379-us-east-1/weights/hunyuan3d-2/")
     seen = {}
     for o in cfg["capacity"]:
@@ -364,12 +364,46 @@ def serve():
     return mod
 
 
+def test_adapter_rembg_pinned_to_u2net(serve, monkeypatch, tmp_path):
+    """The adapter asks rembg for 'u2net' (the md5-checked model in the image), never the
+    rembg >= 2.0.86 default bria-rmbg, and disables downloads."""
+    import hashlib
+    import sys
+    import types
+    onnx = tmp_path / "u2net.onnx"
+    onnx.write_bytes(b"fake model")
+    monkeypatch.setenv("U2NET_HOME", str(tmp_path))
+    monkeypatch.setattr(serve, "U2NET_MD5", hashlib.md5(b"fake model").hexdigest())
+    pooch = types.ModuleType("pooch")
+    pooch.retrieve = lambda *a, **k: "downloaded"
+    rembg = types.ModuleType("rembg")
+    rembg.remove = lambda im, session=None, bgcolor=None: ("cut", session)
+    asked = []
+
+    class Session:
+        @classmethod
+        def download_models(cls):
+            return str(onnx)
+
+    rembg.new_session = lambda name: asked.append(name) or Session()
+    monkeypatch.setitem(sys.modules, "pooch", pooch)
+    monkeypatch.setitem(sys.modules, "rembg", rembg)
+    fn = serve.make_rembg()
+    assert asked == ["u2net"]
+    assert fn("img")[0] == "cut"
+    with pytest.raises(RuntimeError, match="download"):
+        pooch.retrieve("https://example/bria.onnx")
+    onnx.write_bytes(b"other")
+    with pytest.raises(RuntimeError, match="md5"):
+        serve.make_rembg()
+
+
 def test_adapter_parse(serve):
     b64 = base64.b64encode(png()).decode()
     p = serve.parse({"image_b64": b64})
     assert {k: p[k] for k in p if k != "image"} == {
         "model": serve.DEFAULT, "remove_bg": True, "texture": False, "octree_resolution": 256,
-        "steps": 30, "guidance": 5.0, "seed": 42, "max_faces": 60000}
+        "steps": 30, "guidance": 5.0, "seed": 42, "max_faces": 60000, "return_cutout": False}
     for bad in ({}, {"image_b64": "@@@"}, {"image_b64": b64, "model": "x"},
                 {"image_b64": b64, "steps": 0}, {"image_b64": b64, "octree_resolution": "a"}):
         with pytest.raises(HTTPException) as e:

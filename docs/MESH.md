@@ -49,11 +49,11 @@
 - 每个形状检查点里自带 VAE 和 DINOv2 条件编码器，不需要单独的 `vae-*` 目录。
 - Paint 的 UNet 加载器（`hunyuanpaint/unet/modules.py`）只读 `diffusion_pytorch_model.bin`，所以拷的是 .bin（7.3 GB），没拷同目录的 .safetensors。
 - 容器设 `HY3DGEN_MODELS=/opt/ml/model`，hy3dgen 的加载器直接在本地找到这些目录，不访问 HF（另外设了 `HF_HUB_OFFLINE=1`）。
-- 背景去除用 rembg 的 u2net，`u2net.onnx` 在构建时下载进镜像（核对 md5），工作机不需要访问 GitHub。
+- 背景去除用 rembg 的 u2net，`u2net.onnx` 在构建时下载进镜像（核对 md5），工作机不需要访问 GitHub。适配层显式 `rembg.new_session("u2net")`（`serve.make_rembg()`）：rembg 2.0.86 起默认模型改成 bria-rmbg（约 1 GB，第一次用时在线下载，许可证没有核对过），而 hy3dgen 自带的 `BackgroundRemover()` 不传模型名。启动时校验 u2net 文件的 md5 和会话实际用的路径，并把 rembg 的下载函数（`pooch.retrieve`）换成直接报错，所以工作机上绝不会下载模型。构建时也跑一遍 `make_rembg()`。
 
 ## 4. 镜像
 
-当前 `evp/mesh:20261125-072302`（ECR 仓库 `evp/mesh`，`scanOnPush`，v2 清单，压缩后 10.7 GB）。CUDA 12.8.1 + cuDNN devel、**Ubuntu 24.04、Python 3.12**（系统自带的 python3，装进 `/opt/venv`，所以不受 PEP 668 限制）、torch 2.7.1+cu128、pillow 13.0.0（要求 Python ≥ 3.11，所以从 3.10 换到 3.12）。上一版 `20261125-061845` 是 Ubuntu 22.04 / Python 3.10 / pillow 12.3.0，对比见第 5 节末尾。固定的版本见 `requirements.txt`，其中：
+当前 `evp/mesh:20261125-082201`（ECR 仓库 `evp/mesh`，`scanOnPush`，v2 清单）。CUDA 12.8.1 + cuDNN devel、**Ubuntu 24.04、Python 3.12**（系统自带的 python3，装进 `/opt/venv`，所以不受 PEP 668 限制）、torch 2.7.1+cu128、pillow 13.0.0、**numpy 2.3.5、rembg 2.0.88**（scipy 1.16.3、scikit-image 0.26.0、tifffile 2026.11.16、xatlas 0.0.11）。之前的版本：`20261125-072302`（numpy 1.26.4 / rembg 2.0.60 / xatlas 0.0.9）、`20261125-061845`（Ubuntu 22.04 / Python 3.10 / pillow 12.3.0），对比见第 5 节末尾。固定的版本见 `requirements.txt`，其中：
 
 - `diffusers==0.31.0`（新版会调用 torch 2.6+ 的 API）、`huggingface-hub==0.28.1`、`transformers==4.48.3`（hy3dgen 要求 ≥ 4.48）。
 - `xatlas`、`rembg`、`onnxruntime`、`omegaconf`、`pygltflib`、`pymeshlab`、`trimesh`。
@@ -131,6 +131,30 @@ GLB 大小：白模约 1.1 MB；带贴图 4.4–4.9 MB（2048² 底色贴图）�
 <img src="media/previs/mesh_py310_vs_py312.jpg" width="900">
 
 左：Python 3.10 镜像；右：Python 3.12 镜像，2mini + Paint 贴图，相机在 +Z 和 +X。
+
+### numpy 2 / rembg 2.0.88（2026-11-25）
+
+镜像 `20261125-082201`：numpy 1.26.4 → 2.3.5，rembg 2.0.60 → 2.0.88（修复 Dependabot 告警 #96、#97、#144），scipy 1.16.3、scikit-image 0.26.0、tifffile 2026.11.16 是 rembg 2.0.88 要求的版本。xatlas 0.0.9 → 0.0.11：0.0.9 的 wheel 是用旧版 pybind11（2.12 之前）编的，只认 numpy 1 的数组结构；0.0.11（2025-07）支持 numpy 2，它负责 Paint 的 UV 展开。Paint 的两个扩展在镜像里用 numpy 2 重新编译。
+
+同一张概念图、seed 42、从 0 实例，按需 g7.2xlarge（`compare.py`，和 `20261125-072302` 比）：
+
+| 用例 | 工作机用时 | 原始面数 | 峰值显存 | 包围盒最大偏差 |
+|---|---|---|---|---|
+| 2mini | 13.8 → 14.3 秒 | 455,270 → 484,828（+6.5%） | 5.6 → 5.6 GB | 3.86% |
+| 2.0 | 36.2 → 36.4 秒 | 513,854 → 512,572（−0.2%） | 10.5 → 10.5 GB | 1.64% |
+| 2mini + 贴图 | 36.0 → 37.9 秒 | 455,270 → 484,828（+6.5%） | 22.2 → 22.2 GB | 3.90% |
+
+差别全部来自 rembg 的抠图，numpy 2 本身不改变结果：
+
+- **同一张抠图对照**：把 rembg 2.0.60 / numpy 1.26.4 在 CPU 上生成的抠图（RGBA，md5 `9ae30e46…`，工作机原样收到）直接喂给新旧两个镜像（跳过 rembg）。旧镜像 `072302`（numpy 1）：2mini 451,942 面、2.0 515,214 面；新镜像 `082201`（numpy 2）：**完全相同**，包围盒逐位相同（偏差 0.0%）。
+- **抠图本身**：同一张 1024 px 输入、同一个 u2net 模型，rembg 2.0.88 的蒙版比 2.0.60 前景多 1.4%（294,970 → 299,067 像素），边缘更软更宽，形状一样。形状模型对输入很敏感（同一张图只是转一次 JPEG，原始面数就差 13%），所以面数和包围盒跟着变。
+- 去背景三种输入都正常：不透明 RGBA（铺白底后跑 rembg）、白底 RGB、已经抠好的 RGBA（跳过 rembg）；`rembg_s` 0.1–0.2 秒，没有运行时下载。
+
+验收标准是**视觉上等价**：
+
+<img src="media/previs/mesh_rembg2088_numpy2.jpg" width="900">
+
+上：`072302`（numpy 1.26 / rembg 2.0.60 / xatlas 0.0.9）；下：`082201`（numpy 2.3.5 / rembg 2.0.88 u2net / xatlas 0.0.11），2mini + Paint 贴图，相机在 +Z 和 +X。两只都是完整的猫，贴图干净，没有 UV 断裂；新版头更圆、耳朵小一点，侧面身体更饱满，属于不同抠图带来的正常差别。
 
 ### 复现
 
