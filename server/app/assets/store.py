@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import shutil
+import struct
 import subprocess
 import threading
 import time
@@ -23,7 +24,7 @@ ROOT = pipeline.DATA / "assets"
 ASSET_ID = re.compile(r"asset_[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
 PROJECT_ID = re.compile(r"proj_[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
 MAX_BYTES = 200 * 1024 * 1024
-KINDS = ("image", "audio", "video")
+KINDS = ("image", "audio", "video", "model")
 # format -> (kind, allowed extensions, mime)
 FORMATS = {
     "png": ("image", ("png",), "image/png"),
@@ -36,7 +37,10 @@ FORMATS = {
     "mp4": ("video", ("mp4", "m4v"), "video/mp4"),
     "mov": ("video", ("mov",), "video/quicktime"),
     "webm": ("video", ("webm",), "video/webm"),
+    "glb": ("model", ("glb",), "model/gltf-binary"),
 }
+# files a model asset may carry next to file.glb / meta.json / thumb.jpg (contract 4.4)
+MODEL_EXTRA_FILES = ("turntable.mp4", "spec.json")
 EXT_TO_FMT = {e: f for f, (_, exts, _m) in FORMATS.items() for e in exts}
 _lock = threading.Lock()
 
@@ -94,11 +98,34 @@ def sniff(head: bytes, ext: str) -> str:
                 else "mp4"
     elif head[4:8] in (b"moov", b"mdat", b"wide", b"free") and ext == "mov":
         fmt = "mov"
+    elif head.startswith(b"glTF"):
+        fmt = "glb"
     if fmt is None:
-        raise AssetError("不支持的文件类型（只接受 png/jpg/webp、wav/mp3/flac/m4a、mp4/mov/webm）")
+        raise AssetError("不支持的文件类型（只接受 png/jpg/webp、wav/mp3/flac/m4a、mp4/mov/webm、glb）")
     if ext and ext not in FORMATS[fmt][1]:
         raise AssetError(f"文件内容是 {fmt}，和扩展名 .{ext} 不符")
     return fmt
+
+
+def check_glb(path: Path) -> None:
+    """glTF 2.0 binary header: magic, version 2, declared length = file size, first chunk JSON."""
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        head = f.read(20)
+        if len(head) < 20:
+            raise AssetError("GLB 文件太短", 422)
+        magic, version, length = struct.unpack("<4sII", head[:12])
+        clen, ctype = struct.unpack("<II", head[12:20])
+        if magic != b"glTF" or version != 2:
+            raise AssetError("只支持 glTF 2.0 二进制（GLB）", 415)
+        if length != size:
+            raise AssetError(f"GLB 头里的长度 {length} 和文件大小 {size} 不符", 422)
+        if ctype != 0x4E4F534A or clen > size - 20:
+            raise AssetError("GLB 的第一个块不是 JSON", 422)
+        try:
+            json.loads(f.read(clen))
+        except (ValueError, UnicodeDecodeError):
+            raise AssetError("GLB 的 JSON 块无法解析", 422) from None
 
 
 def probe(path: Path) -> dict:
@@ -175,6 +202,13 @@ def thumb_path(asset_id: str):
     return p if p and p.is_file() else None
 
 
+def turntable_path(asset_id: str):
+    """turntable.mp4 of a model asset, or None."""
+    m = get(asset_id)
+    p = _dir(asset_id) / "turntable.mp4" if m and m.get("turntable") else None
+    return p if p and p.is_file() else None
+
+
 def list_all(kind: str = "", project_id: str = "") -> list:
     if not ROOT.exists():
         return []
@@ -197,9 +231,15 @@ def clean_name(name: str, fallback: str = "未命名") -> str:
     return name[:200] or fallback
 
 
-def ingest(src: Path, filename: str, name: str = "", project_id=None, source=None) -> dict:
+def ingest(src: Path, filename: str, name: str = "", project_id=None, source=None,
+           model_meta: dict | None = None, files: dict | None = None) -> dict:
     """Validate src (a temp file the caller owns, or a read-only file to copy) and store it
-    as a new asset. Raises AssetError on a rejected file."""
+    as a new asset. Raises AssetError on a rejected file.
+
+    A GLB (kind "model") needs model_meta, the ModelMeta from previs.mjs build-asset /
+    normalize-glb (merged into meta.json; its `source` wins), and may bring files:
+    {"thumb.jpg" | "turntable.mp4" | "spec.json": Path} copied next to file.glb. Raw GLBs
+    without units go through app.previs.assets_build.normalize, not here."""
     size = src.stat().st_size
     if size == 0:
         raise AssetError("文件是空的", 422)
@@ -225,6 +265,20 @@ def ingest(src: Path, filename: str, name: str = "", project_id=None, source=Non
                 meta.update(width=im.width, height=im.height)
         except (UnidentifiedImageError, OSError, SyntaxError) as e:
             raise AssetError(f"图片无法解析：{e}") from None
+    elif kind == "model":
+        check_glb(src)
+        if not isinstance(model_meta, dict) or model_meta.get("kind") != "model":
+            raise AssetError("3D 模型要先规范化（尺寸、落地、减面），请用 /api/assets/model/upload 上传", 415)
+        for k in (files or {}):
+            if k not in ("thumb.jpg", *MODEL_EXTRA_FILES):
+                raise AssetError(f"模型附带的文件名不对：{k}", 422)
+        keep = {k: v for k, v in model_meta.items()
+                if k not in ("id", "name", "created", "project_id", "sha256", "file", "thumb",
+                             "original_name", "mime", "format", "kind", "turntable")}
+        # contract 4.4: for models `size` is ModelMeta.size (metres); the byte count is `bytes`
+        meta["bytes"] = size
+        meta.update(keep)
+        source = model_meta.get("source", source)
     else:
         pr = probe(src)
         if not pr:
@@ -248,10 +302,17 @@ def ingest(src: Path, filename: str, name: str = "", project_id=None, source=Non
         with open(dst, "rb") as f:
             for chunk in iter(lambda: f.read(1 << 20), b""):
                 h.update(chunk)
-        try:
-            has_thumb = _thumb(kind, dst, tmpd / "thumb.jpg", meta.get("duration") or 0)
-        except Exception:  # noqa: BLE001 - a missing thumbnail is not fatal
-            has_thumb = False
+        if kind == "model":
+            for k, p in (files or {}).items():
+                if p and Path(p).is_file():
+                    shutil.copyfile(p, tmpd / k)
+            has_thumb = (tmpd / "thumb.jpg").is_file()
+            meta["turntable"] = (tmpd / "turntable.mp4").is_file()
+        else:
+            try:
+                has_thumb = _thumb(kind, dst, tmpd / "thumb.jpg", meta.get("duration") or 0)
+            except Exception:  # noqa: BLE001 - a missing thumbnail is not fatal
+                has_thumb = False
         stem = Path(filename or "").stem
         meta.update(id=asset_id, name=clean_name(name or stem), created=time.time(),
                     project_id=project_id or None, sha256=h.hexdigest(), file=dst.name,
