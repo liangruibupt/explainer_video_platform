@@ -63,7 +63,8 @@ const Rig: React.FC<{ c: THREE.Vector3; r: number }> = ({ c, r }) => {
   const { durationInFrames } = useVideoConfig();
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const size = useThree((s) => s.size);
-  const dist = (r / Math.sin(((VFOV / 2) * Math.PI) / 180)) * 1.05;
+  // the bounding sphere just fits the frame height; real models fill it less than the sphere does
+  const dist = (r / Math.sin(((VFOV / 2) * Math.PI) / 180)) * 0.98;
   const az = ((AZ0 + (360 * frame) / durationInFrames) * Math.PI) / 180;
   const el = (EL * Math.PI) / 180;
   useLayoutEffect(() => {

@@ -95,6 +95,10 @@ export async function normalizeGlb(bytes: Uint8Array, target: TargetSize, source
   }
   const geom = new THREE.BufferGeometry();
   geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(outPos), 3));
+  // simplification may drop extreme vertices: ground and centre again (size change is ~0.1 %)
+  geom.computeBoundingBox();
+  const sb = geom.boundingBox!;
+  geom.translate(-(sb.min.x + sb.max.x) / 2, -sb.min.y, -(sb.min.z + sb.max.z) / 2);
   geom.setIndex(new THREE.BufferAttribute(outIdx, 1));
   geom.computeVertexNormals();
 
