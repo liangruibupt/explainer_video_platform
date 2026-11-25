@@ -2,13 +2,15 @@
 # behind one HTTP adapter on 8080 (/ping, /invocations). Weights are NOT in the image: the
 # worker bootstrap copies s3://.../weights/hunyuan3d-2/<sha>/ to NVMe and mounts it read-only
 # at /opt/ml/model (HY3DGEN_MODELS). CUDA 12.8 so one image runs on L40S (g6e, sm_89) and
-# Blackwell RTX PRO (g7 / g7e, sm_120).
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+# Blackwell RTX PRO (g7 / g7e, sm_120). Ubuntu 24.04 for its system Python 3.12 (pillow >= 13
+# needs >= 3.11); everything goes into /opt/venv, so PEP 668 does not apply.
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git \
-      python3 python3-venv python3-dev build-essential ninja-build libgl1 libglib2.0-0 libegl1 \
-      && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv
+      python3 python3-venv python3-dev build-essential ninja-build libgl1 libglib2.0-0t64 libegl1 \
+      && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv \
+      && /opt/venv/bin/python -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version"
 ENV PATH=/opt/venv/bin:$PATH
 
 # wheel + a current setuptools: the --no-build-isolation extension builds below need both.
