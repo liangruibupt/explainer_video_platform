@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ago } from '../api.js'
+import { fmtLen } from '../components/ModelViewer.jsx'
+import { ModelModal, NewModelDialog, sourceLabel } from './previs/ModelDialogs.jsx'
+import { listModels, turntableUrl, modelSize, fileBytes } from './previs/mock.js'
 
-const KINDS = [['', '全部'], ['image', '图片'], ['audio', '音频'], ['video', '视频']]
+const KINDS = [['', '全部'], ['image', '图片'], ['audio', '音频'], ['video', '视频'], ['model', '3D 模型']]
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.wav,.mp3,.flac,.m4a,.mp4,.m4v,.mov,.webm'
 const MAX = 200 * 1024 * 1024
 
@@ -26,6 +29,9 @@ const CSS = `
 .al-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .al-actions .btn { padding: 3px 9px; font-size: 12px; }
 .al-actions select { font-size: 12px; border: 1px solid var(--line2); border-radius: 8px; background: var(--card); padding: 2px 4px; max-width: 140px; }
+.al-model { position: relative; width: 100%; height: 100%; cursor: zoom-in; border: 0; padding: 0; background: #e9e6e1; }
+.al-model img, .al-model video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #e9e6e1; }
+.al-model .tag { position: absolute; left: 8px; top: 8px; font-size: 11px; background: rgba(251,248,243,.9); border-radius: 99px; padding: 0 8px; color: var(--ink2); }
 .al-up { font-size: 12.5px; color: var(--ink2); margin-top: 8px; }
 .al-up .error { margin-top: 4px; }
 `
@@ -36,13 +42,26 @@ function fmtSize(n) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-function Preview({ a }) {
+// Model card: turntable thumbnail, the 4 s turntable plays on hover, click opens the viewer.
+function ModelPreview({ a, onOpen }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button className="al-model" onClick={onOpen} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} title="打开 3D 查看器">
+      {a.thumb_url ? <img src={a.thumb_url} alt="" loading="lazy" /> : <span className="muted">没有缩略图</span>}
+      {hover && <video src={turntableUrl(a)} autoPlay muted loop playsInline onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+      <span className="tag">3D{sourceLabel(a) ? ` · ${sourceLabel(a)}` : ''}</span>
+    </button>
+  )
+}
+
+function Preview({ a, onOpen }) {
+  if (a.kind === 'model') return <ModelPreview a={a} onOpen={onOpen} />
   if (a.kind === 'image') return <a href={a.url} target="_blank" rel="noreferrer"><img src={a.thumb_url || a.url} alt="" loading="lazy" /></a>
   if (a.kind === 'video') return <video src={a.url} poster={a.thumb_url || undefined} controls preload="none" />
   return <audio src={a.url} controls preload="none" />
 }
 
-function AssetCard({ a, projects, onChange, onError }) {
+function AssetCard({ a, projects, onChange, onError, onOpen }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(a.name)
   const [copied, setCopied] = useState(false)
@@ -62,11 +81,11 @@ function AssetCard({ a, projects, onChange, onError }) {
     try { await navigator.clipboard.writeText(a.id) } catch { window.prompt('素材 id', a.id) }
     setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
-  const dims = a.width ? `${a.width}×${a.height}` : ''
+  const dims = a.kind === 'model' && modelSize(a) ? modelSize(a).map(fmtLen).join(' × ') : a.width ? `${a.width}×${a.height}` : ''
   const dur = a.duration ? `${a.duration.toFixed(1)} 秒` : ''
   return (
     <div className="al-card">
-      <div className="al-media"><Preview a={a} /></div>
+      <div className="al-media"><Preview a={a} onOpen={() => onOpen(a)} /></div>
       <div className="al-body">
         <div className="al-name">
           {editing
@@ -74,7 +93,7 @@ function AssetCard({ a, projects, onChange, onError }) {
                 onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setName(a.name); setEditing(false) } }} />
             : <span title="点击改名" onClick={() => setEditing(true)} style={{ cursor: 'text' }}>{a.name}</span>}
         </div>
-        <div className="muted">{a.format} · {[dims, dur].filter(Boolean).join(' · ')}{dims || dur ? ' · ' : ''}{fmtSize(a.size)} · {ago(a.created)}</div>
+        <div className="muted">{a.format} · {[dims, dur].filter(Boolean).join(' · ')}{dims || dur ? ' · ' : ''}{fmtSize(fileBytes(a))} · {ago(a.created)}</div>
         <div className="al-actions">
           <button className="btn" onClick={copy}>{copied ? '已复制' : '复制素材 id'}</button>
           <button className="btn" onClick={() => setEditing(true)}>改名</button>
@@ -98,11 +117,19 @@ export default function AssetsPage() {
   const [over, setOver] = useState(false)
   const [uploads, setUploads] = useState([])
   const input = useRef(null)
+  const [viewing, setViewing] = useState(null)
+  const [creating, setCreating] = useState(false)
 
   const load = () => {
     const q = new URLSearchParams()
     if (kind) q.set('kind', kind)
-    api(`/assets${q.toString() ? `?${q}` : ''}`).then((xs) => { setAssets(xs); setErr(null) }).catch((e) => setErr(e.message))
+    // Model assets come from /api/assets?kind=model (dev: mock models until part A lands).
+    const models = kind === '' || kind === 'model' ? listModels().catch(() => []) : Promise.resolve([])
+    const rest = kind === 'model' ? Promise.resolve([]) : api(`/assets${q.toString() ? `?${q}` : ''}`)
+    Promise.all([rest, models]).then(([xs, ms]) => {
+      const seen = new Set(xs.map((x) => x.id))
+      setAssets([...xs, ...ms.filter((m) => !seen.has(m.id))].sort((a, b) => b.created - a.created)); setErr(null)
+    }).catch((e) => setErr(e.message))
   }
   useEffect(load, [kind]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api('/projects').then(setProjects).catch(() => {}) }, [])
@@ -159,6 +186,7 @@ export default function AssetsPage() {
           <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{label}</button>
         ))}
         <span style={{ flex: 1 }} />
+        <button className="btn" onClick={() => setCreating(true)}>新建 3D 资产</button>
         <label className="opt">项目
           <select value={project} onChange={(e) => setProject(e.target.value)}>
             <option value="">全部</option>
@@ -169,8 +197,10 @@ export default function AssetsPage() {
       {err && <div className="error">{err}</div>}
       {assets && shown.length === 0 && <div className="empty">还没有素材。</div>}
       <div className="al-grid">
-        {shown.map((a) => <AssetCard key={a.id} a={a} projects={projects} onChange={onChange} onError={setErr} />)}
+        {shown.map((a) => <AssetCard key={a.id} a={a} projects={projects} onChange={onChange} onError={setErr} onOpen={setViewing} />)}
       </div>
+      {viewing && <ModelModal asset={viewing} onClose={() => setViewing(null)} />}
+      {creating && <NewModelDialog onClose={() => { setCreating(false); load() }} onCreated={() => load()} />}
     </div>
   )
 }

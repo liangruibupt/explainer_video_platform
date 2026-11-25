@@ -74,7 +74,8 @@ function dimensionLines(bbox, size) {
   const xr = x1 + off
   seg([x0, 0.001, zf], [x1, 0.001, zf], `宽 ${fmtLen(size[0])}`, [(x0 + x1) / 2, 0.001, zf])
   seg([xr, 0.001, z0], [xr, 0.001, z1], `深 ${fmtLen(size[2])}`, [xr, 0.001, (z0 + z1) / 2])
-  seg([xr, y0, zf], [xr, y1, zf], `高 ${fmtLen(size[1])}`, [xr, (y0 + y1) / 2, zf])
+  const xl = x0 - off // height on the front-left corner, clear of the default 3/4 view
+  seg([xl, y0, zf], [xl, y1, zf], `高 ${fmtLen(size[1])}`, [xl, (y0 + y1) / 2, zf])
   return g
 }
 
@@ -97,7 +98,8 @@ export default function ModelViewer({ src, meta, height = 420, pose: poseIn, onP
   let drivers = {}
   try { drivers = rig ? dofValues(rig, pose) : {} } catch { /* shown as no readout */ }
 
-  // Scene: built once per GLB.
+  // Scene: built once per GLB and framing box (callers may pass a fresh meta object each render).
+  const frameKey = JSON.stringify([meta?.size, meta?.bbox])
   useEffect(() => {
     const el = host.current
     if (!el || !src) return undefined
@@ -150,7 +152,7 @@ export default function ModelViewer({ src, meta, height = 420, pose: poseIn, onP
     sc.left = sc.bottom = -big * 1.5; sc.right = sc.top = big * 1.5; sc.near = 0.01; sc.far = big * 10
     fill.position.set(center.x - big * 2, big, center.z - big)
 
-    const dist = big * 2.6
+    const dist = big * 2.1
     const az = (35 * Math.PI) / 180, el2 = (22 * Math.PI) / 180
     camera.position.set(center.x + dist * Math.cos(el2) * Math.sin(az), center.y + dist * Math.sin(el2), center.z + dist * Math.cos(el2) * Math.cos(az))
     controls.target.copy(center)
@@ -200,7 +202,7 @@ export default function ModelViewer({ src, meta, height = 420, pose: poseIn, onP
       labels.domElement.remove()
       three.current = null
     }
-  }, [src, meta, height])
+  }, [src, frameKey, height]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pose: part-local transforms from core/rig.ts onto the GLB nodes (named by part id).
   useEffect(() => {
@@ -238,7 +240,7 @@ export default function ModelViewer({ src, meta, height = 420, pose: poseIn, onP
           {dofs.map(([k, d]) => (
             <div className="mv3-dof" key={k}>
               <span title={k}>{d.label || k}</span>
-              <input type="range" min={d.min} max={d.max} step={(d.max - d.min) / 720 || 0.001} value={pose[k] ?? d.default}
+              <input type="range" min={d.min} max={d.max} step={d.max - d.min >= 90 ? 1 : (d.max - d.min) / 720 || 0.001} value={pose[k] ?? d.default}
                      aria-label={d.label || k}
                      onChange={(e) => setPose({ ...pose, [k]: +e.target.value })} />
               <input type="number" min={d.min} max={d.max} value={+(pose[k] ?? d.default).toFixed(3)}

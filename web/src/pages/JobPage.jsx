@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api, usePoll, isLive, fileUrl, STATUS } from '../api.js'
 import FeedbackButton from '../components/FeedbackButton.jsx'
 import MotionVersions, { versionLive, versionUrl } from '../components/MotionVersions.jsx'
+import ShotsTab from './previs/ShotsTab.jsx'
+import { papi, withMock, isMockId } from './previs/mock.js'
 
 const GALLERY = 'https://vincentwei1021.github.io/video-shotcraft/'
 const cardLabel = (c) => (c === 'fallback/title-card' ? '标题卡（回退）' : c)
@@ -11,7 +13,9 @@ const secs = (s) => (s.started && s.ended ? `${Math.round(s.ended - s.started)}s
 export default function JobPage() {
   const { id } = useParams()
   const nav = useNavigate()
-  const [job, error] = usePoll(() => api(`/jobs/${id}`), 2500, isLive, [id])
+  // dev: the mock previs3d job (pages/previs/mocks) answers for its own id until part B lands
+  const [job, error] = usePoll(() => (isMockId(id) ? withMock(() => papi(`/jobs/${id}`), 'job') : api(`/jobs/${id}`)), 2500, isLive, [id])
+  const [tab, setTab] = useState('film')
   const [log, setLog] = useState(null)
   // versions (Remotion jobs): v1 = final.mp4, v2+ saved from the motion editor. The selected
   // version drives the main player, the download and which version the editor opens.
@@ -26,6 +30,7 @@ export default function JobPage() {
   if (!job) return <div className="page"><p className="sub">加载中…</p></div>
 
   const remotion = job.renderer === 'remotion'
+  const previs = job.renderer === 'previs3d'
   const tall = job.ratio === '9:16'
   const showLog = async () => {
     const r = await fetch(fileUrl(id, 'pipeline.log'))
@@ -53,9 +58,9 @@ export default function JobPage() {
       <div className="job-head">
         <h1 className="h1-sm">{job.topic}</h1>
         <span className={`pill ${job.status}`}>{STATUS[job.status]}</span>
-        <span className={`pill mv-renderer ${remotion ? 'remotion' : ''}`}
-              title={remotion ? '每段由 video-shotcraft 动效卡写成 Remotion 场景' : 'Canvas2D 逐帧绘制'}>
-          {remotion ? 'Remotion 动效卡' : 'Canvas 绘制'}
+        <span className={`pill mv-renderer ${remotion || previs ? 'remotion' : ''}`}
+              title={previs ? '带真实尺寸的 3D 白模，按镜头驱动相机和动作，用 Remotion + three.js 渲染' : remotion ? '每段由 video-shotcraft 动效卡写成 Remotion 场景' : 'Canvas2D 逐帧绘制'}>
+          {previs ? '3D 白模预演' : remotion ? 'Remotion 动效卡' : 'Canvas 绘制'}
         </span>
       </div>
       <p className="sub">
@@ -66,6 +71,14 @@ export default function JobPage() {
         <p className="muted">音乐：{job.music_source || '生成中'}{job.music_style ? ` · 风格「${job.music_style}」` : ''}</p>
       )}
 
+      {previs && (
+        <div className="al-tabs" role="tablist" style={{ margin: '0 0 14px' }}>
+          <style>{'.al-tabs{display:flex;gap:6px}.al-tabs button{border:1px solid var(--line2);background:var(--card);border-radius:99px;padding:4px 14px;cursor:pointer;font-size:13px;color:var(--ink2)}.al-tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}'}</style>
+          <button role="tab" className={tab === 'film' ? 'on' : ''} onClick={() => setTab('film')}>成片</button>
+          <button role="tab" className={tab === 'shots' ? 'on' : ''} onClick={() => setTab('shots')}>镜头</button>
+        </div>
+      )}
+      {previs && tab === 'shots' ? <ShotsTab job={job} /> : (
       <div className="job-grid">
         <div>
           {remotion && job.status === 'done' && doneVersions.length > 1 && (
@@ -144,6 +157,7 @@ export default function JobPage() {
           </>}
         </div>
       </div>
+      )}
     </div>
   )
 }

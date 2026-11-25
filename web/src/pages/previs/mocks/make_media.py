@@ -83,7 +83,12 @@ def shot_tracks(si):
                 u = (f - prev[0]) / max(1, nxt[0] - prev[0])
                 a, b = prev[1], nxt[1]
                 lerp = lambda x, y: [x[i] + (y[i] - x[i]) * u for i in range(3)]  # noqa: E731
-                return lerp(key_pos(a), key_pos(b)) + lerp(point(a["look"]), point(b["look"])) + [
+                if "orbit" in a and "orbit" in b:  # orbit keys: interpolate r/az/el, so the path is an arc
+                    oa, ob = a["orbit"], b["orbit"]
+                    pos = key_pos({"orbit": {"around": oa["around"], **{k: oa[k] + (ob[k] - oa[k]) * u for k in ("r", "az", "el")}}})
+                else:
+                    pos = lerp(key_pos(a), key_pos(b))
+                return pos + lerp(point(a["look"]), point(b["look"])) + [
                     vfov(a.get("lens_mm", 35) + (b.get("lens_mm", 35) - a.get("lens_mm", 35)) * u)]
             prev = nxt
         k = prev[1]
@@ -118,6 +123,11 @@ def plan_svg(si, frames, keys, cam):
     Z = lambda z: 10 + (z - z0) * s  # noqa: E731
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" font-family="Noto Sans CJK SC,sans-serif">',
            '<rect width="360" height="360" fill="#f6f1ea"/>']
+    g = 0.1  # 10 cm grid
+    for i in range(math.floor(x0 / g), math.ceil(x1 / g) + 1):
+        out.append(f'<line x1="{X(i*g):.1f}" y1="0" x2="{X(i*g):.1f}" y2="360" stroke="#e3d9cc" stroke-width=".5"/>')
+    for i in range(math.floor(z0 / g), math.ceil(z1 / g) + 1):
+        out.append(f'<line x1="0" y1="{Z(i*g):.1f}" x2="360" y2="{Z(i*g):.1f}" stroke="#e3d9cc" stroke-width=".5"/>')
     for p in meta["parts"]:
         (bx0, _, bz0), (bx1, _, bz1) = p["bbox"]["min"], p["bbox"]["max"]
         if bx1 > bx0:
@@ -130,7 +140,7 @@ def plan_svg(si, frames, keys, cam):
         out.append(f'<circle cx="{X(c[0]):.1f}" cy="{Z(c[2]):.1f}" r="8" fill="#2b2420"/><text x="{X(c[0]):.1f}" y="{Z(c[2])+4:.1f}" font-size="10" fill="#fff" text-anchor="middle">{n+1}</text>')
         lk = point(k["look"])
         out.append(f'<circle cx="{X(lk[0]):.1f}" cy="{Z(lk[2]):.1f}" r="3" fill="#c8452c"/>')
-    out.append(f'<text x="12" y="350" font-size="11" fill="#6d625a">俯视 · {plan["shots"][si]["id"]} · 蓝→红 = 时间</text></svg>')
+    out.append(f'<text x="12" y="30" font-size="22" fill="#6d625a">{plan["shots"][si]["id"]} 俯视 · 格子 10 cm</text></svg>')
     (HERE / "shots" / f"{plan['shots'][si]['id']}.plan.svg").write_text("\n".join(out))
 
 

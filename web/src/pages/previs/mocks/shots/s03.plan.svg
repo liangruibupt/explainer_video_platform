@@ -1,5 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360" font-family="Noto Sans CJK SC,sans-serif">
 <rect width="360" height="360" fill="#f6f1ea"/>
+<line x1="-18.3" y1="0" x2="-18.3" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="10.0" y1="0" x2="10.0" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="38.3" y1="0" x2="38.3" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="66.7" y1="0" x2="66.7" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="95.0" y1="0" x2="95.0" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="123.3" y1="0" x2="123.3" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="151.7" y1="0" x2="151.7" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="180.0" y1="0" x2="180.0" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="208.3" y1="0" x2="208.3" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="236.7" y1="0" x2="236.7" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="265.0" y1="0" x2="265.0" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="293.3" y1="0" x2="293.3" y2="360" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="-18.3" x2="360" y2="-18.3" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="10.0" x2="360" y2="10.0" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="38.3" x2="360" y2="38.3" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="66.7" x2="360" y2="66.7" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="95.0" x2="360" y2="95.0" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="123.3" x2="360" y2="123.3" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="151.7" x2="360" y2="151.7" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="180.0" x2="360" y2="180.0" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="208.3" x2="360" y2="208.3" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="236.7" x2="360" y2="236.7" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="265.0" x2="360" y2="265.0" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="293.3" x2="360" y2="293.3" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="321.7" x2="360" y2="321.7" stroke="#e3d9cc" stroke-width=".5"/>
+<line x1="0" y1="350.0" x2="360" y2="350.0" stroke="#e3d9cc" stroke-width=".5"/>
 <rect x="52.5" y="63.8" width="85.0" height="62.3" fill="#c9c4bb" fill-opacity=".35" stroke="#8a7f74" stroke-width=".6"/>
 <rect x="78.0" y="78.0" width="34.0" height="34.0" fill="#c9c4bb" fill-opacity=".35" stroke="#8a7f74" stroke-width=".6"/>
 <rect x="72.3" y="72.3" width="45.3" height="45.3" fill="#c9c4bb" fill-opacity=".35" stroke="#8a7f74" stroke-width=".6"/>
@@ -101,4 +127,4 @@
 <circle cx="95.0" cy="95.0" r="3" fill="#c8452c"/>
 <circle cx="265.0" cy="321.7" r="8" fill="#2b2420"/><text x="265.0" y="325.7" font-size="10" fill="#fff" text-anchor="middle">3</text>
 <circle cx="95.0" cy="95.0" r="3" fill="#c8452c"/>
-<text x="12" y="350" font-size="11" fill="#6d625a">俯视 · s03 · 蓝→红 = 时间</text></svg>
+<text x="12" y="30" font-size="22" fill="#6d625a">s03 俯视 · 格子 10 cm</text></svg>
