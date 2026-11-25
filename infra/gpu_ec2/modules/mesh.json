@@ -1,0 +1,109 @@
+{
+  "_doc": "EC2 GPU worker config for the mesh (图生 3D) module: Hunyuan3D-2 shape (2mini / 2.0) + optional Paint texture, infra/mesh/container. server/app/mesh.py reads it. All three GPU types fit (peak VRAM in docs/MESH.md); capacity: on-demand cheapest first, then Spot cheapest first, two AZs each that offer the type (describe-instance-type-offerings 2026-11-25).",
+  "module": "mesh",
+  "region": "us-east-1",
+  "bucket": "evp-models-747411437379-us-east-1",
+  "jobs_prefix": "jobs/mesh-ec2/",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/mesh:PENDING-BUILD",
+  "weights": "s3://evp-models-747411437379-us-east-1/weights/hunyuan3d-2/9cd649ba6913f7a852e3286bad86bfa9a2d83dcf/",
+  "model_mount": "/opt/ml/model",
+  "container_port": 8080,
+  "container_name": "mesh",
+  "docker_args": [
+    "--ipc",
+    "host"
+  ],
+  "env": {
+    "MESH_DEFAULT_MODEL": "hunyuan3d-2mini",
+    "MESH_PRELOAD": "hunyuan3d-2mini"
+  },
+  "outputs": {
+    "glb_b64": "glb"
+  },
+  "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
+  "min_driver_major": 570,
+  "root_gb": 80,
+  "instance_profile": "evp-gpu-worker",
+  "security_group": "evp-gpu-worker",
+  "name": "evp-mesh-worker",
+  "tags": {
+    "project": "explainer-video",
+    "module": "mesh"
+  },
+  "capacity": [
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1a",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1b",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1d",
+      "market": "on-demand"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1a",
+      "market": "spot"
+    },
+    {
+      "type": "g6e.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1d",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    }
+  ],
+  "idle_shutdown_s": 900,
+  "hard_cap_s": 14400,
+  "ready_timeout_s": 1800,
+  "invoke_timeout_s": 1800,
+  "heartbeat_stale_s": 180,
+  "default_model": "hunyuan3d-2mini",
+  "cold_min": 8,
+  "usd_per_hour": 2.24,
+  "render_s": {
+    "hunyuan3d-2mini": 60,
+    "hunyuan3d-2": 90,
+    "texture_extra": 180
+  },
+  "render_note": "PROVISIONAL until the live test (docs/MESH.md section 5)."
+}
