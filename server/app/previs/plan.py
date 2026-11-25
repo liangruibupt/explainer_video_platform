@@ -249,11 +249,13 @@ def rewrite_asset(spec: dict, issues: list, *, build=None, ask=None,
 
 def default_render(record: dict, spec: dict) -> list:
     """4 turntable stills (0/90/180/270 deg) cut from the asset's 4 s turntable.mp4."""
-    mp4 = record.get("turntable_path") or record.get("turntable")
-    if not mp4 and record.get("id"):
+    mp4 = None  # the library record has "turntable": bool; the file sits next to file.glb
+    if record.get("id"):
         try:
             from ..assets import store
-            mp4 = store.asset_path(record["id"]).parent / "turntable.mp4"
+            find = getattr(store, "turntable_path", None)
+            mp4 = find(record["id"]) if find else \
+                store.asset_path(record["id"]).parent / "turntable.mp4"
         except Exception:  # noqa: BLE001 - store not ready for model assets
             mp4 = None
     if not mp4 or not Path(mp4).is_file():

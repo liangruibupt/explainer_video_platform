@@ -229,6 +229,22 @@ def test_build_assets_writes_plan_check(tmp_path, render):
     assert saved["assets"]["four_stroke"]["build_rounds"] == 1
 
 
+def test_default_render_cuts_four_stills(tmp_path, monkeypatch):
+    import subprocess as sp
+
+    from app import pipeline
+    from app.assets import store
+    mp4 = tmp_path / "turntable.mp4"  # 4 s test pattern, like A's turntable
+    sp.run([pipeline.FFMPEG, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+            "-t", "4", str(mp4)], check=True)
+    monkeypatch.setattr(store, "turntable_path", lambda aid: mp4, raising=False)
+    paths = plan.default_render({"id": "asset_x", "turntable": True}, SPEC)
+    assert len(paths) == 4 and all(p.stat().st_size > 0 for p in paths)
+    monkeypatch.setattr(store, "turntable_path", lambda aid: None, raising=False)
+    with pytest.raises(RuntimeError, match="turntable"):
+        plan.default_render({"id": "asset_x", "turntable": False}, SPEC)
+
+
 def test_build_assets_records_missing_turntable(tmp_path):
     def no_turntable(record, spec):
         raise RuntimeError("资产没有转台视频")
