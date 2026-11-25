@@ -27,7 +27,7 @@ TIMEOUT_S = 3600
 # extra worker parameters generate(**kw) accepts: name -> (cast, lo, hi)
 PARAMS = {"remove_bg": (bool, None, None), "octree_resolution": (int, 64, 512),
           "steps": (int, 1, 100), "guidance": (float, 0.0, 20.0), "max_faces": (int, 500, 500000)}
-COLD_MIN, USD_PER_HOUR = 8.0, 2.24
+COLD_MIN, USD_PER_HOUR = 6.0, 2.52  # measured fallbacks (docs/MESH.md 5)
 
 
 class MeshError(ValueError):

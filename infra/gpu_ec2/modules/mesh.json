@@ -1,10 +1,10 @@
 {
-  "_doc": "EC2 GPU worker config for the mesh (图生 3D) module: Hunyuan3D-2 shape (2mini / 2.0) + optional Paint texture, infra/mesh/container. server/app/mesh.py reads it. All three GPU types fit (peak VRAM in docs/MESH.md); capacity: on-demand cheapest first, then Spot cheapest first, two AZs each that offer the type (describe-instance-type-offerings 2026-11-25).",
+  "_doc": "EC2 GPU worker config for the mesh (图生 3D) module: Hunyuan3D-2 shape (2mini / 2.0) + optional Paint texture, infra/mesh/container. server/app/mesh.py reads it. Capacity (docs/MESH.md section 5): on-demand then Spot; g7.2xlarge first (the type measured end to end, 2026-11-25: peak 22.1 GB of 32 GB with 2mini + 2.0 + Paint resident), then g6e.2xlarge and g7e.2xlarge (same image, sm_89 / sm_120 builds, more VRAM; not run live); two AZs each.",
   "module": "mesh",
   "region": "us-east-1",
   "bucket": "evp-models-747411437379-us-east-1",
   "jobs_prefix": "jobs/mesh-ec2/",
-  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/mesh:20261125-055152",
+  "image": "747411437379.dkr.ecr.us-east-1.amazonaws.com/evp/mesh:20261125-061845",
   "weights": "s3://evp-models-747411437379-us-east-1/weights/hunyuan3d-2/9cd649ba6913f7a852e3286bad86bfa9a2d83dcf/",
   "model_mount": "/opt/ml/model",
   "container_port": 8080,
@@ -32,22 +32,22 @@
   },
   "capacity": [
     {
-      "type": "g6e.2xlarge",
+      "type": "g7.2xlarge",
       "az": "us-east-1a",
       "market": "on-demand"
     },
     {
-      "type": "g6e.2xlarge",
+      "type": "g7.2xlarge",
       "az": "us-east-1b",
       "market": "on-demand"
     },
     {
-      "type": "g7.2xlarge",
+      "type": "g6e.2xlarge",
       "az": "us-east-1a",
       "market": "on-demand"
     },
     {
-      "type": "g7.2xlarge",
+      "type": "g6e.2xlarge",
       "az": "us-east-1b",
       "market": "on-demand"
     },
@@ -63,12 +63,12 @@
     },
     {
       "type": "g7.2xlarge",
-      "az": "us-east-1b",
+      "az": "us-east-1a",
       "market": "spot"
     },
     {
       "type": "g7.2xlarge",
-      "az": "us-east-1a",
+      "az": "us-east-1b",
       "market": "spot"
     },
     {
@@ -78,17 +78,17 @@
     },
     {
       "type": "g6e.2xlarge",
+      "az": "us-east-1b",
+      "market": "spot"
+    },
+    {
+      "type": "g7e.2xlarge",
       "az": "us-east-1b",
       "market": "spot"
     },
     {
       "type": "g7e.2xlarge",
       "az": "us-east-1d",
-      "market": "spot"
-    },
-    {
-      "type": "g7e.2xlarge",
-      "az": "us-east-1b",
       "market": "spot"
     }
   ],
@@ -98,12 +98,12 @@
   "invoke_timeout_s": 1800,
   "heartbeat_stale_s": 180,
   "default_model": "hunyuan3d-2mini",
-  "cold_min": 8,
-  "usd_per_hour": 2.24,
+  "cold_min": 6,
+  "usd_per_hour": 2.52,
   "render_s": {
-    "hunyuan3d-2mini": 60,
-    "hunyuan3d-2": 90,
-    "texture_extra": 180
+    "hunyuan3d-2mini": 14,
+    "hunyuan3d-2": 36,
+    "texture_extra": 25
   },
-  "render_note": "PROVISIONAL until the live test (docs/MESH.md section 5)."
+  "render_note": "Measured on g7.2xlarge (RTX PRO 4500 Blackwell 32 GB) 2026-11-25, worker render_s per job: 2mini 12.9/13.8 s, 2.0 33.9/36.3 s (incl. 16 s first load; shape 14 s), 2mini+Paint 37.2/37.5 s (Paint 12 s + first load 13 s), 2.0+Paint 33.4 s. Cold start from 0 to the first GLB: 359 / 357 s wall."
 }

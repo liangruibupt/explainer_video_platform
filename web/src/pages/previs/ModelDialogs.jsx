@@ -128,8 +128,10 @@ function GpuStatus({ module, what, cold }) {
 }
 
 // ---- 图生 3D -----------------------------------------------------------------
-// shortcut: fixed estimates until part E measures cold start and generation time (§4.6).
-const ETA = { cold: 10, concept: 1, mesh: 2 }
+// Measured 2026-11-25 (docs/MESH.md section 5, g7.2xlarge): mesh worker from 0 to ready ~6 min
+// (357 / 359 s to the first GLB); warm concept image 51 s; warm mesh step (2mini job ~30 s +
+// normalize and turntable on this box ~22 s) under 1 min. Image module cold start 433-443 s.
+const ETA = { cold: 6, concept: 1, mesh: 1, imageCold: 7 }
 
 function ImageEntry() {
   const [mode, setMode] = useState('prompt')
@@ -165,7 +167,7 @@ function ImageEntry() {
         <button className={`chip ${mode === 'image' ? 'on' : ''}`} onClick={() => setMode('image')}>选素材库里的图</button>
         <span style={{ flex: 1 }} />
         <GpuStatus module="mesh" what="网格 GPU" cold={ETA.cold} />
-        {mode === 'prompt' && <GpuStatus module="image" what="概念图 GPU" cold={8} />}
+        {mode === 'prompt' && <GpuStatus module="image" what="概念图 GPU" cold={ETA.imageCold} />}
       </div>
       {mode === 'prompt'
         ? <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="要生成的物体，例如：一只坐着的橘猫。会自动加上「单个物体，纯白背景，三分之二侧视角，完整不裁切」" />
@@ -193,7 +195,7 @@ function ImageEntry() {
         <button className="primary" disabled={busy} onClick={submit}>{busy ? '提交中…' : '生成'} <span aria-hidden>→</span></button>
       </div>
       <p className="muted" style={{ margin: 0 }}>
-        预计：GPU 已就绪时约 {eta} 分钟（{mode === 'prompt' ? `概念图约 ${ETA.concept} 分钟 + ` : ''}网格约 {ETA.mesh} 分钟）；GPU 从 0 启动再加约 {ETA.cold} 分钟。
+        预计：GPU 已就绪时约 {eta} 分钟（{mode === 'prompt' ? `概念图约 ${ETA.concept} 分钟 + ` : ''}网格约 {ETA.mesh} 分钟）；GPU 从 0 启动再加约 {mode === 'prompt' ? `${ETA.imageCold + ETA.cold} 分钟（概念图 GPU 约 ${ETA.imageCold} 分钟，网格 GPU 在概念图出来后再启动，约 ${ETA.cold} 分钟）` : `${ETA.cold} 分钟`}。
         只出白模几何，按目标尺寸等比缩放、落地、减面到 6 万面以内。适合动物、雕塑、植物这类有机形体。
       </p>
       {err && <div className="error">{err}</div>}
