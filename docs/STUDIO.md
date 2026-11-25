@@ -49,6 +49,7 @@
 | 渲染成片 | `Main` → `final.mp4`，`--gl=swangle` |
 
 做好的 previs3d 作品可以在动效编辑器里打开（和 Remotion 动效卡一样），导出新版本时用 swangle。
+镜头带 `style.fade_in` 时，第 0 帧是纯背景色（从背景淡入，成片也一样），编辑器刚打开时播放头在第 0 帧，所以预览只有背景色；拖到淡入之后就有模型。截图验收时先把播放头拖过淡入帧。
 
 `POST /api/jobs` 还接受 `scenes`（固定分镜，跳过写分镜，`[{id, title, narration, ...}]`）和 `previs_plan`（固定规划，只用于 previs3d 且必须同时给 `scenes`；只做静态校验，不做外形重写）。验收用的四冲程示例就是这样提交的。
 
