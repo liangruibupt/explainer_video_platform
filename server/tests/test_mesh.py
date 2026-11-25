@@ -344,7 +344,7 @@ def test_module_config_shape():
     assert cfg["name"] == "evp-mesh-worker" and cfg["tags"] == {"project": "explainer-video",
                                                                 "module": "mesh"}
     assert cfg["idle_shutdown_s"] == 900 and cfg["hard_cap_s"] == 14400
-    assert cfg["outputs"] == {"glb_b64": "glb"} and cfg["default_model"] in mesh.MODELS
+    assert cfg["outputs"] == {"glb_b64": "glb", "cutout_b64": "png"} and cfg["default_model"] in mesh.MODELS
     assert cfg["weights"].startswith("s3://evp-models-747411437379-us-east-1/weights/hunyuan3d-2/")
     seen = {}
     for o in cfg["capacity"]:
@@ -369,7 +369,7 @@ def test_adapter_parse(serve):
     p = serve.parse({"image_b64": b64})
     assert {k: p[k] for k in p if k != "image"} == {
         "model": serve.DEFAULT, "remove_bg": True, "texture": False, "octree_resolution": 256,
-        "steps": 30, "guidance": 5.0, "seed": 42, "max_faces": 60000}
+        "steps": 30, "guidance": 5.0, "seed": 42, "max_faces": 60000, "return_cutout": False}
     for bad in ({}, {"image_b64": "@@@"}, {"image_b64": b64, "model": "x"},
                 {"image_b64": b64, "steps": 0}, {"image_b64": b64, "octree_resolution": "a"}):
         with pytest.raises(HTTPException) as e:

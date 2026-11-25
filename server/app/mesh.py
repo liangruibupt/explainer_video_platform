@@ -25,7 +25,7 @@ IMAGE_MIN_EDGE, IMAGE_MAX_EDGE = 128, 8192
 SEND_EDGE = 1024            # the shape model works at 512 px; 1024 keeps detail for Paint
 TIMEOUT_S = 3600
 # extra worker parameters generate(**kw) accepts: name -> (cast, lo, hi)
-PARAMS = {"remove_bg": (bool, None, None), "octree_resolution": (int, 64, 512),
+PARAMS = {"remove_bg": (bool, None, None), "return_cutout": (bool, None, None), "octree_resolution": (int, 64, 512),
           "steps": (int, 1, 100), "guidance": (float, 0.0, 20.0), "max_faces": (int, 500, 500000)}
 COLD_MIN, USD_PER_HOUR = 6.0, 2.52  # measured fallbacks (docs/MESH.md 5)
 

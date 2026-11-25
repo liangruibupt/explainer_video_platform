@@ -150,6 +150,7 @@ def parse(req: dict) -> dict:
         raise HTTPException(400, "image larger than 20 MB")
     return {"model": model, "image": raw, "remove_bg": bool(req.get("remove_bg", True)),
             "texture": bool(req.get("texture", False)),
+            "return_cutout": bool(req.get("return_cutout", False)),
             "octree_resolution": _num(req, "octree_resolution", 256, int),
             "steps": _num(req, "steps", 30, int), "guidance": _num(req, "guidance", 5.0, float),
             "seed": _num(req, "seed", 42, int), "max_faces": _num(req, "max_faces", 60000, int)}
@@ -222,7 +223,12 @@ def generate(p: dict) -> dict:
             "steps": p["steps"], "octree_resolution": p["octree_resolution"],
             "guidance": p["guidance"], "glb_bytes": len(glb)}
     log("done", meta)
-    return {"glb_b64": base64.b64encode(glb).decode(), "seconds": render_s, "meta": meta}
+    out = {"glb_b64": base64.b64encode(glb).decode(), "seconds": render_s, "meta": meta}
+    if p["return_cutout"]:  # debugging aid: the RGBA image the shape model actually saw
+        b = io.BytesIO()
+        img.save(b, "PNG")
+        out["cutout_b64"] = base64.b64encode(b.getvalue()).decode()
+    return out
 
 
 @app.post("/invocations")

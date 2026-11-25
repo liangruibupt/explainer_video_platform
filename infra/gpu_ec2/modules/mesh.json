@@ -18,7 +18,8 @@
     "MESH_PRELOAD": "hunyuan3d-2mini"
   },
   "outputs": {
-    "glb_b64": "glb"
+    "glb_b64": "glb",
+    "cutout_b64": "png"
   },
   "ami_ssm": "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-amazon-linux-2023/latest/ami-id",
   "min_driver_major": 570,
